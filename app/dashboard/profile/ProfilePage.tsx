@@ -537,6 +537,7 @@ export default async function ProfilePage() {
   const linkedInLabel = state.linkedInAccount
     ? statusLabel(state.linkedInAccount.status)
     : "Not connected";
+  const workspaceName = profileWorkspaceName(active.workspace.name, profile);
 
   return (
     <div className="space-y-10">
@@ -544,15 +545,15 @@ export default async function ProfilePage() {
         kicker="Profile"
         title={
           <>
-            Profile setup.
+            {profile?.company_name ?? workspaceName}
           </>
         }
-        description="Company fit, Rep voice, channels, signal watchlist, contact quality, and protection rules in one clean setup surface."
+        description="Paste the website, connect Outlook and LinkedIn, then let the agent run with the approval rail you choose."
         meta={
           <div className="flex flex-wrap gap-2">
             <HeroStat
-              label="Profile"
-              value={profile?.company_name ?? "Needed"}
+              label="Workspace"
+              value={workspaceName}
             />
             <HeroStat label="Email" value={outlookLabel} />
             <HeroStat label="LinkedIn" value={linkedInLabel} />
@@ -564,42 +565,20 @@ export default async function ProfilePage() {
         }
       />
 
-      <ProfileSetupHub
-        profile={profile}
-        state={state}
-        readiness={readiness}
-      />
-
-      <ProfileSectionNav
-        profile={profile}
-        outlookAccount={state.outlookAccount}
-        linkedInAccount={state.linkedInAccount}
-        rep={state.rep}
-        icp={state.icp}
-        suppressionStats={state.suppressionStats}
-        contactQuality={state.contactQuality}
-      />
-
       <div id="profile">
-        <SurfaceSection title="Company and buyer fit">
+        <SurfaceSection title="Company & ICP">
           <CompanyProfileForm profile={profile} />
-        </SurfaceSection>
-      </div>
-
-      <span id="motion" className="block scroll-mt-28" aria-hidden="true" />
-      <div id="agent">
-        <SurfaceSection title="Rep voice and outreach templates">
-          <AgentActivationForm
+          <IcpActivationForm
             rep={state.rep}
             icp={state.icp}
             outlookAccount={state.outlookAccount}
           />
-          <WorkspaceAutonomyForm mode={mode} formMode={formMode} />
         </SurfaceSection>
       </div>
 
+      <span id="motion" className="block scroll-mt-28" aria-hidden="true" />
       <div id="channels">
-        <SurfaceSection title="Channels and sending limits">
+        <SurfaceSection title="Channels">
           <div className="grid scroll-mt-28 gap-6 md:grid-cols-2">
             <div id="email">
               <OutlookPanel account={state.outlookAccount} />
@@ -609,32 +588,29 @@ export default async function ProfilePage() {
               <LinkedInPanel accounts={state.linkedInAccounts} />
             </div>
           </div>
-        </SurfaceSection>
-      </div>
-
-      <div id="contact-quality">
-        <SurfaceSection title="Signal watchlist and contact-quality gates">
-          <ProfileSignalBuilderPanel
-            profile={profile}
-            state={state}
-            readiness={readiness}
-          />
-          <ContactQualityPanel stats={state.contactQuality} />
-        </SurfaceSection>
-      </div>
-
-      <div id="blocklist">
-        <SurfaceSection title="Blocklist / contact protection">
-          <BlocklistPanel
-            stats={state.suppressionStats}
-            recent={state.recentSuppressions}
+          <ChannelLimitForm
+            rep={state.rep}
+            icp={state.icp}
+            outlookAccount={state.outlookAccount}
           />
         </SurfaceSection>
       </div>
 
-      <DeveloperAdvancedPanel
+      <div id="agent">
+        <SurfaceSection title="Voice & autonomy">
+          <MessageToneForm profile={profile} />
+          <VoiceActivationForm
+            rep={state.rep}
+            icp={state.icp}
+            outlookAccount={state.outlookAccount}
+          />
+          <WorkspaceAutonomyForm mode={mode} formMode={formMode} />
+        </SurfaceSection>
+      </div>
+
+      <ProfileAdvancedDrawer
         identity={identity}
-        workspaceName={active.workspace.name}
+        workspaceName={workspaceName}
         workspaceSlug={active.workspace.slug}
         role={active.role}
         profile={profile}
@@ -675,13 +651,13 @@ function WorkspaceAutonomyForm({
       <div id="autonomy" className="grid scroll-mt-28 gap-3 sm:grid-cols-2">
         <AutonomyOption
           value="autonomous"
-          title="Autopilot"
+          title="Auto-send after checks"
           description="Send after evals, caps, contact checks, and channel health pass."
           defaultChecked={formMode === "autonomous"}
         />
         <AutonomyOption
           value="review_only"
-          title="Copilot review"
+          title="Approve first"
           description="Prepare every move, then wait for a human approval before outreach."
           defaultChecked={formMode === "review_only"}
         />
@@ -703,7 +679,7 @@ function WorkspaceAutonomyForm({
   );
 }
 
-function DeveloperAdvancedPanel({
+function ProfileAdvancedDrawer({
   identity,
   workspaceName,
   workspaceSlug,
@@ -733,11 +709,12 @@ function DeveloperAdvancedPanel({
                 className="block text-[18px] font-semibold text-[var(--color-text-1)]"
                 style={{ fontFamily: "var(--font-display)" }}
               >
-                Developer / Advanced
+                Advanced
               </span>
               <span className="mt-1 block text-sm leading-6 text-[var(--color-text-3)]">
-                Source IDs, visitor scripts, webhook payloads, MCP sessions,
-                CRM contracts, and workspace account details.
+                Watchlists, quality gates, protection, long-tail profile
+                fields, source IDs, webhooks, MCP, CRM, and workspace account
+                details.
               </span>
             </span>
           </span>
@@ -751,6 +728,27 @@ function DeveloperAdvancedPanel({
           </span>
         </summary>
         <div className="mt-5 grid gap-6">
+          <SurfaceSection title="Long-tail company fields">
+            <AdvancedCompanyProfileForm profile={profile} />
+          </SurfaceSection>
+          <div id="contact-quality">
+            <SurfaceSection title="Signal watchlist and contact-quality gates">
+              <ProfileSignalBuilderPanel
+                profile={profile}
+                state={state}
+                readiness={readiness}
+              />
+              <ContactQualityPanel stats={state.contactQuality} />
+            </SurfaceSection>
+          </div>
+          <div id="blocklist">
+            <SurfaceSection title="Blocklist / contact protection">
+              <BlocklistPanel
+                stats={state.suppressionStats}
+                recent={state.recentSuppressions}
+              />
+            </SurfaceSection>
+          </div>
           <SurfaceSection title="Workspace account">
             <AccountPanel
               identity={identity}
@@ -768,149 +766,6 @@ function DeveloperAdvancedPanel({
           </SurfaceSection>
         </div>
       </details>
-    </section>
-  );
-}
-
-function ProfileSetupHub({
-  profile,
-  state,
-  readiness,
-}: {
-  profile: ProductCompanyProfile | null;
-  state: ProfileState;
-  readiness: ProductLaunchReadinessResult;
-}) {
-  const website = profileWebsite(profile);
-  const connectedChannels = [
-    state.outlookAccount?.status === "connected" ? "email" : null,
-    state.linkedInAccount?.status === "connected" ? "LinkedIn" : null,
-  ].filter(Boolean);
-  const channelSummary =
-    connectedChannels.length > 0
-      ? connectedChannels.join(" + ")
-      : "Connect email or LinkedIn";
-  const contactSummary =
-    state.contactQuality.reachable > 0
-      ? `${state.contactQuality.reachable} reachable contacts`
-      : "Waiting on verified contacts";
-  const next = profileReadinessNextAction(readiness);
-  const setupItems = [
-    {
-      title: "Company and buyer fit",
-      detail: profile?.company_name
-        ? `${profile.company_name}${website ? ` - ${website}` : ""}`
-        : "Add the website and positioning the agent should represent.",
-      href: "#profile",
-      icon: "add_business",
-      ready: Boolean(profile?.company_name && website),
-    },
-    {
-      title: "Rep voice and templates",
-      detail:
-        state.rep && state.icp
-          ? `${agentDisplayName(state.rep.role)} acts on ${state.icp.name}.`
-          : "Define the buyer profile, voice, daily ceiling, and approval mode.",
-      href: "#agent",
-      icon: "badge",
-      ready: Boolean(state.rep && state.icp),
-    },
-    {
-      title: "Channels and limits",
-      detail: channelSummary,
-      href: "#channels",
-      icon: "hub",
-      ready:
-        state.outlookAccount?.status === "connected" ||
-        state.linkedInAccount?.status === "connected",
-    },
-    {
-      title: "Signals and gates",
-      detail: `${contactSummary}; ${state.contactQuality.verifiedEmails} verified emails and ${state.contactQuality.linkedInProfiles} LinkedIn profiles.`,
-      href: "#signal-setup",
-      icon: "sensors",
-      ready:
-        state.contactQuality.reachable > 0 &&
-        state.signalSetup.activeSources > 0,
-    },
-    {
-      title: "Blocklist",
-      detail:
-        state.suppressionStats.total > 0
-          ? `${state.suppressionStats.total} contacts protected`
-          : "Bounces, unsubscribes, and do-not-contact.",
-      href: "#blocklist",
-      icon: "report",
-      ready: true,
-    },
-  ];
-  const readyCount = setupItems.filter((step) => step.ready).length;
-  return (
-    <section className="section-note grid gap-5">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="max-w-2xl">
-          <p className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent)]">
-            Setup hub
-          </p>
-          <h2
-            className="mt-1 text-[18px] font-semibold text-[var(--color-text-1)]"
-            style={{ fontFamily: "var(--font-display)" }}
-          >
-            The user-facing setup path.
-          </h2>
-          <p className="mt-2 text-sm leading-6 text-[var(--color-text-3)]">
-            Company context shapes buyer fit, Rep voice guides drafts, connected
-            channels set limits, and contact gates decide what can safely move.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-[8px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] px-3 py-1 font-mono text-[12px] text-[var(--color-text-2)]">
-            {readyCount}/{setupItems.length} ready
-          </span>
-          <Link href={next.href} prefetch={false} className="btn-solid-sm">
-            <Icon name={next.icon} size={14} />
-            {next.label}
-          </Link>
-        </div>
-      </div>
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-        {setupItems.map((step) => (
-          <Link
-            key={step.title}
-            href={step.href}
-            prefetch={false}
-            className="group flex min-h-[150px] flex-col rounded-[10px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]/50"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
-                <Icon name={step.icon} size={16} />
-              </span>
-              <StatusPill ready={step.ready} />
-            </div>
-            <p className="mt-4 text-sm font-semibold text-[var(--color-text-1)]">
-              {step.title}
-            </p>
-            <p className="mt-2 line-clamp-2 text-xs leading-5 text-[var(--color-text-3)]">
-              {step.detail}
-            </p>
-          </Link>
-        ))}
-      </div>
-      <div className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 md:grid-cols-[1fr_auto] md:items-center">
-        <p className="text-sm leading-6 text-[var(--color-text-3)]">
-          {readiness.launch_ready
-            ? `Ready: ${channelSummary} can now move qualified signals into outreach.`
-            : `${readiness.blockers.length} launch blocker${readiness.blockers.length === 1 ? "" : "s"} remaining before outreach can run.`}
-        </p>
-        <Link
-          href="/dashboard/agent#qualified-signals"
-          prefetch={false}
-          className="btn-quiet-sm w-fit"
-        >
-          <Icon name="arrow_forward" size={14} />
-          Open Agent
-        </Link>
-      </div>
     </section>
   );
 }
@@ -1285,131 +1140,11 @@ function readinessActionIcon(
   return "mail";
 }
 
-function ProfileSectionNav({
-  profile,
-  outlookAccount,
-  linkedInAccount,
-  rep,
-  icp,
-  suppressionStats,
-  contactQuality,
-}: {
-  profile: ProductCompanyProfile | null;
-  outlookAccount: ProfileOutlookAccount | null;
-  linkedInAccount: ProfileLinkedInAccount | null;
-  rep: ProfileRepRow | null;
-  icp: ProfileIcpRow | null;
-  suppressionStats: ProfileSuppressionStats;
-  contactQuality: ProfileContactQuality;
-}) {
-  const sections = [
-    {
-      title: "Company fit",
-      detail: profile?.company_name ?? "Company profile",
-      href: "#profile",
-      icon: "add_business",
-      ready: Boolean(profile?.company_name && profileWebsite(profile)),
-    },
-    {
-      title: "Rep voice",
-      detail: rep && icp ? `${agentDisplayName(rep.role)} + ${icp.name}` : "Audience and voice",
-      href: "#agent",
-      icon: "badge",
-      ready: Boolean(rep && icp),
-    },
-    {
-      title: "Channels",
-      detail:
-        outlookAccount || linkedInAccount
-          ? channelReadinessLabel(outlookAccount, linkedInAccount)
-          : "Connect Outlook or LinkedIn",
-      href: "#channels",
-      icon: "hub",
-      ready:
-        outlookAccount?.status === "connected" ||
-        linkedInAccount?.status === "connected",
-    },
-    {
-      title: "Signals",
-      detail:
-        contactQuality.reachable > 0
-          ? `${contactQuality.reachable} reachable contacts`
-          : "Watchlist and quality gates",
-      href: "#signal-setup",
-      icon: "sensors",
-      ready: contactQuality.reachable > 0,
-    },
-    {
-      title: "Blocklist",
-      detail:
-        suppressionStats.total > 0
-          ? `${suppressionStats.total} protected`
-          : "Bounces and opt-outs",
-      href: "#blocklist",
-      icon: "report",
-      ready: true,
-    },
-    {
-      title: "Advanced",
-      detail: "Developer tools",
-      href: "#tools",
-      icon: "account_tree",
-      ready: true,
-    },
-  ];
-  return (
-    <nav
-      aria-label="Profile sections"
-      className="section-note flex gap-2 overflow-x-auto p-2"
-    >
-      {sections.map((section) => (
-        <Link
-          key={section.title}
-          href={section.href}
-          prefetch={false}
-          className="group flex min-w-[154px] items-center gap-3 rounded-[8px] px-3 py-2 transition-colors hover:bg-[var(--color-ink-0)]"
-        >
-          <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
-            <Icon name={section.icon} size={15} />
-          </span>
-          <span className="min-w-0">
-            <span className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text-1)]">
-              {section.title}
-              <span
-                className={
-                  "size-1.5 rounded-full " +
-                  (section.ready
-                    ? "bg-[var(--color-pos)]"
-                    : "bg-[var(--color-text-4)]")
-                }
-              />
-            </span>
-            <span className="mt-0.5 block truncate text-xs text-[var(--color-text-3)]">
-              {section.detail}
-            </span>
-          </span>
-        </Link>
-      ))}
-    </nav>
-  );
-}
-
 function channelReadinessCount(state: ProfileState): string {
   const ready =
     (state.outlookAccount?.status === "connected" ? 1 : 0) +
     (state.linkedInAccount?.status === "connected" ? 1 : 0);
   return `${ready}/2 ready`;
-}
-
-function channelReadinessLabel(
-  outlookAccount: ProfileOutlookAccount | null,
-  linkedInAccount: ProfileLinkedInAccount | null,
-): string {
-  const ready = [
-    outlookAccount?.status === "connected" ? "email" : null,
-    linkedInAccount?.status === "connected" ? "LinkedIn" : null,
-  ].filter(Boolean);
-  return ready.length > 0 ? ready.join(" + ") : "Connect channels";
 }
 
 function StatusPill({ ready }: { ready: boolean }) {
@@ -2290,6 +2025,17 @@ function CompanyProfileForm({
   return (
     <form action={editCompanyProfileAction} className="section-note grid gap-5">
       <input type="hidden" name="return_to" value="/dashboard/profile" />
+      <CompanyProfileHiddenFields
+        profile={profile}
+        omit={[
+          "company_name",
+          "website_url",
+          "description",
+          "target_titles",
+          "value_proposition",
+          "signal_keywords",
+        ]}
+      />
       <div className="grid gap-4 md:grid-cols-2">
         <Field
           name="company_name"
@@ -2303,6 +2049,72 @@ function CompanyProfileForm({
           defaultValue={website}
           required
         />
+      </div>
+      <TextArea
+        name="description"
+        label="What you sell"
+        defaultValue={profile?.description ?? ""}
+        rows={3}
+      />
+      <div className="grid gap-4 md:grid-cols-2">
+        <TextArea
+          name="target_titles"
+          label="Who you target / buyer roles"
+          defaultValue={profile?.target_titles ?? ""}
+          rows={3}
+        />
+        <TextArea
+          name="value_proposition"
+          label="Pitch / value prop"
+          defaultValue={profile?.value_proposition ?? ""}
+          rows={3}
+        />
+      </div>
+      <TextArea
+        name="signal_keywords"
+        label="Key signal keywords"
+        defaultValue={profile?.signal_keywords ?? ""}
+        rows={3}
+      />
+      <PendingSubmitButton
+        className="btn-solid w-fit"
+        icon="save"
+        pendingLabel="Saving profile"
+      >
+        Save Company & ICP
+      </PendingSubmitButton>
+    </form>
+  );
+}
+
+function AdvancedCompanyProfileForm({
+  profile,
+}: {
+  profile: ProductCompanyProfile | null;
+}) {
+  return (
+    <form action={editCompanyProfileAction} className="section-note grid gap-5">
+      <input type="hidden" name="return_to" value="/dashboard/profile#tools" />
+      <CompanyProfileHiddenFields
+        profile={profile}
+        omit={[
+          "industry",
+          "company_size",
+          "customer_pain_points",
+          "target_markets",
+          "key_features",
+          "social_proof",
+          "competitor_watchlist",
+          "linkedin_signal_behaviors",
+          "exclusion_rules",
+          "preferred_language",
+          "outreach_goal",
+          "linkedin_company_url",
+          "auto_enrich_email_addresses",
+          "prevent_team_contact_duplication",
+        ]}
+      />
+      <div className="grid gap-4 md:grid-cols-2">
         <Field
           name="industry"
           label="Industry"
@@ -2312,51 +2124,21 @@ function CompanyProfileForm({
           name="company_size"
           label="Company size"
           defaultValue={profile?.company_size ?? ""}
-          options={[
-            ["", "Unspecified"],
-            ["1-10", "1-10 employees"],
-            ["11-50", "11-50 employees"],
-            ["51-200", "51-200 employees"],
-            ["201-500", "201-500 employees"],
-            ["501-1000", "501-1000 employees"],
-            ["1001-5000", "1001-5000 employees"],
-            ["5001-10000", "5001-10000 employees"],
-            ["10000+", "10000+ employees"],
-          ]}
+          options={companySizeOptions()}
         />
       </div>
-      <TextArea
-        name="description"
-        label="Company description"
-        defaultValue={profile?.description ?? ""}
-        rows={5}
-      />
-      <TextArea
-        name="value_proposition"
-        label="Value proposition"
-        defaultValue={profile?.value_proposition ?? ""}
-        rows={3}
-      />
       <TextArea
         name="customer_pain_points"
         label="Customer pain points"
         defaultValue={profile?.customer_pain_points ?? ""}
         rows={3}
       />
-      <div className="grid gap-4 md:grid-cols-2">
-        <TextArea
-          name="target_titles"
-          label="Buyer roles"
-          defaultValue={profile?.target_titles ?? ""}
-          rows={4}
-        />
-        <TextArea
-          name="target_markets"
-          label="Target markets"
-          defaultValue={profile?.target_markets ?? ""}
-          rows={4}
-        />
-      </div>
+      <TextArea
+        name="target_markets"
+        label="Target markets"
+        defaultValue={profile?.target_markets ?? ""}
+        rows={4}
+      />
       <div className="grid gap-4 md:grid-cols-2">
         <TextArea
           name="key_features"
@@ -2373,64 +2155,36 @@ function CompanyProfileForm({
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <TextArea
-          name="signal_keywords"
-          label="Signal keywords"
-          defaultValue={profile?.signal_keywords ?? ""}
-          rows={4}
-        />
-        <TextArea
           name="competitor_watchlist"
           label="Competitors to watch"
           defaultValue={profile?.competitor_watchlist ?? ""}
           rows={4}
         />
+        <TextArea
+          name="linkedin_signal_behaviors"
+          label="LinkedIn behavior to watch"
+          defaultValue={linkedinSignalBehaviorDefault(profile)}
+          rows={4}
+        />
       </div>
-      <TextArea
-        name="linkedin_signal_behaviors"
-        label="LinkedIn behavior to watch"
-        defaultValue={
-          profile?.linkedin_signal_behaviors ??
-          "Company and team engagement\nKeyworded post likes and comments\nRelevant LinkedIn profiles\nCompetitor engagement"
-        }
-        rows={4}
-      />
       <TextArea
         name="exclusion_rules"
         label="Do not contact"
         defaultValue={profile?.exclusion_rules ?? ""}
         rows={3}
       />
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2">
         <Select
           name="preferred_language"
           label="Preferred language"
           defaultValue={profile?.preferred_language ?? "English (US)"}
-          options={[
-            ["English (US)", "English (US)"],
-            ["English (UK)", "English (UK)"],
-            ["Spanish", "Spanish"],
-            ["French", "French"],
-            ["German", "German"],
-          ]}
+          options={preferredLanguageOptions()}
         />
         <Select
           name="outreach_goal"
           label="Outreach goal"
           defaultValue={profile?.outreach_goal ?? "conversations"}
-          options={[
-            ["conversations", "Start conversations"],
-            ["demos", "Book qualified demos"],
-          ]}
-        />
-        <Select
-          name="message_tone"
-          label="Message tone"
-          defaultValue={profile?.message_tone ?? "professional"}
-          options={[
-            ["professional", "Professional"],
-            ["conversational", "Conversational"],
-            ["direct", "Direct"],
-          ]}
+          options={outreachGoalOptions()}
         />
       </div>
       <Field
@@ -2455,12 +2209,146 @@ function CompanyProfileForm({
       <PendingSubmitButton
         className="btn-solid w-fit"
         icon="save"
-        pendingLabel="Saving profile"
+        pendingLabel="Saving advanced profile"
       >
-        Save profile
+        Save advanced profile
       </PendingSubmitButton>
     </form>
   );
+}
+
+function CompanyProfileHiddenFields({
+  profile,
+  omit = [],
+}: {
+  profile: ProductCompanyProfile | null;
+  omit?: string[];
+}) {
+  const omitted = new Set(omit);
+  const fields: Array<[string, string]> = [
+    ["company_name", profile?.company_name ?? ""],
+    ["website_url", profileWebsite(profile)],
+    ["industry", profile?.industry ?? ""],
+    ["company_size", profile?.company_size ?? ""],
+    ["description", profile?.description ?? ""],
+    ["value_proposition", profile?.value_proposition ?? ""],
+    ["customer_pain_points", profile?.customer_pain_points ?? ""],
+    ["target_titles", profile?.target_titles ?? ""],
+    ["target_markets", profile?.target_markets ?? ""],
+    ["key_features", profile?.key_features ?? ""],
+    ["social_proof", profile?.social_proof ?? ""],
+    ["signal_keywords", profile?.signal_keywords ?? ""],
+    ["competitor_watchlist", profile?.competitor_watchlist ?? ""],
+    ["linkedin_signal_behaviors", linkedinSignalBehaviorDefault(profile)],
+    ["exclusion_rules", profile?.exclusion_rules ?? ""],
+    ["preferred_language", profile?.preferred_language ?? "English (US)"],
+    ["outreach_goal", profile?.outreach_goal ?? "conversations"],
+    ["message_tone", profile?.message_tone ?? "professional"],
+    ["linkedin_company_url", profile?.linkedin_company_url ?? ""],
+  ];
+  const autoEnrich = profile?.auto_enrich_email_addresses ?? true;
+  const preventDupes = profile?.prevent_team_contact_duplication ?? true;
+  return (
+    <>
+      {fields
+        .filter(([name]) => !omitted.has(name))
+        .map(([name, value]) => (
+          <input key={name} type="hidden" name={name} value={value} />
+        ))}
+      {!omitted.has("auto_enrich_email_addresses") && autoEnrich ? (
+        <input type="hidden" name="auto_enrich_email_addresses" value="on" />
+      ) : null}
+      {!omitted.has("prevent_team_contact_duplication") && preventDupes ? (
+        <input type="hidden" name="prevent_team_contact_duplication" value="on" />
+      ) : null}
+    </>
+  );
+}
+
+function ActivationHiddenFields({
+  rep,
+  icp,
+  outlookAccount,
+  omit = [],
+}: {
+  rep: ProfileRepRow | null;
+  icp: ProfileIcpRow | null;
+  outlookAccount: ProfileOutlookAccount | null;
+  omit?: string[];
+}) {
+  const omitted = new Set(omit);
+  const fields: Array<[string, string]> = [
+    ["icp_description", profileIcpDescription(icp)],
+    ["rep_voice", profileRepVoice(rep)],
+    ["rep_story", profileRepStory(rep)],
+    ["daily_cap", String(profileDailyCap(rep, outlookAccount))],
+    ["approval", profileApproval(rep)],
+    ["icp_name", icp?.name ?? "Default audience"],
+    ["signal_kind", "hiring"],
+    ["match_threshold", icp ? Number(icp.match_threshold).toFixed(2) : "0.60"],
+  ];
+  return (
+    <>
+      {fields
+        .filter(([name]) => !omitted.has(name))
+        .map(([name, value]) => (
+          <input key={name} type="hidden" name={name} value={value} />
+        ))}
+      {rep ? (
+        <input type="hidden" name="rep_id" value={rep.id} />
+      ) : (
+        <input type="hidden" name="rep_name" value="Outbound agent" />
+      )}
+    </>
+  );
+}
+
+function companySizeOptions(): Array<[string, string]> {
+  return [
+    ["", "Unspecified"],
+    ["1-10", "1-10 employees"],
+    ["11-50", "11-50 employees"],
+    ["51-200", "51-200 employees"],
+    ["201-500", "201-500 employees"],
+    ["501-1000", "501-1000 employees"],
+    ["1001-5000", "1001-5000 employees"],
+    ["5001-10000", "5001-10000 employees"],
+    ["10000+", "10000+ employees"],
+  ];
+}
+
+function preferredLanguageOptions(): Array<[string, string]> {
+  return [
+    ["English (US)", "English (US)"],
+    ["English (UK)", "English (UK)"],
+    ["Spanish", "Spanish"],
+    ["French", "French"],
+    ["German", "German"],
+  ];
+}
+
+function outreachGoalOptions(): Array<[string, string]> {
+  return [
+    ["conversations", "Start conversations"],
+    ["demos", "Book qualified demos"],
+  ];
+}
+
+function messageToneOptions(): Array<[string, string]> {
+  return [
+    ["professional", "Professional"],
+    ["conversational", "Conversational"],
+    ["direct", "Direct"],
+  ];
+}
+
+function approvalOptions(): Array<[string, string]> {
+  return [
+    ["none", "Autonomous after checks"],
+    ["always", "Review every move"],
+    ["approve_first", "Review the first move"],
+    ["research_only", "Research only"],
+  ];
 }
 
 function ProfilePreferenceCheckbox({
@@ -2494,7 +2382,7 @@ function ProfilePreferenceCheckbox({
   );
 }
 
-function AgentActivationForm({
+function IcpActivationForm({
   rep,
   icp,
   outlookAccount,
@@ -2503,20 +2391,118 @@ function AgentActivationForm({
   icp: ProfileIcpRow | null;
   outlookAccount: ProfileOutlookAccount | null;
 }) {
-  const dailyCap =
-    rep?.autonomy?.channels?.email?.daily_cap ?? outlookAccount?.daily_cap ?? 25;
-  const approval = rep?.autonomy?.channels?.email?.approval ?? "none";
   return (
     <form action={configureActivationAction} className="section-note grid gap-5">
-      <input type="hidden" name="return_to" value="/dashboard/profile#agent" />
+      <input type="hidden" name="return_to" value="/dashboard/profile#profile" />
+      <ActivationHiddenFields
+        rep={rep}
+        icp={icp}
+        outlookAccount={outlookAccount}
+        omit={["icp_description"]}
+      />
       <TextArea
         name="icp_description"
-        label="Target companies and people"
+        label="ICP notes"
         rows={3}
         defaultValue={
           icp?.description ??
           "Companies showing fresh hiring intent around GTM, operations, or revenue roles."
         }
+      />
+      <PendingSubmitButton
+        className="btn-solid w-fit"
+        icon="check"
+        pendingLabel="Saving ICP"
+      >
+        Save ICP
+      </PendingSubmitButton>
+    </form>
+  );
+}
+
+function ChannelLimitForm({
+  rep,
+  icp,
+  outlookAccount,
+}: {
+  rep: ProfileRepRow | null;
+  icp: ProfileIcpRow | null;
+  outlookAccount: ProfileOutlookAccount | null;
+}) {
+  const dailyCap = profileDailyCap(rep, outlookAccount);
+  return (
+    <form
+      action={configureActivationAction}
+      className="section-note grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end"
+    >
+      <input type="hidden" name="return_to" value="/dashboard/profile#channels" />
+      <ActivationHiddenFields
+        rep={rep}
+        icp={icp}
+        outlookAccount={outlookAccount}
+        omit={["daily_cap"]}
+      />
+      <Field
+        name="daily_cap"
+        label="Daily send limit"
+        type="number"
+        defaultValue={String(dailyCap)}
+      />
+      <PendingSubmitButton
+        className="btn-solid w-fit"
+        icon="check"
+        pendingLabel="Saving limit"
+      >
+        Save limit
+      </PendingSubmitButton>
+    </form>
+  );
+}
+
+function MessageToneForm({
+  profile,
+}: {
+  profile: ProductCompanyProfile | null;
+}) {
+  return (
+    <form action={editCompanyProfileAction} className="section-note grid gap-5">
+      <input type="hidden" name="return_to" value="/dashboard/profile#agent" />
+      <CompanyProfileHiddenFields profile={profile} omit={["message_tone"]} />
+      <Select
+        name="message_tone"
+        label="Message tone"
+        defaultValue={profile?.message_tone ?? "professional"}
+        options={messageToneOptions()}
+      />
+      <PendingSubmitButton
+        className="btn-solid w-fit"
+        icon="save"
+        pendingLabel="Saving tone"
+      >
+        Save tone
+      </PendingSubmitButton>
+    </form>
+  );
+}
+
+function VoiceActivationForm({
+  rep,
+  icp,
+  outlookAccount,
+}: {
+  rep: ProfileRepRow | null;
+  icp: ProfileIcpRow | null;
+  outlookAccount: ProfileOutlookAccount | null;
+}) {
+  const approval = profileApproval(rep);
+  return (
+    <form action={configureActivationAction} className="section-note grid gap-5">
+      <input type="hidden" name="return_to" value="/dashboard/profile#agent" />
+      <ActivationHiddenFields
+        rep={rep}
+        icp={icp}
+        outlookAccount={outlookAccount}
+        omit={["rep_voice", "rep_story", "approval"]}
       />
       <TextArea
         name="rep_voice"
@@ -2542,43 +2528,18 @@ function AgentActivationForm({
           checks decide whether anything can move.
         </p>
       </div>
-      <div className="grid gap-4 md:grid-cols-2">
-        <Field
-          name="daily_cap"
-          label="Daily ceiling"
-          type="number"
-          defaultValue={String(dailyCap)}
-        />
-        <Select
-          name="approval"
-          label="Review mode"
-          defaultValue={approval}
-          options={[
-            ["none", "Autonomous after checks"],
-            ["always", "Review every move"],
-            ["approve_first", "Review the first move"],
-            ["research_only", "Research only"],
-          ]}
-        />
-      </div>
-      <input type="hidden" name="icp_name" value={icp?.name ?? "Default audience"} />
-      <input type="hidden" name="signal_kind" value="hiring" />
-      <input
-        type="hidden"
-        name="match_threshold"
-        value={icp ? Number(icp.match_threshold).toFixed(2) : "0.60"}
+      <Select
+        name="approval"
+        label="Review mode"
+        defaultValue={approval}
+        options={approvalOptions()}
       />
-      {rep ? (
-        <input type="hidden" name="rep_id" value={rep.id} />
-      ) : (
-        <input type="hidden" name="rep_name" value="Outbound agent" />
-      )}
       <PendingSubmitButton
         className="btn-solid w-fit"
         icon="check"
-        pendingLabel="Saving agent"
+        pendingLabel="Saving voice"
       >
-        Save audience and agent
+        Save voice and review
       </PendingSubmitButton>
     </form>
   );
@@ -2630,25 +2591,32 @@ function LinkedInPanel({
           <BrandIcon name="linkedin" size={18} />
         </span>
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-[var(--color-text-1)]">
-            LinkedIn accounts
-          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold text-[var(--color-text-1)]">
+              LinkedIn accounts
+            </p>
+            <span className="rounded-full bg-[var(--color-ink-2)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-text-3)]">
+              Coming soon
+            </span>
+          </div>
           <p className="mt-1 text-sm leading-6 text-[var(--color-text-3)]">
-            Connect up to two LinkedIn accounts for connection requests, DMs,
-            and warm outreach. Limits stay visible before the agent sends.
+            LinkedIn connection requests and DMs are coming soon. Outlook is
+            live now — connect it to start outreach today.
           </p>
         </div>
       </div>
 
-      <div className="grid gap-3">
-        {slots.map((account, index) => (
-          <LinkedInAccountSlot
-            key={account?.id ?? `linkedin-slot-${index}`}
-            account={account}
-            label={index === 0 ? "First account" : "Second account"}
-          />
-        ))}
-      </div>
+      {accounts.length > 0 ? (
+        <div className="grid gap-3">
+          {slots.map((account, index) => (
+            <LinkedInAccountSlot
+              key={account?.id ?? `linkedin-slot-${index}`}
+              account={account}
+              label={index === 0 ? "First account" : "Second account"}
+            />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -3131,9 +3099,54 @@ function mcpScopeList(scope: string | null): string[] {
   return scopes.length ? scopes : ["brief:read", "profile:read"];
 }
 
-function agentDisplayName(role: string): string {
-  if (role === "sdr") return "Outbound agent";
-  return "Agent";
+function profileWorkspaceName(
+  workspaceName: string,
+  profile: ProductCompanyProfile | null,
+): string {
+  const trimmed = workspaceName.trim();
+  if (trimmed && trimmed.toLowerCase() !== "default workspace") return trimmed;
+  return profile?.company_name?.trim() || trimmed || "Workspace";
+}
+
+function linkedinSignalBehaviorDefault(
+  profile: ProductCompanyProfile | null,
+): string {
+  return (
+    profile?.linkedin_signal_behaviors ??
+    "Company and team engagement\nKeyworded post likes and comments\nRelevant LinkedIn profiles\nCompetitor engagement"
+  );
+}
+
+function profileIcpDescription(icp: ProfileIcpRow | null): string {
+  return (
+    icp?.description ??
+    "Companies showing fresh hiring intent around GTM, operations, or revenue roles."
+  );
+}
+
+function profileRepVoice(rep: ProfileRepRow | null): string {
+  return (
+    rep?.persona.voice ??
+    "Direct, warm, specific, and allergic to generic sales fluff."
+  );
+}
+
+function profileRepStory(rep: ProfileRepRow | null): string {
+  return (
+    rep?.persona.story ??
+    "Open with the qualified signal, name the verified contact or LinkedIn profile, tie it to one relevant business reason, and ask for one concrete next step."
+  );
+}
+
+function profileDailyCap(
+  rep: ProfileRepRow | null,
+  outlookAccount: ProfileOutlookAccount | null,
+): number {
+  return rep?.autonomy?.channels?.email?.daily_cap ?? outlookAccount?.daily_cap ?? 25;
+}
+
+function profileApproval(rep: ProfileRepRow | null): string {
+  return rep?.autonomy?.channels?.email?.approval ?? "none";
 }
 
 function roleLabel(role: string): string {

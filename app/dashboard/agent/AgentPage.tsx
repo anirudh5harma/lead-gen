@@ -1632,30 +1632,143 @@ export default async function RepsPage() {
 
   return (
     <div className="space-y-6">
-      <AgentStatusHeader
+      <AgentTopStrip
         readiness={state.readiness}
         coverage={coverage}
+        learning={state.learning}
         primaryAgent={primaryAgent}
         reps={visibleReps}
         outreach={state.outreach}
-        sequence={sequence}
       />
-
-      <AgentReviewQueuePanel reviews={state.reviews} />
 
       <AgentConversationsPanel
         outreach={state.outreach}
         replies={state.replies}
+        reviews={state.reviews}
         rejected={state.rejectedDrafts}
       />
 
-      <AgentOpportunityPanel
+      <AgentLeadsPanel
         opportunities={state.opportunities}
-        signalMix={state.signalMix}
+        contacts={state.contacts}
       />
 
-      <AgentLearningPanel learning={state.learning} />
+      <AgentReviewQueuePanel reviews={state.reviews} />
+
+      <AgentAdvancedDetails
+        activity={state.activity}
+        coverage={coverage}
+        contacts={state.contacts}
+        learning={state.learning}
+        primaryAgent={primaryAgent}
+        readiness={state.readiness}
+        reps={visibleReps}
+        sequence={sequence}
+        signalMix={state.signalMix}
+        strategy={state.strategy}
+      />
     </div>
+  );
+}
+
+function AgentTopStrip({
+  readiness,
+  coverage,
+  learning,
+  primaryAgent,
+  reps,
+  outreach,
+}: {
+  readiness: WorkspaceLaunchReadiness;
+  coverage: ChannelCoverage;
+  learning: AgentLearningSummary;
+  primaryAgent: RepRow | null;
+  reps: RepRow[];
+  outreach: AgentOutreachSummary;
+}) {
+  const channelConnected = coverage.email.connected || coverage.linkedIn.connected;
+  const next = channelConnected
+    ? readinessNextAction(readiness)
+    : {
+        href: "/dashboard/profile#channels",
+        icon: "account_tree",
+        label: "Connect Outlook / LinkedIn to start outreach",
+      };
+  const sent7d = outreach.email_sent_7d + outreach.linkedin_sent_7d;
+  const openConversations = sumRepMetric(reps, "open_conversations");
+  return (
+    <section
+      className={
+        "rounded-[16px] border p-4 md:p-5 " +
+        (channelConnected
+          ? "border-[var(--color-line-1)] bg-[var(--color-ink-0)]"
+          : "border-[var(--color-warn)] bg-[var(--color-warn-bg)]")
+      }
+      aria-label="Agent overview"
+    >
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={
+                "inline-flex items-center gap-1.5 rounded-[8px] px-2.5 py-1 text-xs font-medium " +
+                (channelConnected
+                  ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+                  : "bg-[var(--color-ink-0)] text-[var(--color-warn)]")
+              }
+            >
+              <Icon name={channelConnected ? "check_circle" : "sync_problem"} size={13} />
+              {channelConnected ? "Outreach ready" : "Connect a channel"}
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-[8px] bg-[var(--color-ink-0)] px-2.5 py-1 text-xs text-[var(--color-text-2)] ring-1 ring-[var(--color-line-1)]">
+              <Icon name="event_available" size={13} />
+              {learning.meetings_7d} meeting
+              {learning.meetings_7d === 1 ? "" : "s"} booked this week
+            </span>
+          </div>
+          <h1
+            className="mt-3 text-2xl font-semibold tracking-normal text-[var(--color-text-1)] md:text-3xl"
+            style={{ fontFamily: "var(--font-display)" }}
+          >
+            Agent
+          </h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--color-text-3)]">
+            Finds leads, sends email and LinkedIn, drafts replies for approval,
+            and keeps meetings booked as the scoreboard.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+          <MiniStat label="Open threads" value={openConversations} />
+          <MiniStat label="Sent 7d" value={sent7d} />
+          {channelConnected && readiness.launch_ready ? (
+            <form action={prepareQualifiedSignalsAction}>
+              <input type="hidden" name="limit" value="25" />
+              <input type="hidden" name="return_to" value="/dashboard/agent#leads" />
+              <PendingSubmitButton
+                className="btn-solid-sm"
+                icon="send"
+                iconSize={14}
+                pendingLabel="Preparing"
+              >
+                Prepare outreach
+              </PendingSubmitButton>
+            </form>
+          ) : (
+            <Link href={next.href} prefetch={false} className="btn-solid-sm">
+              <Icon name={next.icon} size={14} />
+              {next.label}
+            </Link>
+          )}
+          {primaryAgent ? (
+            <Link href="/dashboard/profile#agent" prefetch={false} className="btn-quiet-sm">
+              <Icon name="edit_note" size={14} />
+              Edit voice
+            </Link>
+          ) : null}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -1801,6 +1914,7 @@ function AgentStatusHeader({
 type AgentConversationItem =
   | { kind: "reply"; key: string; at: Date; reply: AgentReplyRow }
   | { kind: "sent"; key: string; at: Date; message: AgentOutreachRow }
+  | { kind: "draft"; key: string; at: Date; approval: AgentReviewRow }
   | {
       kind: "followup";
       key: string;
@@ -1812,10 +1926,12 @@ type AgentConversationItem =
 function AgentConversationsPanel({
   outreach,
   replies,
+  reviews,
   rejected,
 }: {
   outreach: AgentOutreachSummary;
   replies: AgentReplySummary;
+  reviews: AgentReviewSummary;
   rejected: RejectedDraftSummary;
 }) {
   const items: AgentConversationItem[] = [
@@ -1825,18 +1941,28 @@ function AgentConversationsPanel({
       at: reply.received_at,
       reply,
     })),
+    ...reviews.recent
+      .filter((approval) => Boolean(approval.conversation_id))
+      .map((approval) => ({
+        kind: "draft" as const,
+        key: `draft:${approval.id}`,
+        at: approval.created_at,
+        approval,
+      })),
     ...outreach.recent.map((message) => ({
       kind: "sent" as const,
       key: `sent:${message.id}`,
       at: message.sent_at ?? message.created_at,
       message,
     })),
-    ...outreach.accepted_followups.map((followup) => ({
-      kind: "followup" as const,
-      key: `followup:${followup.accepted_event_id}`,
-      at: followup.accepted_at,
-      followup,
-    })),
+    ...outreach.accepted_followups
+      .filter((followup) => Boolean(followup.conversation_id))
+      .map((followup) => ({
+        kind: "followup" as const,
+        key: `followup:${followup.accepted_event_id}`,
+        at: followup.accepted_at,
+        followup,
+      })),
     ...rejected.recent.slice(0, 4).map((row) => ({
       kind: "rejected" as const,
       key: `rejected:${row.id}`,
@@ -1857,9 +1983,9 @@ function AgentConversationsPanel({
       <SurfaceSection
         title="Conversations"
         action={
-          <Link href="/dashboard/agent#qualified-signals" className="btn-quiet-sm">
-            <Icon name="sensors" size={14} />
-            Open signals
+          <Link href="/dashboard/agent#thumb" className="btn-quiet-sm">
+            <Icon name="rate_review" size={14} />
+            Needs your thumb
           </Link>
         }
       >
@@ -1867,11 +1993,11 @@ function AgentConversationsPanel({
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-[var(--color-text-1)]">
-                Proof-trace threads
+                Email and LinkedIn threads
               </p>
               <p className="mt-1 max-w-[70ch] text-xs leading-5 text-[var(--color-text-3)]">
-                Sent outreach, replies, LinkedIn accepts, and judge-held drafts
-                are grouped by the conversation proof you can inspect.
+                Replies that need approval stay at the top with the draft ready
+                to send. Sent threads stay visible until the next reply lands.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -1888,7 +2014,7 @@ function AgentConversationsPanel({
             <div className="mt-4">
               <EmptyState
                 title="No conversations yet"
-                hint="When the agent sends, receives a reply, or records a LinkedIn accept, the proof trace will appear here."
+                hint="When the agent sends email or LinkedIn outreach, threads appear here."
                 cta={{
                   href: "/dashboard/profile#channels",
                   label: "Connect accounts",
@@ -1911,6 +2037,9 @@ function AgentConversationsPanel({
 
 function AgentConversationRow({ item }: { item: AgentConversationItem }) {
   if (item.kind === "reply") return <AgentReplyLink reply={item.reply} />;
+  if (item.kind === "draft") {
+    return <AgentDraftConversationRow approval={item.approval} />;
+  }
   if (item.kind === "followup") {
     return <AcceptedConnectionFollowupLink row={item.followup} />;
   }
@@ -2781,6 +2910,422 @@ function emptyRepsState(workspaceId: string): RepsState {
   };
 }
 
+function AgentAdvancedDetails({
+  activity,
+  contacts,
+  coverage,
+  learning,
+  primaryAgent,
+  readiness,
+  reps,
+  sequence,
+  signalMix,
+  strategy,
+}: {
+  activity: AgentActivity;
+  contacts: AgentContactSummary;
+  coverage: ChannelCoverage;
+  learning: AgentLearningSummary;
+  primaryAgent: RepRow | null;
+  readiness: WorkspaceLaunchReadiness;
+  reps: RepRow[];
+  sequence: AgentSequenceStep[];
+  signalMix: AgentSignalMix;
+  strategy: AgentSourceStrategy;
+}) {
+  const activeSources = strategy.sources.filter((source) => source.enabled).length;
+  const readyChecks = readiness.checks.filter(
+    (check) => check.status === "ready",
+  ).length;
+  const emailPolicy = primaryAgent?.autonomy?.channels?.email;
+  const linkedInPolicy = primaryAgent
+    ? firstChannelPolicy(primaryAgent, ["linkedin_dm", "linkedin"])
+    : undefined;
+  const operatingMode = primaryAgent
+    ? agentOperatingMode(emailPolicy, linkedInPolicy)
+    : null;
+  return (
+    <details
+      id="advanced"
+      className="group rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)]"
+    >
+      <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 px-4 py-4 marker:hidden md:px-5">
+        <span>
+          <span className="block text-sm font-semibold text-[var(--color-text-1)]">
+            Advanced / Details
+          </span>
+          <span className="mt-1 block text-xs leading-5 text-[var(--color-text-3)]">
+            Source checks, message optimization, channel limits, and setup
+            details.
+          </span>
+        </span>
+        <span className="inline-flex items-center gap-2 rounded-[8px] bg-[var(--color-ink-2)] px-3 py-2 text-xs font-medium text-[var(--color-text-2)]">
+          <Icon
+            name="expand_more"
+            size={14}
+            className="transition-transform group-open:rotate-180"
+          />
+          Show details
+        </span>
+      </summary>
+
+      <div className="grid gap-4 border-t border-[var(--color-line-1)] p-4 md:p-5">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(300px,380px)]">
+          <section className="rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-1)] p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-[var(--color-text-1)]">
+                  Learning and optimization
+                </p>
+                <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
+                  Use recent replies and meetings to improve source choice and
+                  message patterns.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <form action={optimizeCampaignStrategyAction}>
+                  <input type="hidden" name="return_to" value="/dashboard/agent#advanced" />
+                  <input type="hidden" name="lookback_days" value="30" />
+                  <input type="hidden" name="min_samples" value="3" />
+                  <PendingSubmitButton
+                    className="btn-quiet-sm"
+                    icon="auto_graph"
+                    iconSize={14}
+                    pendingLabel="Optimizing"
+                  >
+                    Optimize strategy
+                  </PendingSubmitButton>
+                </form>
+                <form action={optimizePlaySkillsAction}>
+                  <input type="hidden" name="return_to" value="/dashboard/agent#advanced" />
+                  <input type="hidden" name="lookback_days" value="30" />
+                  <input type="hidden" name="min_samples" value="3" />
+                  <PendingSubmitButton
+                    className="btn-solid-sm"
+                    icon="science"
+                    iconSize={14}
+                    pendingLabel="Optimizing"
+                  >
+                    Optimize messages
+                  </PendingSubmitButton>
+                </form>
+              </div>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <MiniStat label="Positive replies" value={learning.positive_replies_7d} />
+              <MiniStat label="Meetings" value={learning.meetings_7d} />
+              <MiniStat label="Active reps" value={reps.length} />
+            </div>
+            <div className="mt-4 grid gap-2 lg:grid-cols-2">
+              <LearningSummaryCard
+                icon="auto_graph"
+                title="Strategy note"
+                summary={learning.strategy_summary}
+                updatedAt={learning.strategy_updated_at}
+                empty="No strategy note yet."
+              />
+              <LearningSummaryCard
+                icon="science"
+                title="Message note"
+                summary={learning.skill_summary}
+                updatedAt={learning.skill_updated_at}
+                empty="No message note yet."
+              />
+            </div>
+          </section>
+
+          <section className="rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-1)] p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-[var(--color-text-1)]">
+                  Channels and autonomy
+                </p>
+                <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
+                  Connected accounts, daily limits, and approval mode.
+                </p>
+              </div>
+              <Link href="/dashboard/profile#channels" prefetch={false} className="btn-quiet-sm">
+                <Icon name="account_tree" size={14} />
+                Manage channels
+              </Link>
+            </div>
+            <div className="mt-4 grid gap-2">
+              <AgentChannelPill
+                title="Outlook"
+                icon="mail"
+                connection={coverage.email}
+                policy={emailPolicy}
+              />
+              <AgentChannelPill
+                title="LinkedIn"
+                icon="linkedin"
+                connection={coverage.linkedIn}
+                policy={linkedInPolicy}
+              />
+            </div>
+            <div className="mt-4">
+              {operatingMode ? (
+                <AgentModeControl mode={operatingMode} />
+              ) : (
+                <div className="rounded-[8px] bg-[var(--color-ink-2)] px-3 py-3 text-sm text-[var(--color-text-3)]">
+                  Add the outbound agent voice before enabling autonomous
+                  outreach.
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-3">
+          <section className="rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-1)] p-4 lg:col-span-2">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-[var(--color-text-1)]">
+                  Signal mix and sources
+                </p>
+                <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
+                  See which timing sources became qualified leads this week.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <form action={checkAgentSourcesAction}>
+                  <input type="hidden" name="return_to" value="/dashboard/agent#advanced" />
+                  <input type="hidden" name="limit" value="25" />
+                  <PendingSubmitButton
+                    className="btn-quiet-sm"
+                    icon="sync_alt"
+                    iconSize={14}
+                    pendingLabel="Checking"
+                  >
+                    Check sources
+                  </PendingSubmitButton>
+                </form>
+                <form action={prepareQualifiedSignalsAction}>
+                  <input type="hidden" name="limit" value="25" />
+                  <input type="hidden" name="return_to" value="/dashboard/agent#leads" />
+                  <PendingSubmitButton
+                    className="btn-solid-sm"
+                    icon="send"
+                    iconSize={14}
+                    pendingLabel="Preparing"
+                  >
+                    Prepare outreach
+                  </PendingSubmitButton>
+                </form>
+              </div>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_260px]">
+              <div className="grid gap-2">
+                {signalMix.rows.length === 0 ? (
+                  <p className="rounded-[8px] bg-[var(--color-ink-2)] px-3 py-3 text-sm text-[var(--color-text-3)]">
+                    No signal mix yet. Check sources to start a fresh run.
+                  </p>
+                ) : (
+                  signalMix.rows.map((row) => (
+                    <SignalMixRow key={row.kind} row={row} />
+                  ))
+                )}
+              </div>
+              <div className="grid content-start gap-2">
+                <MiniStat label="Active sources" value={activeSources} />
+                <MiniStat label="Qualified 7d" value={signalMix.qualified_7d} />
+                <MiniStat label="Leads found" value={contacts.reachable} />
+              </div>
+            </div>
+            <div className="mt-4 grid gap-2 md:grid-cols-2">
+              {strategy.sources.length === 0 ? (
+                <p className="rounded-[8px] bg-[var(--color-ink-2)] px-3 py-3 text-sm text-[var(--color-text-3)]">
+                  No sources configured yet.
+                </p>
+              ) : (
+                strategy.sources.map((source) => (
+                  <SourceHealthRow key={source.id} source={source} />
+                ))
+              )}
+            </div>
+          </section>
+
+          <section className="rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-1)] p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-[var(--color-text-1)]">
+                  Setup details
+                </p>
+                <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
+                  Profile, sources, channels, and outreach rules.
+                </p>
+              </div>
+              <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-3)]">
+                {readyChecks}/{Math.max(readyChecks, readiness.checks.length)} ready
+              </span>
+            </div>
+            <div className="mt-4 grid gap-2">
+              {readiness.checks.length === 0 ? (
+                <p className="rounded-[8px] bg-[var(--color-ink-2)] px-3 py-3 text-sm text-[var(--color-text-3)]">
+                  Setup checks are not available right now.
+                </p>
+              ) : (
+                readiness.checks.map((check) => (
+                  <ReadinessCheckRow key={check.id} check={check} />
+                ))
+              )}
+            </div>
+            <div className="mt-4 grid gap-2 border-t border-[var(--color-line-1)] pt-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-4)]">
+                Plays and limits
+              </p>
+              {sequence.length === 0 ? (
+                <p className="rounded-[8px] bg-[var(--color-ink-2)] px-3 py-3 text-sm text-[var(--color-text-3)]">
+                  No email or LinkedIn play is active yet.
+                </p>
+              ) : (
+                sequence.map((step) => (
+                  <PlayLimitRow key={step.id} step={step} />
+                ))
+              )}
+              <Link href="/dashboard/profile#agent" prefetch={false} className="btn-quiet-sm w-fit">
+                <Icon name="rule" size={14} />
+                Edit rules
+              </Link>
+            </div>
+          </section>
+        </div>
+
+        <section className="rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-1)] p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-[var(--color-text-1)]">
+                Recent activity
+              </p>
+              <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
+                Last-hour source checks, drafts, sends, and replies.
+              </p>
+            </div>
+            <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-3)]">
+              {activity.active_workflows} active
+            </span>
+          </div>
+          <div className="mt-4 grid gap-2 md:grid-cols-5">
+            {agentLastHourStages(activity).map((stage) => (
+              <MiniStat key={stage.key} label={stage.label} value={stage.value} />
+            ))}
+          </div>
+        </section>
+      </div>
+    </details>
+  );
+}
+
+function SourceHealthRow({ source }: { source: AgentSourceRow }) {
+  return (
+    <div className="rounded-[8px] bg-[var(--color-ink-2)] px-3 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-semibold text-[var(--color-text-1)]">
+            {source.name}
+          </span>
+          <span className="mt-1 block truncate text-xs text-[var(--color-text-3)]">
+            {source.signal_kind ? signalKindLabel(source.signal_kind) : statusLabel(source.kind)}
+          </span>
+        </span>
+        <span
+          className={
+            "rounded-[8px] px-2 py-1 text-[11px] font-medium " +
+            (source.enabled
+              ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+              : "bg-[var(--color-ink-0)] text-[var(--color-text-3)]")
+          }
+        >
+          {source.enabled ? "On" : "Off"}
+        </span>
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        <MiniStat label="Seen" value={source.signals_week} />
+        <MiniStat label="Qualified" value={source.matched_week} />
+        <MiniStat label="Next" value={sourceCheckLabel(source.next_check_at)} />
+      </div>
+      {source.last_error ? (
+        <p className="mt-2 rounded-[8px] bg-[var(--color-warn-bg)] px-3 py-2 text-xs leading-5 text-[var(--color-warn)]">
+          Needs attention.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function ReadinessCheckRow({ check }: { check: LaunchReadinessCheck }) {
+  const ready = check.status === "ready";
+  return (
+    <Link
+      href={check.action?.surface ?? readinessFallbackHref(check)}
+      prefetch={false}
+      className="flex items-center justify-between gap-3 rounded-[8px] bg-[var(--color-ink-2)] px-3 py-2 transition-colors hover:bg-[var(--color-ink-3)]"
+    >
+      <span className="flex min-w-0 items-center gap-2">
+        <span
+          className={
+            "grid size-7 shrink-0 place-items-center rounded-[8px] " +
+            (ready
+              ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+              : "bg-[var(--color-warn-bg)] text-[var(--color-warn)]")
+          }
+        >
+          <Icon name={ready ? "check_circle" : readinessActionIcon(check)} size={14} />
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate text-xs font-semibold text-[var(--color-text-1)]">
+            {check.label}
+          </span>
+          <span className="block truncate text-[11px] text-[var(--color-text-3)]">
+            {check.detail}
+          </span>
+        </span>
+      </span>
+      <span
+        className={
+          "rounded-[8px] px-2 py-1 text-[11px] font-medium " +
+          (ready
+            ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+            : "bg-[var(--color-ink-0)] text-[var(--color-text-3)]")
+        }
+      >
+        {ready ? "Ready" : "Needed"}
+      </span>
+    </Link>
+  );
+}
+
+function PlayLimitRow({ step }: { step: AgentSequenceStep }) {
+  return (
+    <div className="rounded-[8px] bg-[var(--color-ink-2)] px-3 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="grid size-7 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-0)] text-[var(--color-text-2)]">
+            <ChannelMark channel={step.channel} size={14} />
+          </span>
+          <span className="truncate text-xs font-semibold text-[var(--color-text-1)]">
+            {step.name}
+          </span>
+        </span>
+        <span className="rounded-[8px] bg-[var(--color-ink-0)] px-2 py-1 text-[11px] text-[var(--color-text-3)]">
+          {statusLabel(step.status)}
+        </span>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-[var(--color-text-3)]">
+        <span className="rounded-[8px] bg-[var(--color-ink-0)] px-2 py-1">
+          {channelLabel(step.channel)}
+        </span>
+        <span className="rounded-[8px] bg-[var(--color-ink-0)] px-2 py-1">
+          {step.daily_cap ?? "No"} daily limit
+        </span>
+        <span className="rounded-[8px] bg-[var(--color-ink-0)] px-2 py-1">
+          {approvalLabel(step.approval ?? "custom")}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function AgentSystemPanel({
   readiness,
   strategy,
@@ -3200,6 +3745,254 @@ function StrategyChips({
       </div>
     </div>
   );
+}
+
+function AgentLeadsPanel({
+  opportunities,
+  contacts,
+}: {
+  opportunities: QualifiedSignalWorkbench;
+  contacts: AgentContactSummary;
+}) {
+  return (
+    <div id="leads" className="scroll-mt-28">
+      <span id="qualified-signals" className="sr-only" aria-hidden="true" />
+      <SurfaceSection
+        title="Leads the agent is contacting"
+        action={
+          <form action={prepareQualifiedSignalsAction}>
+            <input type="hidden" name="limit" value="25" />
+            <input type="hidden" name="return_to" value="/dashboard/agent#leads" />
+            <PendingSubmitButton
+              className="btn-quiet-sm"
+              icon="send"
+              iconSize={14}
+              pendingLabel="Preparing"
+            >
+              Prepare outreach
+            </PendingSubmitButton>
+          </form>
+        }
+      >
+        <div className="rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-[var(--color-text-1)]">
+                Qualified leads
+              </p>
+              <p className="mt-1 max-w-[70ch] text-xs leading-5 text-[var(--color-text-3)]">
+                A scannable view of who the agent is working, why now matters,
+                and whether the next touch is contacted, drafted, or waiting.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <ConversationProofPill icon="person_search">
+                {contacts.in_outreach} in outreach
+              </ConversationProofPill>
+              <ConversationProofPill icon="rate_review">
+                {opportunities.stats.ready_for_review} drafted
+              </ConversationProofPill>
+            </div>
+          </div>
+
+          {opportunities.signals.length === 0 ? (
+            <div className="mt-4">
+              <EmptyState
+                title="No leads ready yet"
+                hint="When a qualified signal has a reachable person, it appears here as a lead."
+                cta={{
+                  href: "/dashboard/profile#profile",
+                  label: "Tune profile",
+                  icon: "person_search",
+                }}
+              />
+            </div>
+          ) : (
+            <div className="mt-4 grid gap-2">
+              {opportunities.signals.map((signal) => (
+                <AgentLeadRow key={signal.id} signal={signal} />
+              ))}
+            </div>
+          )}
+        </div>
+      </SurfaceSection>
+    </div>
+  );
+}
+
+function AgentLeadRow({ signal }: { signal: QualifiedSignalItem }) {
+  const contact = signal.contacts[0];
+  const draft = signal.outreach_draft;
+  const company = signal.company.name ?? signal.company.domain ?? "Unknown company";
+  const score =
+    signal.match_score == null ? null : Math.round(signal.match_score * 100);
+  const href = opportunityHref(signal, contact);
+  const deferAction = contactDeferAction(signal.contact_defer_reason);
+  const leadStatus = leadStatusLabel(signal);
+  return (
+    <article className="grid gap-3 rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+      <Link
+        href={href}
+        prefetch={false}
+        className="flex min-w-0 items-start gap-3 rounded-[8px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
+      >
+        <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-accent-bg)] text-[var(--color-accent)]">
+          <Icon name="person_search" size={17} />
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-semibold text-[var(--color-text-1)]">
+            {contact?.full_name ?? company}
+            {contact?.full_name ? (
+              <span className="font-normal text-[var(--color-text-3)]">
+                {" "}
+                at {company}
+              </span>
+            ) : null}
+          </span>
+          <span className="mt-1 block truncate text-sm text-[var(--color-text-2)]">
+            {contact?.title ?? signalKindLabel(signal.kind)}
+          </span>
+          <span className="mt-2 block line-clamp-2 text-xs leading-5 text-[var(--color-text-3)]">
+            <span className="font-medium text-[var(--color-text-2)]">Why now:</span>{" "}
+            {signal.title}
+          </span>
+          {signal.match_reason ? (
+            <span className="mt-1 block line-clamp-2 text-xs leading-5 text-[var(--color-text-3)]">
+              {signal.match_reason}
+            </span>
+          ) : null}
+        </span>
+      </Link>
+
+      <div className="flex flex-wrap items-center gap-2 md:justify-end">
+        <span
+          className={
+            "rounded-[8px] px-2.5 py-1 text-xs font-medium " +
+            (leadStatus.tone === "ready"
+              ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+              : leadStatus.tone === "review"
+                ? "bg-[var(--color-warn-bg)] text-[var(--color-warn)]"
+                : "bg-[var(--color-ink-2)] text-[var(--color-text-2)]")
+          }
+        >
+          {leadStatus.label}
+        </span>
+        {score == null ? null : (
+          <span className="rounded-[8px] bg-[var(--color-accent-bg)] px-2.5 py-1 text-xs text-[var(--color-accent)]">
+            {score}% fit
+          </span>
+        )}
+        <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
+          {contact ? contactLabel(contact) : "Finding contact"}
+        </span>
+        {draft ? (
+          <span className="inline-flex items-center gap-1.5 rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
+            <ChannelMark channel={draft.channel} size={13} />
+            {draft.pending_approval_id
+              ? "Draft ready to send"
+              : draftOpportunityLabel(draft.status, draft.channel)}
+          </span>
+        ) : null}
+        <span className="text-xs tabular-nums text-[var(--color-text-3)]">
+          {freshWhen(signal.freshness_at)}
+        </span>
+        {draft?.pending_approval_id ? (
+          <>
+            <form action={decideApprovalWithDraftAction}>
+              <input type="hidden" name="return_to" value="/dashboard/agent#leads" />
+              <input
+                type="hidden"
+                name="approval_id"
+                value={draft.pending_approval_id}
+              />
+              <input type="hidden" name="decision" value="approved" />
+              <PendingSubmitButton
+                className="btn-solid-sm"
+                icon="check"
+                iconSize={14}
+                pendingLabel="Sending"
+              >
+                Approve
+              </PendingSubmitButton>
+            </form>
+            <form action={decideApprovalWithDraftAction}>
+              <input type="hidden" name="return_to" value="/dashboard/agent#leads" />
+              <input
+                type="hidden"
+                name="approval_id"
+                value={draft.pending_approval_id}
+              />
+              <input type="hidden" name="decision" value="rejected" />
+              <PendingSubmitButton
+                className="btn-quiet-sm"
+                icon="close"
+                iconSize={14}
+                pendingLabel="Rejecting"
+              >
+                Reject
+              </PendingSubmitButton>
+            </form>
+          </>
+        ) : null}
+        {contact?.person_id ? (
+          <ContactQualificationControls
+            personId={contact.person_id}
+            currentDecision={contact.contact_fit_decision}
+            returnTo="/dashboard/agent#leads"
+            compact
+          />
+        ) : null}
+        {deferAction ? (
+          <Link href={deferAction.href} className="btn-quiet-sm">
+            <Icon name={deferAction.icon} size={14} />
+            {deferAction.label}
+          </Link>
+        ) : null}
+        {needsContactResolution(signal) ? (
+          <form action={resolveQualifiedSignalContactsAction}>
+            <input type="hidden" name="signal_id" value={signal.id} />
+            <input type="hidden" name="return_to" value="/dashboard/agent#leads" />
+            <PendingSubmitButton
+              className="btn-quiet-sm"
+              icon="person_search"
+              iconSize={14}
+              pendingLabel="Finding"
+            >
+              Find contact
+            </PendingSubmitButton>
+          </form>
+        ) : null}
+        <form action={dismissQualifiedSignalAction}>
+          <input type="hidden" name="signal_id" value={signal.id} />
+          <input type="hidden" name="return_to" value="/dashboard/agent#leads" />
+          <input
+            type="hidden"
+            name="reason"
+            value="Skipped from Agent because the lead is not a fit for outreach."
+          />
+          <button type="submit" className="btn-quiet-sm" title="Skip lead">
+            <Icon name="block" size={14} />
+            Skip
+          </button>
+        </form>
+      </div>
+    </article>
+  );
+}
+
+function leadStatusLabel(
+  signal: QualifiedSignalItem,
+): { label: string; tone: "ready" | "review" | "waiting" } {
+  const draft = signal.outreach_draft;
+  if (
+    draft?.status === "sent" ||
+    draft?.status === "delivered" ||
+    draft?.status === "replied"
+  ) {
+    return { label: "Contacted", tone: "ready" };
+  }
+  if (draft) return { label: "Drafted", tone: "review" };
+  return { label: "Waiting", tone: "waiting" };
 }
 
 function AgentOpportunityPanel({
@@ -4758,6 +5551,80 @@ function OperatingLoopChannel({
   );
 }
 
+function AgentDraftConversationRow({
+  approval,
+}: {
+  approval: AgentReviewRow;
+}) {
+  const payload = recordPayload(approval.payload) ?? {};
+  const subject =
+    stringPayload(payload, "subject") ??
+    approval.message_subject ??
+    reviewKindLabel(approval.kind);
+  const body =
+    stringPayload(payload, "body") ??
+    stringPayload(payload, "draft") ??
+    approval.reason;
+  const href = reviewProofHref(approval) ?? "/dashboard/agent#conversations";
+  const channel = approval.channel ?? stringPayload(payload, "channel");
+  return (
+    <article className="grid gap-3 rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+      <Link href={href} prefetch={false} className="flex min-w-0 items-start gap-3">
+        <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-warn-bg)] text-[var(--color-warn)]">
+          <Icon name="rate_review" size={17} />
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-semibold text-[var(--color-text-1)]">
+            {approval.counterparty_name ?? "Unknown contact"}
+            {approval.company_name ? (
+              <span className="font-normal text-[var(--color-text-3)]">
+                {" "}
+                at {approval.company_name}
+              </span>
+            ) : null}
+          </span>
+          <span className="mt-1 block truncate text-sm text-[var(--color-text-2)]">
+            {subject}
+          </span>
+          <span className="mt-1 block truncate text-xs text-[var(--color-text-3)]">
+            {reviewPreview(body)}
+          </span>
+          {approval.signal_title ? (
+            <span className="mt-2 block truncate text-xs text-[var(--color-text-3)]">
+              Why now: {approval.signal_title}
+            </span>
+          ) : null}
+        </span>
+      </Link>
+
+      <span className="flex flex-wrap items-center gap-2 md:justify-end">
+        <span className="rounded-[8px] bg-[var(--color-warn-bg)] px-2.5 py-1 text-xs font-medium text-[var(--color-warn)]">
+          Draft ready to send
+        </span>
+        <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
+          {channel ? channelLabel(channel) : reviewKindLabel(approval.kind)}
+        </span>
+        <span className="text-xs tabular-nums text-[var(--color-text-3)]">
+          {freshWhen(approval.created_at)}
+        </span>
+        <form action={decideApprovalWithDraftAction}>
+          <input type="hidden" name="return_to" value="/dashboard/agent#conversations" />
+          <input type="hidden" name="approval_id" value={approval.id} />
+          <input type="hidden" name="decision" value="approved" />
+          <PendingSubmitButton
+            className="btn-solid-sm"
+            icon="check"
+            iconSize={14}
+            pendingLabel="Sending"
+          >
+            Approve
+          </PendingSubmitButton>
+        </form>
+      </span>
+    </article>
+  );
+}
+
 function AgentReviewQueuePanel({
   reviews,
 }: {
@@ -4765,14 +5632,15 @@ function AgentReviewQueuePanel({
 }) {
   const visibleCount = reviews.recent.length;
   return (
-    <div id="review-queue" className="scroll-mt-28">
+    <div id="thumb" className="scroll-mt-28">
+      <span id="review-queue" className="sr-only" aria-hidden="true" />
       <SurfaceSection
         title="Needs your thumb"
         action={
           reviews.pending_count > 0 ? (
-            <Link href="/dashboard/agent#qualified-signals" className="btn-quiet-sm">
-              <Icon name="sensors" size={14} />
-              Open signals
+            <Link href="/dashboard/agent#conversations" className="btn-quiet-sm">
+              <Icon name="forum" size={14} />
+              Open conversations
             </Link>
           ) : undefined
         }
@@ -4782,8 +5650,8 @@ function AgentReviewQueuePanel({
             title="Nothing waiting on you"
             hint="When an email or LinkedIn draft needs approval, it appears here before the agent can continue."
             cta={{
-              href: "/dashboard/agent#qualified-signals",
-              label: "Open signals",
+              href: "/dashboard/agent#conversations",
+              label: "Open conversations",
               icon: "rate_review",
             }}
           />
@@ -4798,7 +5666,7 @@ function AgentReviewQueuePanel({
                   Approve or reject
                 </p>
                 <p className="mt-2 text-xs leading-5 text-[var(--color-text-3)]">
-                  These drafts already have channel and judge proof. Your thumb
+                  These drafts are ready for email or LinkedIn. Your thumb
                   decides whether the next message leaves.
                 </p>
               </div>
@@ -4814,7 +5682,7 @@ function AgentReviewQueuePanel({
               {reviews.pending_count > visibleCount ? (
                 <p className="rounded-[8px] bg-[var(--color-ink-2)] px-3 py-2 text-xs text-[var(--color-text-3)]">
                   +{reviews.pending_count - visibleCount} more waiting behind
-                  the same approval gate.
+                  the same approval step.
                 </p>
               ) : null}
             </div>
@@ -4912,11 +5780,11 @@ function AgentReviewRowCard({
         {href ? (
           <Link href={href} prefetch={false} className="btn-quiet-sm">
             <Icon name="arrow_forward" size={14} />
-            Open proof
+            Open thread
           </Link>
         ) : null}
         <form action={decideApprovalWithDraftAction}>
-          <input type="hidden" name="return_to" value="/dashboard/agent#review-queue" />
+          <input type="hidden" name="return_to" value="/dashboard/agent#thumb" />
           <input type="hidden" name="approval_id" value={approval.id} />
           <input type="hidden" name="decision" value="approved" />
           <PendingSubmitButton
@@ -4929,7 +5797,7 @@ function AgentReviewRowCard({
           </PendingSubmitButton>
         </form>
         <form action={decideApprovalWithDraftAction}>
-          <input type="hidden" name="return_to" value="/dashboard/agent#review-queue" />
+          <input type="hidden" name="return_to" value="/dashboard/agent#thumb" />
           <input type="hidden" name="approval_id" value={approval.id} />
           <input type="hidden" name="decision" value="rejected" />
           <PendingSubmitButton
@@ -4958,7 +5826,7 @@ function AgentRejectedDraftsPanel({
         {rows.length === 0 ? (
           <EmptyState
             title="No rejected drafts"
-            hint="The judge is approving every draft this week."
+            hint="No drafts have been blocked this week."
           />
         ) : (
           <div className="grid gap-2">
@@ -5019,7 +5887,7 @@ function RejectedDraftRowCard({ row }: { row: RejectedDraftRow }) {
           ) : null}
           {truncatedDetail ? (
             <span className="mt-2 block text-xs leading-5 text-[var(--color-text-3)]">
-              Judge: {truncatedDetail}
+              Quality note: {truncatedDetail}
             </span>
           ) : null}
         </span>
@@ -5028,12 +5896,10 @@ function RejectedDraftRowCard({ row }: { row: RejectedDraftRow }) {
       <span className="flex flex-wrap items-center gap-2 md:justify-end">
         {scoreLabel ? (
           <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs tabular-nums text-[var(--color-text-2)] mono">
-            Judge {scoreLabel}
+            Quality {scoreLabel}
           </span>
         ) : null}
-        <span className="pill pill-warn">
-          Reason: {deferReason ?? "eval_rejected"}
-        </span>
+        <span className="pill pill-warn">{rejectedDraftReasonLabel(deferReason)}</span>
         <span className="text-xs tabular-nums text-[var(--color-text-3)]">
           {freshWhen(row.created_at)}
         </span>
@@ -5042,15 +5908,23 @@ function RejectedDraftRowCard({ row }: { row: RejectedDraftRow }) {
   );
 }
 
+function rejectedDraftReasonLabel(reason: string | null): string {
+  if (reason === "eval_rejected" || reason === "eval_rejected_after_edit") {
+    return "Needs rewrite";
+  }
+  if (!reason) return "Needs review";
+  return "Needs review";
+}
+
 function ReviewQualityPill({ approval }: { approval: AgentReviewRow }) {
   const score = outreachEvalScore(approval.eval_score);
   const passed = approval.eval_passed;
   const label =
     passed === false
-      ? "Judge blocked"
+      ? "Needs rewrite"
       : score == null
-        ? "Judge passed"
-        : `Judge ${score}%`;
+        ? "Quality checked"
+        : `Quality ${score}%`;
   return (
     <span
       className={
@@ -5061,8 +5935,8 @@ function ReviewQualityPill({ approval }: { approval: AgentReviewRow }) {
       }
       title={
         passed === false
-          ? "The hot-path judge blocked this draft."
-          : "This draft passed the hot-path judge before entering review."
+          ? "This draft needs a rewrite before sending."
+          : "This draft passed the quality check before review."
       }
     >
       <Icon name={passed === false ? "block" : "verified"} size={12} />
@@ -5683,6 +6557,10 @@ function AgentRepliesPanel({
 function AgentReplyLink({ reply }: { reply: AgentReplyRow }) {
   const href = `/dashboard/agent/outreach/${reply.conversation_id}#message-${reply.inbound_message_id}`;
   const needsPrep = reply.intent_class === "meeting_intent" || reply.intent_class === "positive";
+  const needsApproval =
+    reply.reply_approval_id != null &&
+    (reply.reply_approval_decision == null ||
+      reply.reply_approval_decision === "pending");
   return (
     <article className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[1fr_auto] md:items-center">
       <Link href={href} prefetch={false} className="flex min-w-0 items-start gap-3">
@@ -5714,12 +6592,47 @@ function AgentReplyLink({ reply }: { reply: AgentReplyRow }) {
       </Link>
 
       <span className="flex flex-wrap items-center gap-2 md:justify-end">
+        <span
+          className={
+            "rounded-[8px] px-2.5 py-1 text-xs font-medium " +
+            (needsApproval
+              ? "bg-[var(--color-warn-bg)] text-[var(--color-warn)]"
+              : "bg-[var(--color-pos-bg)] text-[var(--color-pos)]")
+          }
+        >
+          {needsApproval
+            ? "Reply received - approve draft"
+            : "Reply received"}
+        </span>
         <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
           {replyIntentLabel(reply.intent_class)}
         </span>
         <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
           {replyDraftLabel(reply)}
         </span>
+        {needsApproval && reply.reply_approval_id ? (
+          <form action={decideApprovalWithDraftAction}>
+            <input
+              type="hidden"
+              name="return_to"
+              value="/dashboard/agent#conversations"
+            />
+            <input
+              type="hidden"
+              name="approval_id"
+              value={reply.reply_approval_id}
+            />
+            <input type="hidden" name="decision" value="approved" />
+            <PendingSubmitButton
+              className="btn-solid-sm"
+              icon="check"
+              iconSize={14}
+              pendingLabel="Sending"
+            >
+              Approve
+            </PendingSubmitButton>
+          </form>
+        ) : null}
         {reply.meeting_prep_generated_at ? (
           <span className="rounded-[8px] bg-[var(--color-pos-bg)] px-2.5 py-1 text-xs text-[var(--color-pos)]">
             {meetingPrepLabel(reply.meeting_prep_next_action)}
@@ -5729,7 +6642,7 @@ function AgentReplyLink({ reply }: { reply: AgentReplyRow }) {
             <input
               type="hidden"
               name="return_to"
-              value="/dashboard/agent#replies"
+              value="/dashboard/agent#conversations"
             />
             <input
               type="hidden"
@@ -5945,6 +6858,9 @@ function AgentOutreachLink({ message }: { message: AgentOutreachRow }) {
         </span>
       </span>
       <span className="flex flex-wrap items-center gap-2 md:justify-end">
+        <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs font-medium text-[var(--color-text-2)]">
+          Waiting for reply
+        </span>
         <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
           {channelLabel(message.channel)}
         </span>
@@ -6016,12 +6932,12 @@ function OutreachQualityPill({ message }: { message: AgentOutreachRow }) {
   const passed = message.eval_passed;
   const label =
     passed === false
-      ? "Judge blocked"
+      ? "Needs rewrite"
       : passed !== true
-        ? "Judge missing"
+        ? "Quality pending"
         : score == null
-          ? "Judge passed"
-          : `Judge ${score}%`;
+          ? "Quality checked"
+          : `Quality ${score}%`;
   const icon =
     passed === false ? "block" : passed === true ? "verified" : "sync_problem";
   return (
@@ -6036,10 +6952,10 @@ function OutreachQualityPill({ message }: { message: AgentOutreachRow }) {
       }
       title={
         passed === false
-          ? "The latest hot-path judge rejected this draft."
+          ? "The latest quality check rejected this draft."
           : passed === true
-            ? "This outreach passed the hot-path judge before sending."
-            : "No hot-path judge proof was found for this sent message."
+            ? "This outreach passed the quality check before sending."
+            : "No quality check was found for this sent message."
       }
     >
       <Icon name={icon} size={13} />
@@ -6077,7 +6993,7 @@ function reviewKindLabel(kind: string): string {
 }
 
 function reviewPreview(value: string | null): string {
-  if (!value) return "Review the Agent's gated draft before it can continue.";
+  if (!value) return "Review the agent's draft before it can continue.";
   const normalized = value.replace(/\s+/g, " ").trim();
   if (normalized.length <= 150) return normalized;
   return `${normalized.slice(0, 147)}...`;
@@ -6173,7 +7089,7 @@ function AgentModeControl({ mode }: { mode: AgentOperatingMode }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-text-4)]">
-            Operating mode
+            Approval mode
           </p>
           <p className="mt-1 text-sm font-semibold text-[var(--color-text-1)]">
             {detail.label}
@@ -6266,7 +7182,7 @@ function agentOperatingModeDetail(
   return {
     label: "Autopilot",
     description:
-      "The agent can send after contact verification, eval gates, caps, and channel health pass.",
+      "The agent can send after contact verification, quality checks, daily limits, and channel health pass.",
   };
 }
 
@@ -6717,36 +7633,3 @@ function NoWorkspaceReps() {
     </div>
   );
 }
-
-/*
-Agent dashboard redesign report
-
-Final visible sections:
-1. Compact status header: Rep/channel readiness, one blocker CTA, small channel/setup controls, and the preserved Autopilot/Copilot action.
-2. Needs your thumb: pending approval queue with the existing Approve/Reject server actions and proof links.
-3. Conversations: merged sent outreach, inbound replies, accepted LinkedIn follow-ups, and rejected draft context into one proof-trace list.
-4. Signals ready: qualified-signal queue with why-now copy, next action, contact resolution, fit feedback, skip, and approval controls.
-5. Learning: compact outcome-driven recommendations with preserved strategy/message optimization actions.
-
-Removed, merged, or relabeled:
-- Removed from the rendered surface: the sticky 8-anchor mode rail, operating-loop panel, live last-hour bar chart, event types list, active-workflows counter, system status panel, output handoff panel, contact workbench panel, setup snapshot metrics wall, and channel performance table.
-- Merged sent outreach and replies into Conversations; accepted LinkedIn follow-ups live there as next-touch conversation work.
-- Folded rejected drafts into Conversations as judge-held context instead of a top-level panel.
-- Folded weak signal warnings into Signals ready as plain next-action notes.
-- Relabeled "Review queue" to "Needs your thumb", "Qualified signals" to "Signals ready", and proof/eval statuses into user-facing badges.
-- Removed duplicate Brief-style metric cards for qualified signals, verified email counts, LinkedIn profile counts, active workflow totals, and last-hour activity.
-
-Functional controls preserved but visually de-emphasized:
-- prepareQualifiedSignalsAction, checkAgentSourcesAction, decideApprovalWithDraftAction, dismissQualifiedSignalAction, generateMeetingPrepAction, optimizeCampaignStrategyAction, optimizePlaySkillsAction, recordPersonFitFeedbackAction, resolveQualifiedSignalContactsAction, and updateWorkspaceAutonomyAction.
-- Autopilot/Copilot remains functional in the compact setup header; architecture still wants future per-Play x channel x volume gating instead of this coarse workspace control.
-- All data loaders and props remain intact, including output destinations, even when their old panel is no longer rendered.
-
-Shared-component changes flagged, not made:
-- SurfaceSection and EmptyState could use a compact dashboard variant with rounded-[16px] hairline cards and lower heading density.
-- PendingSubmitButton could expose an icon-only compact variant for dense approval rows.
-
-product-surface-contract.test.ts assertions needing updates:
-- Lines asserting AgentActivityPanel, AgentContactsPanel, AgentOutreachPanel, AgentRepliesPanel, AgentModeRail, aria-label="Agent work modes", System status, AgentHotSignalPaths, live last-hour operating-loop copy, AgentOperatingLoopPanel, AgentSetupSnapshot, OutputHandoff, and AgentSystemPanel should be replaced with the five-section surface.
-- Lines asserting exact render order ReviewQueue -> Outreach -> Replies -> Learning -> Opportunities -> Contacts -> System should be updated to StatusHeader -> ReviewQueue -> Conversations -> Signals -> Learning.
-- Lines asserting title="Sent outreach", "Agent outreach, last 7 days", "Replies ready", and "Qualified signals need contacts" should be updated to conversation-centric and plain-language labels.
-*/

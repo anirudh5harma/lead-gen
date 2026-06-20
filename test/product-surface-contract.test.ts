@@ -356,13 +356,15 @@ test("Dashboard routes setup work through Profile and current surfaces", () => {
   assert.doesNotMatch(dashboard, /Signal mix/);
   assert.doesNotMatch(dashboard, /href: "\/dashboard\/prospecting"/);
 
-  assert.match(profile, /ProfileSectionNav/);
-  assert.match(profile, /Company and buyer fit/);
-  assert.match(profile, /Rep voice and outreach templates/);
-  assert.match(profile, /Channels and sending limits/);
+  assert.match(profile, /<SurfaceSection title="Company & ICP">/);
+  assert.match(profile, /<SurfaceSection title="Channels">/);
+  assert.match(profile, /<SurfaceSection title="Voice & autonomy">/);
+  assert.match(profile, /ProfileAdvancedDrawer/);
+  assert.match(profile, /Advanced setup/);
+  assert.match(profile, /Long-tail company fields/);
   assert.match(profile, /Signal watchlist and contact-quality gates/);
   assert.match(profile, /Blocklist \/ contact protection/);
-  assert.match(profile, /Developer \/ Advanced/);
+  assert.match(profile, /Developer destinations and contracts/);
   assert.match(profile, /from "@\/core\/product\/output-destinations\.ts"/);
   assert.match(profile, /buildOutputDestinations/);
   assert.match(profile, /destinationIcon/);
@@ -391,40 +393,50 @@ test("Health presents agent observability from the event-sourced summary", () =>
 
 test("Profile presents merged Outlook and LinkedIn connection gates", () => {
   const settings = source("app/dashboard/profile/ProfilePage.tsx");
+  const topLevelProfile = settings.slice(
+    settings.indexOf("export default async function ProfilePage"),
+    settings.indexOf("<ProfileAdvancedDrawer"),
+  );
+  const advancedDrawer = settings.slice(
+    settings.indexOf("function ProfileAdvancedDrawer"),
+    settings.indexOf("function OutlookPanel"),
+  );
 
-  assert.match(settings, /<SurfaceSection title="Channels and sending limits">/);
+  assert.match(settings, /<SurfaceSection title="Channels">/);
   assert.match(settings, /<div id="channels">/);
   assert.match(settings, /<div id="email">/);
   assert.match(settings, /<div id="linkedin">/);
   assert.ok(
-    settings.indexOf('<div id="email">') > settings.indexOf('title="Channels and sending limits"') &&
+    settings.indexOf('<div id="email">') > settings.indexOf('title="Channels"') &&
       settings.indexOf('<div id="linkedin">') > settings.indexOf('<div id="email">'),
     "Outlook and LinkedIn controls should live inside the merged Channels section",
   );
   assert.match(settings, /href="\/api\/auth\/outlook\?return_to=%2Fdashboard%2Fprofile%23email"/);
-  assert.match(settings, /href="\/api\/auth\/linkedin\?return_to=%2Fdashboard%2Fprofile%23linkedin"/);
   assert.match(settings, /kind in \('linkedin_session','linkedin_oauth'\)/);
   assert.match(settings, /Outlook inbox/);
   assert.match(settings, /Connect Microsoft 365 for native send, threading, and reply sync/);
   assert.match(settings, /Connect Outlook/);
   assert.match(settings, /LinkedIn accounts/);
-  assert.match(settings, /Connect up to two LinkedIn accounts/);
-  assert.match(settings, /connection requests, DMs,\s+and warm outreach/);
+  assert.match(settings, /Coming soon/);
+  assert.match(settings, /LinkedIn connection requests and DMs are coming soon/);
+  assert.match(settings, /Outlook is\s+live now/);
   assert.match(settings, /First account/);
   assert.match(settings, /Second account/);
   assert.match(settings, /Account and limits/);
   assert.match(settings, /Connect account/);
-  assert.match(settings, /Setup hub/);
-  assert.match(settings, /The user-facing setup path/);
-  assert.match(settings, /Company context shapes buyer fit, Rep voice guides drafts, connected\s+channels set limits/);
-  assert.match(settings, /ProfileSectionNav/);
-  assert.match(settings, /href: "#channels"/);
-  assert.match(settings, /href: "#signal-setup"/);
-  assert.match(settings, /Buyer fit, intent signals, and contact quality in one loop/);
-  assert.match(settings, /Buyer filters/);
-  assert.match(settings, /Intent signals/);
-  assert.match(settings, /Quality gates/);
-  assert.match(settings, /5 gates ready/);
+  assert.match(settings, /Advanced setup/);
+  assert.match(settings, /Watchlists, quality gates, protection, long-tail profile\s+fields, source IDs, webhooks, MCP, CRM, and workspace account\s+details/);
+  assert.match(topLevelProfile, /<SurfaceSection title="Company & ICP">/);
+  assert.match(topLevelProfile, /<SurfaceSection title="Voice & autonomy">/);
+  assert.match(topLevelProfile, /<SurfaceSection title="Channels">/);
+  assert.doesNotMatch(topLevelProfile, /Signal watchlist and contact-quality gates/);
+  assert.match(advancedDrawer, /Signal watchlist and contact-quality gates/);
+  assert.match(advancedDrawer, /ProfileSignalBuilderPanel/);
+  assert.match(advancedDrawer, /Buyer fit, intent signals, and contact quality in one loop/);
+  assert.match(advancedDrawer, /Buyer filters/);
+  assert.match(advancedDrawer, /Intent signals/);
+  assert.match(advancedDrawer, /Quality gates/);
+  assert.match(advancedDrawer, /5 gates ready/);
   assert.match(settings, /sourceKinds/);
   assert.match(settings, /qualifiedSignals7d/);
   assert.match(settings, /state\.signalSetup\.activeSources/);
@@ -468,6 +480,18 @@ test("Agent learning surface owns message optimization from reply evidence", () 
   const reps = source("app/dashboard/agent/AgentPage.tsx");
   const actions = source("app/dashboard/actions.ts");
   const readiness = source("core/product/launch-readiness.ts");
+  const renderedSurface = reps.slice(
+    reps.indexOf("export default async function RepsPage"),
+    reps.indexOf("function AgentTopStrip"),
+  );
+  const advancedDetails = reps.slice(
+    reps.indexOf("function AgentAdvancedDetails"),
+    reps.indexOf("function SourceHealthRow"),
+  );
+  const modeControl = reps.slice(
+    reps.indexOf("function AgentModeControl"),
+    reps.indexOf("function agentOperatingMode"),
+  );
 
   assert.match(nextConfig, /source: "\/dashboard\/campaigns"/);
   assert.match(nextConfig, /source: "\/dashboard\/plays"/);
@@ -480,9 +504,11 @@ test("Agent learning surface owns message optimization from reply evidence", () 
   assert.match(actions, /dashboardReturnPath\(formData, "\/dashboard\/agent#learning"\)/);
   assert.match(reps, /optimizePlaySkillsAction/);
   assert.match(reps, /optimizeCampaignStrategyAction/);
-  assert.match(reps, /<AgentLearningPanel learning=\{state\.learning\} \/>/);
-  assert.match(reps, /title="Learning"/);
-  assert.match(reps, /Message recommendation/);
+  assert.match(renderedSurface, /<AgentAdvancedDetails/);
+  assert.doesNotMatch(renderedSurface, /<AgentLearningPanel learning=\{state\.learning\} \/>/);
+  assert.match(advancedDetails, /Learning and optimization/);
+  assert.match(advancedDetails, /return_to" value="\/dashboard\/agent#advanced"/);
+  assert.match(advancedDetails, /Message note/);
   assert.match(reps, /play\.skill\.optimization\.recommended/);
   assert.match(reps, /Optimize messages/);
   assert.match(readiness, /label: "Agent"/);
@@ -608,14 +634,22 @@ test("Agent surface shows live work and account readiness", () => {
   const reps = source("app/dashboard/agent/AgentPage.tsx");
   const renderedSurface = reps.slice(
     reps.indexOf("export default async function RepsPage"),
-    reps.indexOf("function AgentStatusHeader"),
+    reps.indexOf("function AgentTopStrip"),
+  );
+  const advancedDetails = reps.slice(
+    reps.indexOf("function AgentAdvancedDetails"),
+    reps.indexOf("function SourceHealthRow"),
+  );
+  const modeControl = reps.slice(
+    reps.indexOf("function AgentModeControl"),
+    reps.indexOf("function agentOperatingMode"),
   );
 
-  assert.match(reps, /AgentStatusHeader/);
+  assert.match(reps, /AgentTopStrip/);
   assert.match(reps, /AgentReviewQueuePanel/);
   assert.match(reps, /AgentConversationsPanel/);
-  assert.match(reps, /AgentOpportunityPanel/);
-  assert.match(reps, /AgentLearningPanel/);
+  assert.match(reps, /AgentLeadsPanel/);
+  assert.match(reps, /AgentAdvancedDetails/);
   assert.match(reps, /loadQualifiedSignalWorkbench/);
   assert.match(reps, /loadAgentContactSummary/);
   assert.match(reps, /loadAgentLearningSummary/);
@@ -624,47 +658,48 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /loadAgentReviewSummary/);
   assert.match(reps, /visibleReps = state\.reps\.filter\(isVisibleProductAgent\)/);
   assert.match(reps, /return rep\.role === "sdr"/);
-  assert.match(reps, /Outbound agent/);
-  assert.match(reps, /Uses your Profile, connected accounts, and approval rules to turn qualified signals into email and LinkedIn outreach/);
-  assert.match(reps, /open conversation/);
-  assert.match(reps, /sent this week/);
-  assert.match(reps, /Channels and limits/);
+  assert.match(reps, /Finds leads, sends email and LinkedIn, drafts replies for approval/);
+  assert.match(reps, /Open threads/);
+  assert.match(reps, /Sent 7d/);
+  assert.match(advancedDetails, /Channels and autonomy/);
   assert.match(reps, /Connect Outlook/);
   assert.match(reps, /Connect LinkedIn/);
   assert.match(reps, /Email ready/);
   assert.match(reps, /LinkedIn ready/);
   assert.match(reps, /commandBlockerCopy/);
   assert.match(reps, /Connect Outlook or LinkedIn before outreach can run/);
-  assert.match(reps, /AgentCommandStrip/);
-  assert.match(reps, /Operating mode/);
-  assert.match(reps, /Autopilot/);
-  assert.match(reps, /Copilot/);
-  assert.match(reps, /updateWorkspaceAutonomyAction/);
-  assert.match(reps, /name="autonomy_mode" value="autonomous"/);
-  assert.match(reps, /name="autonomy_mode" value="review_only"/);
-  assert.match(reps, /id="review-queue" className="scroll-mt-28"/);
+  assert.match(advancedDetails, /<AgentModeControl mode=\{operatingMode\} \/>/);
+  assert.match(modeControl, /Approval mode/);
+  assert.match(modeControl, /Autopilot/);
+  assert.match(modeControl, /Copilot/);
+  assert.match(modeControl, /updateWorkspaceAutonomyAction/);
+  assert.match(modeControl, /name="autonomy_mode" value="autonomous"/);
+  assert.match(modeControl, /name="autonomy_mode" value="review_only"/);
+  assert.match(reps, /<div id="thumb" className="scroll-mt-28">/);
+  assert.match(reps, /<span id="review-queue" className="sr-only"/);
   assert.match(reps, /title="Needs your thumb"/);
-  assert.match(reps, /These drafts already have channel and judge proof/);
-  assert.match(reps, /id="outreach" className="scroll-mt-28"/);
+  assert.match(reps, /These drafts are ready for email or LinkedIn/);
+  assert.match(reps, /AgentOutreachLink message=\{item\.message\}/);
   assert.match(reps, /title="Conversations"/);
-  assert.match(reps, /Proof-trace threads/);
-  assert.match(reps, /Sent outreach, replies, LinkedIn accepts, and judge-held drafts\s+are grouped by the conversation proof/);
-  assert.match(reps, /id="qualified-signals" className="scroll-mt-28"/);
-  assert.match(reps, /title="Signals ready"/);
-  assert.match(reps, /No signals ready yet/);
-  assert.match(reps, /Check sources or tune the profile so fresh timing evidence can become outreach/);
-  assert.match(reps, /score, email verification,\s+LinkedIn profile, fit, and outreach state/);
+  assert.match(reps, /Email and LinkedIn threads/);
+  assert.match(reps, /Replies that need approval stay at the top/);
+  assert.match(reps, /<span id="qualified-signals" className="sr-only"/);
+  assert.match(reps, /title="Leads the agent is contacting"/);
+  assert.match(reps, /No leads ready yet/);
+  assert.match(reps, /When a qualified signal has a reachable person, it appears here as a lead/);
+  assert.match(reps, /whether the next touch is contacted, drafted, or waiting/);
   assert.match(reps, /prepareQualifiedSignalsAction/);
   assert.match(reps, /resolveQualifiedSignalContactsAction/);
   assert.match(reps, /recordPersonFitFeedbackAction/);
   assert.match(reps, /dismissQualifiedSignalAction/);
   assert.match(reps, /decideApprovalWithDraftAction/);
-  assert.match(reps, /id="learning" className="scroll-mt-28"/);
-  assert.match(reps, /title="Learning"/);
-  assert.match(reps, /Outcome notes/);
-  assert.match(reps, /Positive replies and meetings update which signals, channels,\s+and message patterns/);
-  assert.match(reps, /optimizeCampaignStrategyAction/);
-  assert.match(reps, /optimizePlaySkillsAction/);
+  assert.match(renderedSurface, /<AgentAdvancedDetails/);
+  assert.match(advancedDetails, /id="advanced"/);
+  assert.match(advancedDetails, /Advanced \/ Details/);
+  assert.match(advancedDetails, /Learning and optimization/);
+  assert.match(advancedDetails, /Use recent replies and meetings to improve source choice and\s+message patterns/);
+  assert.match(advancedDetails, /optimizeCampaignStrategyAction/);
+  assert.match(advancedDetails, /optimizePlaySkillsAction/);
   assert.doesNotMatch(renderedSurface, /<AgentActivityPanel/);
   assert.doesNotMatch(renderedSurface, /<AgentContactsPanel/);
   assert.doesNotMatch(renderedSurface, /<AgentOutreachPanel/);
@@ -684,24 +719,24 @@ test("Agent surface shows live work and account readiness", () => {
   assert.doesNotMatch(renderedSurface, /name="source_id" value=\{source\.id\}/);
 
   assert.ok(
-    reps.indexOf("<AgentStatusHeader") <
-      reps.indexOf("<AgentReviewQueuePanel reviews={state.reviews} />"),
+    reps.indexOf("<AgentTopStrip") <
+      reps.indexOf("<AgentConversationsPanel"),
     "status and readiness must lead the Agent surface",
   );
   assert.ok(
-    reps.indexOf("<AgentReviewQueuePanel reviews={state.reviews} />") <
-      reps.indexOf("<AgentConversationsPanel"),
-    "approval gates must appear before conversation evidence",
-  );
-  assert.ok(
     reps.indexOf("<AgentConversationsPanel") <
-      reps.indexOf("<AgentOpportunityPanel"),
-    "conversation proof must precede the next signal queue",
+      reps.indexOf("<AgentLeadsPanel"),
+    "conversation evidence must lead the primary Agent work queue",
   );
   assert.ok(
-    reps.indexOf("<AgentOpportunityPanel") <
-      reps.indexOf("<AgentLearningPanel learning={state.learning} />"),
-    "signals ready must feed into the learning section order",
+    reps.indexOf("<AgentLeadsPanel") <
+      reps.indexOf("<AgentReviewQueuePanel reviews={state.reviews} />"),
+    "lead work must precede the thumb queue in the simplified Agent surface",
+  );
+  assert.ok(
+    reps.indexOf("<AgentReviewQueuePanel reviews={state.reviews} />") <
+      reps.indexOf("<AgentAdvancedDetails"),
+    "advanced learning and details must stay behind the primary work sections",
   );
 });
 test("dashboard app surfaces do not leak legacy named agents", () => {
@@ -841,7 +876,9 @@ test("sent outreach links open the exact draft in the conversation trace", () =>
 
   assert.match(outreach, /redirect\("\/dashboard\/agent#outreach"\)/);
   assert.match(legacyDetail, /redirect\(`\/dashboard\/agent\/outreach\/\$\{id\}`\)/);
-  assert.match(reps, /<SurfaceSection\s+title="Sent outreach"/);
+  assert.match(reps, /<AgentConversationsPanel/);
+  assert.match(reps, /kind: "sent"/);
+  assert.match(reps, /AgentOutreachLink message=\{item\.message\}/);
   assert.match(trust, /the Agent is set to research-only for replies/);
   assert.match(reps, /href=\{sentDraftHref\(message\.conversation_id, message\.id\)\}/);
   assert.match(reps, /\/dashboard\/agent\/outreach\/\$\{conversationId\}#message-\$\{messageId\}/);
@@ -954,14 +991,14 @@ test("dashboard Signal surfaces do not expose manual ingestion controls", () => 
   assert.match(productApp, /workflow_name: WORKSPACE_POLL_WORKFLOW/);
   assert.match(productApp, /workspace-source-manual/);
   assert.match(signals, /redirect\("\/dashboard\/agent#qualified-signals"\)/);
-  assert.match(reps, /Signals ready/);
-  assert.match(reps, /score, email verification,\s+LinkedIn profile, fit, and outreach state/);
+  assert.match(reps, /Leads the agent is contacting/);
+  assert.match(reps, /whether the next touch is contacted, drafted, or waiting/);
   assert.match(reps, /signalScoreLabel/);
   assert.match(reps, /emailStatusLabel/);
   assert.match(reps, /campaignStatusLabel/);
   assert.match(reps, /LinkedIn profile/);
-  assert.match(reps, /No signals ready yet/);
-  assert.match(reps, /Check sources or tune the profile so fresh timing evidence can become outreach/);
+  assert.match(reps, /No leads ready yet/);
+  assert.match(reps, /When a qualified signal has a reachable person, it appears here as a lead/);
   assert.match(reps, /email or\s+LinkedIn drafts/);
   assert.match(reps, /Tune profile/);
   assert.match(productApp, /SIGNAL_TO_EMAIL_PLAY_WORKFLOW,\s*SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW/);
@@ -1081,6 +1118,14 @@ test("Profile exposes profile, channels, advanced setup, and workspace autonomy 
   const productApp = source("core/product/app.ts");
   const contactResolution = source("core/contacts/resolution.ts");
   const registry = source("core/substrate/events/registry.ts");
+  const topLevelProfile = settings.slice(
+    settings.indexOf("export default async function ProfilePage"),
+    settings.indexOf("<ProfileAdvancedDrawer"),
+  );
+  const advancedDrawer = settings.slice(
+    settings.indexOf("function ProfileAdvancedDrawer"),
+    settings.indexOf("function OutlookPanel"),
+  );
 
   assert.match(settings, /editCompanyProfileAction/);
   assert.match(settings, /configureActivationAction/);
@@ -1089,17 +1134,19 @@ test("Profile exposes profile, channels, advanced setup, and workspace autonomy 
   assert.match(actions, /Agent is checking sources/);
   assert.match(actions, /Company profile saved\. Agent is checking sources/);
   assert.match(settings, /href="\/api\/auth\/outlook\?/);
-  assert.match(settings, /ProfileSectionNav/);
   assert.match(settings, /getProductLaunchReadiness/);
-  assert.match(settings, /ProfileSetupHub/);
-  assert.match(settings, /Setup hub/);
-  assert.match(settings, /Company context shapes buyer fit, Rep voice guides drafts, connected\s+channels set limits/);
-  assert.match(settings, /Company and buyer fit/);
-  assert.match(settings, /Rep voice and outreach templates/);
-  assert.match(settings, /Channels and sending limits/);
-  assert.match(settings, /Signal watchlist and contact-quality gates/);
-  assert.match(settings, /Blocklist \/ contact protection/);
-  assert.match(settings, /Developer \/ Advanced/);
+  assert.match(settings, /ProfileAdvancedDrawer/);
+  assert.match(settings, /Advanced setup/);
+  assert.match(settings, /Watchlists, quality gates, protection, long-tail profile\s+fields, source IDs, webhooks, MCP, CRM, and workspace account\s+details/);
+  assert.match(topLevelProfile, /<SurfaceSection title="Company & ICP">/);
+  assert.match(topLevelProfile, /<SurfaceSection title="Voice & autonomy">/);
+  assert.match(topLevelProfile, /<SurfaceSection title="Channels">/);
+  assert.doesNotMatch(topLevelProfile, /Signal watchlist and contact-quality gates/);
+  assert.doesNotMatch(topLevelProfile, /Blocklist \/ contact protection/);
+  assert.doesNotMatch(topLevelProfile, /Developer destinations and contracts/);
+  assert.match(advancedDrawer, /Signal watchlist and contact-quality gates/);
+  assert.match(advancedDrawer, /Blocklist \/ contact protection/);
+  assert.match(advancedDrawer, /Developer destinations and contracts/);
   assert.match(settings, /Open Agent/);
   assert.match(settings, /profileReadinessNextAction/);
   assert.doesNotMatch(settings, /ProfileActivationFlow/);
@@ -1108,7 +1155,6 @@ test("Profile exposes profile, channels, advanced setup, and workspace autonomy 
   assert.doesNotMatch(settings, /Launch path/);
   assert.doesNotMatch(settings, /Website to outreach/);
   assert.doesNotMatch(settings, /Website intelligence/);
-  assert.match(settings, /aria-label="Profile sections"/);
   assert.match(settings, /id="profile"/);
   assert.match(settings, /id="agent"/);
   assert.match(settings, /id="autonomy"/);
@@ -1119,12 +1165,6 @@ test("Profile exposes profile, channels, advanced setup, and workspace autonomy 
   assert.match(settings, /id="contact-quality"/);
   assert.match(settings, /id="blocklist"/);
   assert.match(settings, /id="tools"/);
-  assert.match(settings, /href: "#profile"/);
-  assert.match(settings, /href: "#agent"/);
-  assert.match(settings, /href: "#channels"/);
-  assert.match(settings, /href: "#signal-setup"/);
-  assert.match(settings, /href: "#blocklist"/);
-  assert.match(settings, /href: "#tools"/);
   assert.doesNotMatch(settings, /href: "#email"/);
   assert.doesNotMatch(settings, /href: "#linkedin"/);
   assert.doesNotMatch(settings, /href: "#templates"/);
@@ -1135,11 +1175,12 @@ test("Profile exposes profile, channels, advanced setup, and workspace autonomy 
   assert.match(settings, /LinkedIn accounts/);
   assert.match(settings, /linkedInAccounts: linkedIn\.rows/);
   assert.match(settings, /crmAccount: crm\.rows\[0\] \?\? null/);
-  assert.match(settings, /Connect up to two LinkedIn accounts/);
+  assert.match(settings, /Coming soon/);
+  assert.match(settings, /Outlook is\s+live now/);
   assert.match(settings, /First account/);
   assert.match(settings, /Second account/);
   assert.match(settings, /Account and limits/);
-  assert.match(settings, /Developer \/ Advanced/);
+  assert.match(settings, /Developer destinations and contracts/);
   assert.match(settings, /Where qualified work can go/);
   assert.match(settings, /buildOutputDestinations/);
   assert.match(settings, /destinationIcon/);
@@ -1261,13 +1302,13 @@ test("Profile exposes profile, channels, advanced setup, and workspace autonomy 
   assert.match(settings, /evented integrations rather than decorative install buttons/);
   assert.match(settings, /ContactQualityPanel/);
   assert.match(settings, /Signal watchlist and contact-quality gates/);
-  assert.match(settings, /Value proposition/);
+  assert.match(settings, /Pitch \/ value prop/);
   assert.match(settings, /Customer pain points/);
-  assert.match(settings, /Buyer roles/);
+  assert.match(settings, /Who you target \/ buyer roles/);
   assert.match(settings, /Target markets/);
   assert.match(settings, /Key features/);
   assert.match(settings, /Social proof/);
-  assert.match(settings, /Signal keywords/);
+  assert.match(settings, /Key signal keywords/);
   assert.match(settings, /Competitors to watch/);
   assert.match(settings, /LinkedIn behavior to watch/);
   assert.match(settings, /name="linkedin_signal_behaviors"/);
@@ -1311,22 +1352,21 @@ test("Profile exposes profile, channels, advanced setup, and workspace autonomy 
     settings,
     /href="\/api\/auth\/linkedin\?return_to=%2Fdashboard%2Fprofile%23linkedin"/,
   );
-  assert.match(settings, /href: "#tools"/);
-  assert.match(settings, /href: "#agent"/);
   assert.match(settings, /id="agent"/);
   assert.match(settings, /id="motion"/);
   assert.match(settings, /id="tools"/);
   assert.match(outputDestinations, /href: "\/dashboard\/profile#claude-code"/);
-  assert.match(settings, /Rep voice and outreach templates/);
+  assert.match(settings, /Voice & autonomy/);
   assert.match(settings, /AI outreach template/);
   assert.match(settings, /name="rep_story"/);
   assert.match(settings, /verified contact or LinkedIn profile/);
   assert.match(settings, /return_to" value="\/dashboard\/profile"/);
-  assert.match(settings, /Saving agent/);
+  assert.match(settings, /Saving voice/);
+  assert.match(settings, /Saving mode/);
   assert.match(settings, /value="autonomous"/);
   assert.match(settings, /value="review_only"/);
-  assert.match(settings, /Autopilot/);
-  assert.match(settings, /Copilot review/);
+  assert.match(settings, /Auto-send after checks/);
+  assert.match(settings, /Approve first/);
   assert.match(settings, /Prepare every move, then wait for a human approval before outreach/);
   assert.match(settings, /Send after evals, caps, contact checks, and channel health pass/);
   assert.match(settings, /row_number\(\) over/);
@@ -1470,7 +1510,7 @@ test("new product defaults are autonomous after checks", () => {
   assert.match(actions, /fallback: DashboardApprovalPolicy = "none"/);
   assert.match(
     settings,
-    /const approval =\s+rep\?\.autonomy\?\.channels\?\.email\?\.approval \?\? "none"/,
+    /const approval = profileApproval\(rep\)/,
   );
   assert.match(
     productApp,
