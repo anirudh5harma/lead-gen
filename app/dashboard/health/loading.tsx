@@ -1,5 +1,5 @@
 import { DashboardLoadingState } from "@/components/dashboard/LoadingState";
 
-export default function Loading() {
-  return <DashboardLoadingState surface="profile" layout="split" />;
+export default function HealthLoading() {
+  return <DashboardLoadingState surface="dashboard" layout="rows" />;
 }

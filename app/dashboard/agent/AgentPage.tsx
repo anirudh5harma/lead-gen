@@ -1755,13 +1755,13 @@ function AgentTopStrip({
               </PendingSubmitButton>
             </form>
           ) : (
-            <Link href={next.href} prefetch={false} className="btn-solid-sm">
+            <Link href={next.href} prefetch className="btn-solid-sm">
               <Icon name={next.icon} size={14} />
               {next.label}
             </Link>
           )}
           {primaryAgent ? (
-            <Link href="/dashboard/profile#agent" prefetch={false} className="btn-quiet-sm">
+            <Link href="/dashboard/profile#agent" prefetch className="btn-quiet-sm">
               <Icon name="edit_note" size={14} />
               Edit voice
             </Link>
@@ -1861,7 +1861,7 @@ function AgentStatusHeader({
                 </PendingSubmitButton>
               </form>
             ) : (
-              <Link href={next.href} prefetch={false} className="btn-solid-sm">
+              <Link href={next.href} prefetch className="btn-solid-sm">
                 <Icon name={next.icon} size={14} />
                 {next.label}
               </Link>
@@ -1894,7 +1894,7 @@ function AgentStatusHeader({
           ) : (
             <Link
               href="/dashboard/profile#agent"
-              prefetch={false}
+              prefetch
               className="group flex items-center justify-between gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-3 text-sm text-[var(--color-text-2)] transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-1)]"
             >
               <span>Finish Agent voice in Profile.</span>
@@ -2163,7 +2163,7 @@ function AgentCommandStrip({
             </PendingSubmitButton>
           </form>
         ) : (
-          <Link href={next.href} prefetch={false} className="btn-quiet-sm w-fit">
+          <Link href={next.href} prefetch className="btn-quiet-sm w-fit">
             <Icon name={next.icon} size={14} />
             {next.label}
           </Link>
@@ -2291,7 +2291,7 @@ function AgentModeRail({
           <Link
             key={mode.href}
             href={`/dashboard/agent${mode.href}`}
-            prefetch={false}
+            prefetch
             className="group grid min-w-[126px] grid-cols-[32px_minmax(0,1fr)] items-center gap-2 rounded-[9px] px-2 py-2.5 text-left transition-colors hover:bg-[var(--color-ink-2)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
           >
             <span
@@ -2344,7 +2344,7 @@ function AgentCommandLink({
   return (
     <Link
       href={href}
-      prefetch={false}
+      prefetch
       className="group grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-3)]"
     >
       <span className="flex items-center justify-between gap-3">
@@ -2450,7 +2450,7 @@ function AgentSetupSnapshot({
                 ? "/dashboard/agent#qualified-signals"
                 : nextAction.href
             }
-            prefetch={false}
+            prefetch
             className={readiness.launch_ready ? "btn-solid-sm" : "btn-quiet-sm"}
           >
             <Icon
@@ -2556,7 +2556,7 @@ function AgentSetupSnapshot({
                   <Link
                     key={warning.key}
                     href={warning.href}
-                    prefetch={false}
+                    prefetch
                     className="group grid gap-2 rounded-[8px] bg-[var(--color-ink-2)] px-3 py-2 transition hover:bg-[var(--color-ink-3)]"
                   >
                     <span className="flex items-center justify-between gap-3">
@@ -3044,7 +3044,7 @@ function AgentAdvancedDetails({
                   Connected accounts, daily limits, and approval mode.
                 </p>
               </div>
-              <Link href="/dashboard/profile#channels" prefetch={false} className="btn-quiet-sm">
+              <Link href="/dashboard/profile#channels" prefetch className="btn-quiet-sm">
                 <Icon name="account_tree" size={14} />
                 Manage channels
               </Link>
@@ -3183,7 +3183,7 @@ function AgentAdvancedDetails({
                   <PlayLimitRow key={step.id} step={step} />
                 ))
               )}
-              <Link href="/dashboard/profile#agent" prefetch={false} className="btn-quiet-sm w-fit">
+              <Link href="/dashboard/profile#agent" prefetch className="btn-quiet-sm w-fit">
                 <Icon name="rule" size={14} />
                 Edit rules
               </Link>
@@ -3258,7 +3258,7 @@ function ReadinessCheckRow({ check }: { check: LaunchReadinessCheck }) {
   return (
     <Link
       href={check.action?.surface ?? readinessFallbackHref(check)}
-      prefetch={false}
+      prefetch
       className="flex items-center justify-between gap-3 rounded-[8px] bg-[var(--color-ink-2)] px-3 py-2 transition-colors hover:bg-[var(--color-ink-3)]"
     >
       <span className="flex min-w-0 items-center gap-2">
@@ -3563,7 +3563,7 @@ function AgentGetStartedChecklist({
           <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 font-mono text-xs text-[var(--color-text-3)]">
             {readyCount}/{steps.length} ready
           </span>
-          <Link href={next.href} prefetch={false} className="btn-quiet-sm">
+          <Link href={next.href} prefetch className="btn-quiet-sm">
             <Icon name={next.icon} size={14} />
             {next.label}
           </Link>
@@ -3574,7 +3574,7 @@ function AgentGetStartedChecklist({
           <Link
             key={step.title}
             href={step.href}
-            prefetch={false}
+            prefetch
             className="group grid min-h-[126px] gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-3 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-3)]"
           >
             <span className="flex items-center justify-between gap-3">
@@ -3656,7 +3656,7 @@ function SystemStatusCard({
   return (
     <Link
       href={href}
-      prefetch={false}
+      prefetch
       className="group grid gap-4 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]"
     >
       <span className="flex items-start justify-between gap-3">
@@ -3833,7 +3833,7 @@ function AgentLeadRow({ signal }: { signal: QualifiedSignalItem }) {
     <article className="grid gap-3 rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
       <Link
         href={href}
-        prefetch={false}
+        prefetch
         className="flex min-w-0 items-start gap-3 rounded-[8px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
       >
         <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-accent-bg)] text-[var(--color-accent)]">
@@ -3970,10 +3970,15 @@ function AgentLeadRow({ signal }: { signal: QualifiedSignalItem }) {
             name="reason"
             value="Skipped from Agent because the lead is not a fit for outreach."
           />
-          <button type="submit" className="btn-quiet-sm" title="Skip lead">
-            <Icon name="block" size={14} />
+          <PendingSubmitButton
+            className="btn-quiet-sm"
+            icon="block"
+            iconSize={14}
+            pendingLabel="Skipping"
+            title="Skip lead"
+          >
             Skip
-          </button>
+          </PendingSubmitButton>
         </form>
       </div>
     </article>
@@ -4048,7 +4053,7 @@ function AgentOpportunityPanel({
                 <Link
                   key={warning.key}
                   href={warning.href}
-                  prefetch={false}
+                  prefetch
                   className="group flex items-start gap-2 rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-3 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]"
                 >
                   <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-[8px] bg-[var(--color-warn-bg)] text-[var(--color-warn)]">
@@ -4107,7 +4112,7 @@ function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
     <article className="grid gap-3 rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
       <Link
         href={href}
-        prefetch={false}
+        prefetch
         className="flex min-w-0 items-start gap-3 rounded-[8px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
       >
         <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-accent-bg)] text-[var(--color-accent)]">
@@ -4243,10 +4248,15 @@ function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
             name="reason"
             value="Skipped from Agent because the signal is not a fit for outreach."
           />
-          <button type="submit" className="btn-quiet-sm" title="Skip signal">
-            <Icon name="block" size={14} />
+          <PendingSubmitButton
+            className="btn-quiet-sm"
+            icon="block"
+            iconSize={14}
+            pendingLabel="Skipping"
+            title="Skip signal"
+          >
             Skip
-          </button>
+          </PendingSubmitButton>
         </form>
       </div>
     </article>
@@ -4631,7 +4641,7 @@ function AgentContactLink({ contact }: { contact: AgentContactRow }) {
     <article className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[minmax(0,1fr)_minmax(260px,360px)] md:items-start">
       <Link
         href={`/dashboard/agent/contacts/${contact.id}`}
-        prefetch={false}
+        prefetch
         className="flex min-w-0 items-start gap-3 rounded-[8px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
       >
         <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
@@ -5314,7 +5324,7 @@ function AgentModeCards({
           <Link
             key={mode.title}
             href={mode.href}
-            prefetch={false}
+            prefetch
             className="group grid gap-5 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-5 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]"
           >
             <span className="flex flex-wrap items-start justify-between gap-4">
@@ -5417,7 +5427,7 @@ function AgentHotSignalPathRow({ signal }: { signal: QualifiedSignalItem }) {
   return (
     <Link
       href={opportunityHref(signal, contact)}
-      prefetch={false}
+      prefetch
       className="grid gap-3 rounded-[8px] bg-[var(--color-ink-2)] px-3 py-3 transition-colors hover:bg-[var(--color-ink-3)] md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_auto] md:items-center"
     >
       <span className="flex min-w-0 items-start gap-2">
@@ -5516,7 +5526,7 @@ function OperatingLoopChannel({
   return (
     <Link
       href={connection.href}
-      prefetch={false}
+      prefetch
       className="flex items-center justify-between gap-3 rounded-[8px] bg-[var(--color-ink-0)] px-3 py-2 transition-colors hover:bg-[var(--color-ink-2)]"
     >
       <span className="flex min-w-0 items-center gap-2">
@@ -5569,7 +5579,7 @@ function AgentDraftConversationRow({
   const channel = approval.channel ?? stringPayload(payload, "channel");
   return (
     <article className="grid gap-3 rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-      <Link href={href} prefetch={false} className="flex min-w-0 items-start gap-3">
+      <Link href={href} prefetch className="flex min-w-0 items-start gap-3">
         <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-warn-bg)] text-[var(--color-warn)]">
           <Icon name="rate_review" size={17} />
         </span>
@@ -5778,7 +5788,7 @@ function AgentReviewRowCard({
           {freshWhen(approval.created_at)}
         </span>
         {href ? (
-          <Link href={href} prefetch={false} className="btn-quiet-sm">
+          <Link href={href} prefetch className="btn-quiet-sm">
             <Icon name="arrow_forward" size={14} />
             Open thread
           </Link>
@@ -6173,7 +6183,7 @@ function AcceptedConnectionFollowupLink({
   return (
     <Link
       href={acceptedConnectionHref(row)}
-      prefetch={false}
+      prefetch
       className="grid gap-3 rounded-[12px] bg-[var(--color-ink-2)] px-3 py-3 transition-colors hover:bg-[var(--color-ink-3)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
     >
       <span className="flex min-w-0 items-start gap-3">
@@ -6253,7 +6263,7 @@ function AgentOutputHandoffPanel({
                 sync stay explicit connector work.
               </p>
             </div>
-            <Link href="/dashboard/profile#tools" prefetch={false} className="btn-quiet-sm">
+            <Link href="/dashboard/profile#tools" prefetch className="btn-quiet-sm">
               <Icon name="hub" size={14} />
               Manage in Profile
             </Link>
@@ -6313,7 +6323,7 @@ function AgentDestinationCard({
   return (
     <Link
       href={destination.href ?? "/dashboard/profile#tools"}
-      prefetch={false}
+      prefetch
       className="group grid min-h-[132px] content-between gap-3 rounded-[8px] bg-[var(--color-ink-2)] px-3 py-3 transition-colors hover:bg-[var(--color-ink-3)]"
     >
       <span className="flex items-start justify-between gap-3">
@@ -6563,7 +6573,7 @@ function AgentReplyLink({ reply }: { reply: AgentReplyRow }) {
       reply.reply_approval_decision === "pending");
   return (
     <article className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[1fr_auto] md:items-center">
-      <Link href={href} prefetch={false} className="flex min-w-0 items-start gap-3">
+      <Link href={href} prefetch className="flex min-w-0 items-start gap-3">
         <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-pos-bg)] text-[var(--color-pos)]">
           <Icon name="mail" size={17} />
         </span>
@@ -6811,7 +6821,7 @@ function AgentOutreachLink({ message }: { message: AgentOutreachRow }) {
   return (
     <Link
       href={sentDraftHref(message.conversation_id, message.id)}
-      prefetch={false}
+      prefetch
       className="grid gap-3 rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[1fr_auto] md:items-center"
     >
       <span className="flex min-w-0 items-start gap-3">
@@ -7209,7 +7219,7 @@ function AgentChannelPill({
   return (
     <Link
       href={connection.href}
-      prefetch={false}
+      prefetch
       className="rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-3 transition-colors hover:border-[var(--color-line-3)]"
     >
       <span className="flex items-center justify-between gap-3">
