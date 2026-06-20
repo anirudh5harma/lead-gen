@@ -132,8 +132,9 @@ function itemToCandidate(item: RssItem): RawCandidate[] {
     asString(item.summary);
   const content = contentRaw ? stripHtml(contentRaw) : undefined;
 
-  const freshness =
-    item.pubDate ?? item.updated ?? item.published ?? new Date().toISOString();
+  const freshness = safeIsoTimestamp(
+    item.pubDate ?? item.updated ?? item.published,
+  );
 
   return [
     {
@@ -144,10 +145,16 @@ function itemToCandidate(item: RssItem): RawCandidate[] {
       structured: {
         author: item.author ?? item["dc:creator"] ?? null,
       },
-      freshness_at: new Date(freshness).toISOString(),
+      freshness_at: freshness,
       provenance: { adapter: "rss" },
     },
   ];
+}
+
+function safeIsoTimestamp(value: string | undefined): string {
+  if (!value) return new Date().toISOString();
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? new Date().toISOString() : new Date(ms).toISOString();
 }
 
 export const rssAdapter: WorkspaceAdapter = {

@@ -296,6 +296,63 @@ test("classify: source quality metadata feeds ICP filters and the scoring prompt
   }
 });
 
+test("classify: ICP failing must_haves cannot match from model output", async (t) => {
+  const fx = await setupPg("cls_must_gate");
+  if (!fx) return t.skip("DATABASE_URL not set");
+  const bus = await createProjectingBus(fx.pool);
+  try {
+    const workspace_id = randomUUID();
+    await fx.pool.query(
+      `insert into workspaces (id, slug, name) values ($1, $2, $3)`,
+      [workspace_id, `ws-${workspace_id.slice(0, 8)}`, "ws"],
+    );
+    await fx.pool.query(
+      `insert into workspace_ingestion_budgets (workspace_id, daily_classify_cap)
+       values ($1, 100)`,
+      [workspace_id],
+    );
+    const passing_icp_id = randomUUID();
+    const failing_icp_id = randomUUID();
+    await fx.pool.query(
+      `insert into workspace_icps (id, workspace_id, name, description, must_haves, match_threshold)
+       values
+         ($1, $2, 'Hiring only', 'Hiring signals only', $3::jsonb, 0.6),
+         ($4, $2, 'Funding only', 'Funding signals only', $5::jsonb, 0.6)`,
+      [
+        passing_icp_id,
+        workspace_id,
+        JSON.stringify([{ field: "kind", op: "eq", value: "hiring" }]),
+        failing_icp_id,
+        JSON.stringify([{ field: "kind", op: "eq", value: "funding" }]),
+      ],
+    );
+    const signal_id = await insertSignal(fx.pool, workspace_id, {
+      kind: "hiring",
+      title: "Acme hiring a founding AE",
+    });
+    const llm = mockLlm({
+      kind: "hiring",
+      per_icp: [
+        { icp_id: failing_icp_id, score: 0.99, reason: "Model leaked an off-gate ICP." },
+        { icp_id: passing_icp_id, score: 0.2, reason: "Below threshold." },
+      ],
+      dismissal_reason: "below threshold for eligible ICPs",
+    });
+
+    const result = await classifySignal({ pool: fx.pool, bus, llm }, { signal_id });
+    assert.equal(result.status, "dismissed");
+    await until(() =>
+      bus.published.some((e) => e.event_type === "signal.dismissed"),
+    );
+    assert.equal(
+      bus.published.some((e) => e.event_type === "signal.matched"),
+      false,
+    );
+  } finally {
+    await fx.close();
+  }
+});
+
 // ─── Dismissal paths ──────────────────────────────────────────────────────
 
 test("classify: every score below threshold → dismissed", async (t) => {

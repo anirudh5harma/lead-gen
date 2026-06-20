@@ -1,5 +1,6 @@
 export {
   CONTACT_RESOLUTION_WORKFLOW,
+  ContactProviderDeferredError,
   createContactResolutionWorkflow,
   rankContactRows,
 } from "./resolution.ts";

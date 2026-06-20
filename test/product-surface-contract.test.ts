@@ -2221,14 +2221,18 @@ test("dashboard icon names resolve to first-party SVG symbols", () => {
 });
 
 test("Bombsell logo asset stays canonical and untinted", () => {
-  const home = source("app/page.tsx");
+  // The brand logo now renders via the shared marketing chrome on public
+  // pages and via Shell in the app. Partner "Works with" logos on the
+  // landing page legitimately use grayscale, so the untinted invariant is
+  // asserted against the brand-logo surfaces, not the whole landing file.
+  const chrome = source("components/marketing/MarketingChrome.tsx");
   const shell = source("components/dashboard/Shell.tsx");
   const logo = source("public/logo.svg");
 
-  assert.match(home, /src="\/logo\.svg"/);
+  assert.match(chrome, /src="\/logo\.svg"/);
   assert.match(shell, /src="\/logo\.svg"/);
   assert.doesNotMatch(
-    home,
+    chrome,
     /filter-|invert|grayscale|sepia|hue-rotate|brightness|contrast/,
   );
   assert.doesNotMatch(

@@ -5,6 +5,7 @@ import {
   exaApiKeyFromEnv,
   searchExaWithWorkspaceCache,
 } from "../exa/index.ts";
+import { ContactProviderDeferredError } from "./resolution.ts";
 import type {
   ContactDiscoveryProvider,
   ContactResolutionDeps,
@@ -15,6 +16,9 @@ import type {
 
 export const HUNTER_API_BASE_URL = "https://api.hunter.io/v2";
 export const ZEROBOUNCE_API_BASE_URL = "https://api.zerobounce.net/v2";
+
+const DEFAULT_PROVIDER_TIMEOUT_MS = 20_000;
+const MAX_PROVIDER_RETRIES = 2;
 
 export interface ContactResolutionProviderFactoryOptions {
   pool: Pool;
@@ -29,10 +33,11 @@ export interface ExaPeopleSearchProviderOptions {
 
 export interface HunterProviderOptions {
   pool: Pool;
-  apiKey: string;
+  apiKey?: string;
   baseUrl?: string;
   fetchImpl?: typeof fetch;
   maxEmailFinderCalls?: number;
+  timeoutMs?: number;
 }
 
 export interface ZeroBounceVerifierOptions {
@@ -119,13 +124,19 @@ export function createExaPeopleSearchProvider(
 export function createHunterContactDiscoveryProvider(
   opts: HunterProviderOptions,
 ): ContactDiscoveryProvider {
-  const apiKey = requiredKey(opts.apiKey, "Hunter apiKey");
+  const providerName = "hunter.contact_discovery";
+  const apiKey = cleanString(opts.apiKey);
   const baseUrl = normalizeBaseUrl(opts.baseUrl ?? HUNTER_API_BASE_URL);
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
   const maxEmailFinderCalls = Math.max(0, Math.min(10, Math.trunc(opts.maxEmailFinderCalls ?? 5)));
+  const timeoutMs = providerTimeoutMs(opts.timeoutMs);
   return {
-    name: "hunter.contact_discovery",
+    name: providerName,
     async discover(input) {
+      if (!apiKey) {
+        console.warn(`[${providerName}] deferred: missing HUNTER_API_KEY`);
+        throw new ContactProviderDeferredError(providerName, "provider_unconfigured", "missing HUNTER_API_KEY");
+      }
       const context = await loadContactResolutionContext(opts.pool, input);
       const domain = contactDiscoveryDomain(context.company?.domain);
       if (!domain) return [];
@@ -133,7 +144,7 @@ export function createHunterContactDiscoveryProvider(
       const domainSearch = await hunterGet(fetchImpl, baseUrl, "/domain-search", apiKey, {
         domain,
         limit: "10",
-      });
+      }, timeoutMs);
       people.push(...contactPeopleFromHunterDomainSearch(domainSearch));
 
       const graphPeople = await loadHighValuePeopleMissingEmail(opts.pool, input, maxEmailFinderCalls);
@@ -144,7 +155,7 @@ export function createHunterContactDiscoveryProvider(
           domain,
           first_name: parsedName.firstName,
           last_name: parsedName.lastName,
-        });
+        }, timeoutMs);
         const enriched = contactPersonFromHunterEmailFinder(found, person);
         if (enriched) people.push(enriched);
       }
@@ -183,13 +194,19 @@ export function contactDiscoveryDomain(value: string | null | undefined): string
 export function createHunterEmailVerifier(
   opts: Omit<HunterProviderOptions, "pool" | "maxEmailFinderCalls">,
 ): EmailVerificationProvider {
-  const apiKey = requiredKey(opts.apiKey, "Hunter apiKey");
+  const providerName = "hunter.email_verifier";
+  const apiKey = cleanString(opts.apiKey);
   const baseUrl = normalizeBaseUrl(opts.baseUrl ?? HUNTER_API_BASE_URL);
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
+  const timeoutMs = providerTimeoutMs(opts.timeoutMs);
   return {
-    name: "hunter.email_verifier",
+    name: providerName,
     async verify(email) {
-      const raw = await hunterGet(fetchImpl, baseUrl, "/email-verifier", apiKey, { email });
+      if (!apiKey) {
+        console.warn(`[${providerName}] deferred: missing HUNTER_API_KEY`);
+        throw new ContactProviderDeferredError(providerName, "provider_unconfigured", "missing HUNTER_API_KEY");
+      }
+      const raw = await hunterGet(fetchImpl, baseUrl, "/email-verifier", apiKey, { email }, timeoutMs);
       const data = recordValue(raw.data) ?? raw;
       const status = cleanString(data.status) ?? "unknown";
       const score = numberValue(data.score);
@@ -206,18 +223,24 @@ export function createHunterEmailVerifier(
 export function createZeroBounceEmailVerifier(
   opts: ZeroBounceVerifierOptions,
 ): EmailVerificationProvider {
-  const apiKey = requiredKey(opts.apiKey, "ZeroBounce apiKey");
+  const providerName = "zerobounce.validate";
+  const apiKey = cleanString(opts.apiKey);
   const baseUrl = normalizeBaseUrl(opts.baseUrl ?? ZEROBOUNCE_API_BASE_URL);
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
   const timeout = Math.max(3, Math.min(60, Math.trunc(opts.timeoutSeconds ?? 15)));
+  const timeoutMs = timeout * 1000;
   return {
-    name: "zerobounce.validate",
+    name: providerName,
     async verify(email) {
+      if (!apiKey) {
+        console.warn(`[${providerName}] deferred: missing ZEROBOUNCE_API_KEY`);
+        throw new ContactProviderDeferredError(providerName, "provider_unconfigured", "missing ZEROBOUNCE_API_KEY");
+      }
       const raw = await getJson(fetchImpl, `${baseUrl}/validate`, {
         api_key: apiKey,
         email,
         timeout: String(timeout),
-      });
+      }, timeoutMs);
       const status = cleanString(raw.status) ?? "unknown";
       return {
         status: status.toLowerCase(),
@@ -427,34 +450,91 @@ async function hunterGet(
   path: string,
   apiKey: string,
   params: Record<string, string>,
+  timeoutMs: number,
 ): Promise<Record<string, unknown>> {
-  return getJson(fetchImpl, `${baseUrl}${path}`, { ...params, api_key: apiKey });
+  return getJson(fetchImpl, `${baseUrl}${path}`, { ...params, api_key: apiKey }, timeoutMs);
 }
 
 async function getJson(
   fetchImpl: typeof fetch,
   url: string,
   params: Record<string, string>,
+  timeoutMs: number,
 ): Promise<Record<string, unknown>> {
   const request = new URL(url);
   for (const [key, value] of Object.entries(params)) {
     if (value.trim()) request.searchParams.set(key, value);
   }
-  const response = await fetchImpl(request, {
+  return fetchJsonWithRetry(fetchImpl, request, {
     headers: { Accept: "application/json" },
-    signal: AbortSignal.timeout(20_000),
-  });
-  const raw = recordValue(await response.json().catch(() => ({}))) ?? {};
-  if (!response.ok) {
-    const error = recordValue(raw.errors)?.[0];
-    const message = cleanString(recordValue(error)?.details) ??
-      cleanString(recordValue(error)?.code) ??
-      cleanString(raw.error) ??
-      cleanString(raw.message) ??
-      "request failed";
-    throw new Error(`${request.hostname}: ${message} (${response.status})`);
+  }, timeoutMs);
+}
+
+async function fetchJsonWithRetry(
+  fetchImpl: typeof fetch,
+  request: URL,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Record<string, unknown>> {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt <= MAX_PROVIDER_RETRIES; attempt += 1) {
+    let response: Response;
+    let raw: Record<string, unknown>;
+    try {
+      response = await fetchImpl(request, {
+        ...init,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      raw = recordValue(await response.json().catch(() => ({}))) ?? {};
+    } catch (error) {
+      lastError = error;
+      if (!shouldRetryError(error) || attempt === MAX_PROVIDER_RETRIES) {
+        throw error;
+      }
+      await delay(backoffMs(attempt));
+      continue;
+    }
+
+    if (response.ok) return raw;
+    const error = providerHttpError(request, raw, response.status);
+    if (!shouldRetryResponse(response.status) || attempt === MAX_PROVIDER_RETRIES) {
+      throw error;
+    }
+    lastError = error;
+    await delay(backoffMs(attempt));
   }
-  return raw;
+  throw lastError instanceof Error ? lastError : new Error(String(lastError ?? "request failed"));
+}
+
+function providerHttpError(
+  request: URL,
+  raw: Record<string, unknown>,
+  status: number,
+): Error {
+  const error = recordValue(raw.errors)?.[0];
+  const message = cleanString(recordValue(error)?.details) ??
+    cleanString(recordValue(error)?.code) ??
+    cleanString(raw.error) ??
+    cleanString(raw.message) ??
+    "request failed";
+  return new Error(`${request.hostname}: ${message} (${status})`);
+}
+
+function shouldRetryResponse(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+function shouldRetryError(error: unknown): boolean {
+  if (error instanceof ContactProviderDeferredError) return false;
+  return true;
+}
+
+function backoffMs(attempt: number): number {
+  return 100 * 2 ** attempt;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function fallbackPersonFromProfileTitle(
@@ -517,6 +597,11 @@ function normalizeHunterEmailStatus(status: string, score: number | null): strin
   if (lower === "valid" && (score ?? 0) >= 80) return "valid";
   if (lower === "valid") return "risky";
   return lower || "unknown";
+}
+
+function providerTimeoutMs(value: number | null | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_PROVIDER_TIMEOUT_MS;
+  return Math.max(1_000, Math.min(60_000, Math.trunc(value)));
 }
 
 function isUsableContactDomain(hostname: string): boolean {

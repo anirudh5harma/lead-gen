@@ -5,6 +5,7 @@ import {
   CONTACT_RESOLUTION_WORKFLOW,
   contactDiscoveryDomain,
   contactPersonFromExaResult,
+  createContactResolutionProviders,
   createContactResolutionWorkflow,
   createHunterContactDiscoveryProvider,
   createZeroBounceEmailVerifier,
@@ -26,6 +27,7 @@ test("contact resolution ranks top three channel-ready graph contacts", () => {
       title: "Operations Manager",
       company_id: companyId,
       emails: ["ops@example.com"],
+      linkedin_url: "https://www.linkedin.com/in/general-person",
       email_status: "valid",
     }),
     person({
@@ -33,6 +35,7 @@ test("contact resolution ranks top three channel-ready graph contacts", () => {
       title: "Co-founder and CEO",
       company_id: companyId,
       emails: ["founder@example.com"],
+      linkedin_url: "https://www.linkedin.com/in/founder-one",
       email_status: "valid",
     }),
     person({
@@ -47,6 +50,7 @@ test("contact resolution ranks top three channel-ready graph contacts", () => {
       title: "CEO",
       company_id: companyId,
       emails: ["blocked@example.com"],
+      linkedin_url: "https://www.linkedin.com/in/blocked-contact",
       email_status: "valid",
       do_not_contact: true,
     }),
@@ -141,6 +145,7 @@ test("contact resolution workflow resolves from verified graph cache without pro
       title: "Founder and CEO",
       company_id: companyId,
       emails: ["ava@example.com"],
+      linkedin_url: "https://www.linkedin.com/in/ava-founder",
       email_status: "valid",
     }),
     person({
@@ -148,6 +153,7 @@ test("contact resolution workflow resolves from verified graph cache without pro
       title: "VP Revenue",
       company_id: companyId,
       emails: ["ben@example.com"],
+      linkedin_url: "https://www.linkedin.com/in/ben-revenue",
       email_status: "valid",
     }),
     person({
@@ -155,6 +161,7 @@ test("contact resolution workflow resolves from verified graph cache without pro
       title: "Head of Growth",
       company_id: companyId,
       emails: ["cara@example.com"],
+      linkedin_url: "https://www.linkedin.com/in/cara-growth",
       email_status: "valid",
     }),
   ];
@@ -218,6 +225,7 @@ test("contact resolution workflow resolves with fewer than three verified contac
       title: "Founder and CEO",
       company_id: companyId,
       emails: ["ava@example.com"],
+      linkedin_url: "https://www.linkedin.com/in/ava-founder",
       email_status: "valid",
     }),
   ];
@@ -397,6 +405,7 @@ test("contact resolution duplicate prevention skips already-worked contacts", as
     title: "Founder and CEO",
     company_id: companyId,
     emails: ["ava@example.com"],
+    linkedin_url: "https://www.linkedin.com/in/ava-founder",
     email_status: "valid",
     already_worked: true,
   });
@@ -405,6 +414,7 @@ test("contact resolution duplicate prevention skips already-worked contacts", as
     title: "VP Revenue",
     company_id: companyId,
     emails: ["ben@example.com"],
+    linkedin_url: "https://www.linkedin.com/in/ben-revenue",
     email_status: "valid",
   });
   const bus = createInMemoryEventBus();
@@ -451,6 +461,7 @@ test("contact resolution workflow verifies alternate emails and persists the ver
       title: "Founder and CEO",
       company_id: companyId,
       emails: ["ava.old@acme.example", "ava@acme.example"],
+      linkedin_url: "https://www.linkedin.com/in/ava-founder",
     }),
   ];
   const verifierCalls: string[] = [];
@@ -499,6 +510,87 @@ test("contact resolution workflow verifies alternate emails and persists the ver
   );
 });
 
+test("contact resolution requires verified email plus LinkedIn for email outreach", async () => {
+  const workspaceId = randomUUID();
+  const signalId = randomUUID();
+  const companyId = randomUUID();
+  const playId = randomUUID();
+  const repId = randomUUID();
+  const rows: ContactRows = [
+    person({
+      full_name: "Ava Founder",
+      title: "Founder and CEO",
+      company_id: companyId,
+      emails: ["ava@example.com"],
+      email_status: "valid",
+    }),
+  ];
+  const bus = createInMemoryEventBus();
+  const runtime = createInProcessWorkflowRuntime({ bus });
+  runtime.register(
+    createContactResolutionWorkflow({
+      pool: mockContactRowsPool(rows),
+    }),
+  );
+
+  const run = await runtime.start<ContactResolutionInput, ContactResolutionOutput>({
+    workspace_id: workspaceId,
+    workflow_name: CONTACT_RESOLUTION_WORKFLOW,
+    input: {
+      workspace_id: workspaceId,
+      signal_id: signalId,
+      company_id: companyId,
+      play_id: playId,
+      rep_id: repId,
+      channel: "email",
+      limit: 1,
+    },
+  });
+  const completed = await waitForCompletedRun(runtime, run.id);
+
+  assert.equal(completed.output?.decision, "deferred");
+  assert.equal(completed.output?.defer_reason, "no_email_ready_contact");
+  assert.equal(completed.output?.candidates.length, 0);
+});
+
+test("contact resolution uses repair_key for idempotent resolution ids", async () => {
+  const workspaceId = randomUUID();
+  const signalId = randomUUID();
+  const companyId = randomUUID();
+  const playId = randomUUID();
+  const repId = randomUUID();
+  const runtime = createInProcessWorkflowRuntime({ bus: createInMemoryEventBus() });
+  runtime.register(
+    createContactResolutionWorkflow({
+      pool: mockContactRowsPool([]),
+    }),
+  );
+  const input: ContactResolutionInput = {
+    workspace_id: workspaceId,
+    signal_id: signalId,
+    company_id: companyId,
+    play_id: playId,
+    rep_id: repId,
+    channel: "email",
+    repair_key: "accepted:event-1",
+  };
+
+  const first = await runtime.start<ContactResolutionInput, ContactResolutionOutput>({
+    workspace_id: workspaceId,
+    workflow_name: CONTACT_RESOLUTION_WORKFLOW,
+    input,
+  });
+  const second = await runtime.start<ContactResolutionInput, ContactResolutionOutput>({
+    workspace_id: workspaceId,
+    workflow_name: CONTACT_RESOLUTION_WORKFLOW,
+    input,
+  });
+  const firstCompleted = await waitForCompletedRun(runtime, first.id);
+  const secondCompleted = await waitForCompletedRun(runtime, second.id);
+
+  assert.equal(firstCompleted.output?.contact_resolution_id, secondCompleted.output?.contact_resolution_id);
+});
+
 test("Exa people search results map structured person entities into contacts", () => {
   const people = contactPersonFromExaResult({
     id: "exa-1",
@@ -533,6 +625,24 @@ test("Exa people search results map structured person entities into contacts", (
   assert.equal(people[0]?.title, "VP Revenue");
   assert.equal(people[0]?.linkedin_url, "https://www.linkedin.com/in/jane-doe");
   assert.equal(people[0]?.source, "exa");
+});
+
+test("contact provider factory wires architecture waterfall", () => {
+  const deps = createContactResolutionProviders({
+    pool: mockContactRowsPool([]),
+    env: {
+      EXA_API_KEY: "exa-key",
+      HUNTER_API_KEY: "hunter-key",
+      ZEROBOUNCE_API_KEY: "zb-key",
+    },
+    fetchImpl: async () => jsonResponse({}),
+  });
+
+  assert.deepEqual(deps.discoveryProviders?.map((provider) => provider.name), [
+    "exa.people_search",
+    "hunter.contact_discovery",
+  ]);
+  assert.equal(deps.emailVerifier?.name, "zerobounce.validate");
 });
 
 test("Hunter discovery combines domain search and email finder for graph people", async () => {

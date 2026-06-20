@@ -5,7 +5,7 @@ import type { LLMClient } from "../agents/llm/types.ts";
 import type { SignalKind } from "../primitives/signal.ts";
 import { listIcps, type IcpRow } from "./icps.ts";
 import { allMatchingIcps } from "./icp-filter.ts";
-import { reserveClassify } from "./budget.ts";
+import { ensureBudgetRow, reserveClassify } from "./budget.ts";
 
 /**
  * Stage 2 classifier — the LLM-bearing step that turns an ingested signal
@@ -208,6 +208,7 @@ export async function classifySignal(
   }
 
   // Reserve an LLM-bearing call against the daily classify cap.
+  await ensureBudgetRow(deps.pool, signal.workspace_id);
   const reserved = await reserveClassify(deps.pool, signal.workspace_id);
   if (!reserved) {
     return { status: "skipped", reason: "budget" };
@@ -243,7 +244,7 @@ export async function classifySignal(
 
   // Decide matched ICPs: per-ICP score >= that ICP's threshold.
   const matched: Array<{ icp: IcpRow; score: number; reason: string }> = [];
-  const icpById = new Map(icps.map((i) => [i.id, i]));
+  const icpById = new Map(candidateIcps.map((i) => [i.id, i]));
   for (const entry of parsed.per_icp) {
     const icp = icpById.get(entry.icp_id);
     if (!icp) continue;

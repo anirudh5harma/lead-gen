@@ -89,16 +89,29 @@ export async function fanoutCandidate(
     const existing = await deps.pool.query<{
       outcome: string;
       signal_id: string | null;
+      signal_status: string | null;
     }>(
-      `select outcome, signal_id from signal_candidate_fanouts
-        where candidate_id = $1 and workspace_id = $2`,
+      `select f.outcome,
+              f.signal_id,
+              s.status::text as signal_status
+         from signal_candidate_fanouts f
+         left join signals s
+           on s.workspace_id = f.workspace_id
+          and s.id = f.signal_id
+        where f.candidate_id = $1 and f.workspace_id = $2`,
       [candidate.id, workspace_id],
     );
-    if (existing.rows[0]) {
+    const existingFanout = existing.rows[0];
+    const staleCreatedFanout = Boolean(
+      existingFanout?.outcome === "created" &&
+      (existingFanout.signal_status === "spent" ||
+        existingFanout.signal_status === "dismissed"),
+    );
+    if (existingFanout && !staleCreatedFanout) {
       results.push({
         workspace_id,
         outcome: "skipped:dedup",
-        signal_id: existing.rows[0].signal_id ?? undefined,
+        signal_id: existingFanout.signal_id ?? undefined,
       });
       continue;
     }
@@ -162,14 +175,19 @@ export async function fanoutCandidate(
     // Mint the signal id up front. The audit row uses it (FK was dropped in
     // migration 025) and the projector inserts the row with the same id.
     const signal_id = randomUUID();
-    await recordFanout(deps.pool, candidate.id, workspace_id, signal_id, "created");
+    const fanoutIdempotencyKey = staleCreatedFanout
+      ? `fanout:${candidate.id}:${workspace_id}:reactivated:${candidate.freshness_at}`
+      : `fanout:${candidate.id}:${workspace_id}`;
+    if (!staleCreatedFanout) {
+      await recordFanout(deps.pool, candidate.id, workspace_id, signal_id, "created");
+    }
 
-    await deps.bus.publish({
+    const event = await deps.bus.publish({
       workspace_id,
       event_type: "signal.discovered",
       source: "system",
       producer_ref: "ingest:catalog",
-      idempotency_key: `fanout:${candidate.id}:${workspace_id}`,
+      idempotency_key: fanoutIdempotencyKey,
       payload: {
         signal_id,
         source_id: null,
@@ -190,11 +208,23 @@ export async function fanoutCandidate(
         embedding: candidate.embedding ?? null,
       },
     });
+    const publishedSignalId =
+      typeof event.payload.signal_id === "string" ? event.payload.signal_id : signal_id;
+    if (staleCreatedFanout) {
+      await recordFanout(
+        deps.pool,
+        candidate.id,
+        workspace_id,
+        publishedSignalId,
+        "created",
+        true,
+      );
+    }
 
     results.push({
       workspace_id,
       outcome: "created",
-      signal_id,
+      signal_id: publishedSignalId,
       matched_icp_ids: matched.map((i) => i.id),
     });
   }
@@ -207,7 +237,20 @@ async function recordFanout(
   workspace_id: string,
   signal_id: string | null,
   outcome: string,
+  replaceExisting = false,
 ): Promise<void> {
+  if (replaceExisting) {
+    await pool.query(
+      `update signal_candidate_fanouts
+          set signal_id = $3,
+              outcome   = $4,
+              fanned_at = now()
+        where candidate_id = $1
+          and workspace_id = $2`,
+      [candidate_id, workspace_id, signal_id, outcome],
+    );
+    return;
+  }
   await pool.query(
     `insert into signal_candidate_fanouts (candidate_id, workspace_id, signal_id, outcome)
      values ($1, $2, $3, $4)

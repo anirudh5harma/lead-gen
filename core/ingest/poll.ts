@@ -53,10 +53,17 @@ export interface PollOutcome {
   source_id: string;
   company_id: string;
   inserted: number;
+  reactivated: number;
   duplicates: number;
   expired: number;
   fanned_out: number;
   error?: string;
+}
+
+interface PersistedCatalogCandidate {
+  id: string;
+  inserted: boolean;
+  reactivated: boolean;
 }
 
 export async function pollOnce(
@@ -68,6 +75,7 @@ export async function pollOnce(
     source_id: input.source_id,
     company_id: input.company.id,
     inserted: 0,
+    reactivated: 0,
     duplicates: 0,
     expired: 0,
     fanned_out: 0,
@@ -94,6 +102,7 @@ export async function pollOnce(
     // items take different kinds depending on form/item code).
     const itemKind = item.kind ?? input.adapter.kindHint;
 
+    const freshnessAt = normalizeFreshnessAt(item.freshness_at);
     const leadText = `${item.title} ${(item.content ?? "").slice(0, 200)}`.trim();
     const [embedding] = await embedder.embed([leadText]);
     const novelty_key = effectiveNoveltyKey(input.adapter, item, input.company);
@@ -109,43 +118,27 @@ export async function pollOnce(
       continue;
     }
 
-    const candidate_id = randomUUID();
-    await pool.query(
-      `insert into signal_candidates (
-         id, source_id, external_id, external_thread_id,
-         kind, company_id, title, content, url,
-         structured, provenance, embedding,
-         novelty_key, freshness_at, status
-       ) values (
-         $1, $2, $3, $4,
-         $5, $6, $7, $8, $9,
-         $10::jsonb, $11::jsonb, $12::vector,
-         $13, $14, 'active'
-       )
-       on conflict (source_id, external_id) do nothing`,
-      [
-        candidate_id,
-        input.source_id,
-        item.external_id,
-        item.external_thread_id ?? null,
-        itemKind ?? null,
-        input.company.id,
-        item.title,
-        item.content ?? null,
-        item.url ?? null,
-        JSON.stringify(item.structured ?? {}),
-        JSON.stringify(item.provenance ?? {}),
-        vectorToPgLiteral(embedding),
-        novelty_key,
-        item.freshness_at,
-      ],
-    );
-    outcome.inserted += 1;
+    const persisted = await persistCatalogCandidate(pool, {
+      candidate_id: randomUUID(),
+      source_id: input.source_id,
+      item,
+      itemKind,
+      company_id: input.company.id,
+      embedding,
+      novelty_key,
+      freshness_at: freshnessAt,
+    });
+    if (!persisted) {
+      outcome.duplicates += 1;
+      continue;
+    }
+    if (persisted.inserted) outcome.inserted += 1;
+    if (persisted.reactivated) outcome.reactivated += 1;
 
     const fanResults = await fanoutCandidate(
       { pool, bus: deps.bus },
       {
-        id: candidate_id,
+        id: persisted.id,
         source_id: input.source_id,
         kind: itemKind,
         company_id: input.company.id,
@@ -154,7 +147,7 @@ export async function pollOnce(
         url: item.url ?? null,
         structured: item.structured ?? {},
         novelty_count: 1,
-        freshness_at: item.freshness_at,
+        freshness_at: freshnessAt,
         embedding,
       },
     );
@@ -183,6 +176,73 @@ export async function pollOnce(
   );
 
   return outcome;
+}
+
+async function persistCatalogCandidate(
+  pool: Pool,
+  input: {
+    candidate_id: string;
+    source_id: string;
+    item: RawCandidate;
+    itemKind: RawCandidate["kind"] | null;
+    company_id: string;
+    embedding: number[];
+    novelty_key: string;
+    freshness_at: string;
+  },
+): Promise<PersistedCatalogCandidate | null> {
+  const { rows } = await pool.query<{
+    id: string;
+    inserted: boolean;
+    reactivated: boolean;
+  }>(
+    `insert into signal_candidates (
+       id, source_id, external_id, external_thread_id,
+       kind, company_id, title, content, url,
+       structured, provenance, embedding,
+       novelty_key, freshness_at, status, expired_at
+     ) values (
+       $1, $2, $3, $4,
+       $5, $6, $7, $8, $9,
+       $10::jsonb, $11::jsonb, $12::vector,
+       $13, $14, 'active', null
+     )
+     on conflict (source_id, external_id) do update set
+       external_thread_id = excluded.external_thread_id,
+       kind               = excluded.kind,
+       company_id         = excluded.company_id,
+       title              = excluded.title,
+       content            = excluded.content,
+       url                = excluded.url,
+       structured         = excluded.structured,
+       provenance         = excluded.provenance,
+       embedding          = excluded.embedding,
+       novelty_key        = excluded.novelty_key,
+       freshness_at       = excluded.freshness_at,
+       status             = 'active',
+       expired_at         = null
+     where signal_candidates.status = 'expired'
+     returning id,
+               (xmax = 0) as inserted,
+               (xmax <> 0) as reactivated`,
+    [
+      input.candidate_id,
+      input.source_id,
+      input.item.external_id,
+      input.item.external_thread_id ?? null,
+      input.itemKind ?? null,
+      input.company_id,
+      input.item.title,
+      input.item.content ?? null,
+      input.item.url ?? null,
+      JSON.stringify(input.item.structured ?? {}),
+      JSON.stringify(input.item.provenance ?? {}),
+      vectorToPgLiteral(input.embedding),
+      input.novelty_key,
+      input.freshness_at,
+    ],
+  );
+  return rows[0] ?? null;
 }
 
 /**
@@ -220,6 +280,11 @@ function effectiveNoveltyKey(
     kind: itemKind ?? "unknown",
     freshness_at: item.freshness_at,
   });
+}
+
+function normalizeFreshnessAt(value: string): string {
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? new Date().toISOString() : new Date(ms).toISOString();
 }
 
 /**

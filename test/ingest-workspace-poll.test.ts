@@ -11,6 +11,7 @@ import {
   selectNextWorkspacePollItems,
   workspacePollOnce,
 } from "../core/ingest/workspace-poll.ts";
+import { parseFeed } from "../core/ingest/adapters/rss.ts";
 import { registerSignalProjectors } from "../core/ingest/projectors.ts";
 
 interface Seeded {
@@ -96,6 +97,25 @@ test("workspace poll batching: bounds configured batch size", () => {
   assert.equal(maxItemsPerPoll({ max_items_per_poll: "3" }), 3);
   assert.equal(maxItemsPerPoll({ max_items_per_poll: 500 }), 10);
   assert.equal(maxItemsPerPoll({ max_items_per_poll: -1 }), 3);
+});
+
+test("RSS parse: malformed item dates fall back instead of failing the feed", async () => {
+  const items = await parseFeed(`<?xml version="1.0"?>
+  <rss version="2.0">
+    <channel>
+      <item>
+        <guid>bad-date-1</guid>
+        <title>Acme announces expansion</title>
+        <link>https://example.com/bad-date-1</link>
+        <description>Acme opened a new office.</description>
+        <pubDate>not a real date</pubDate>
+      </item>
+    </channel>
+  </rss>`);
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0].external_id, "bad-date-1");
+  assert.equal(Number.isNaN(Date.parse(items[0].freshness_at)), false);
 });
 
 async function createProjectingBus(pool: Pool) {

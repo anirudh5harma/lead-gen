@@ -1,12 +1,14 @@
 import { END, START, StateGraph } from "@langchain/langgraph";
 import type { EventBus } from "../../../substrate/events/index.ts";
 import type { RunContext } from "../../../substrate/workflows/index.ts";
+import { recordAgentTraceSpan } from "../../../observability/index.ts";
 import {
   createLangGraphMemoryCheckpoint,
 } from "../checkpoint.ts";
 import {
   type BombsellLangGraphState,
   BombsellGraphStateAnnotation,
+  primitiveRefsFromState,
 } from "../state.ts";
 import {
   invokeLangGraphTool,
@@ -18,9 +20,15 @@ import {
 } from "../runtime.ts";
 
 export const LEAD_MATCHING_GRAPH_NAME = "lead.matching_graph.v1";
+export const LEAD_MATCHING_MIN_MATCH_SCORE = 0.6;
 
 type SignalMatchStatus = "matched" | "dismissed" | "skipped";
 type SignalMatchSkipReason = "no_icps" | "budget" | "not_found" | "non_json" | "filtered";
+type LeadMatchingDeferReason =
+  | SignalMatchSkipReason
+  | "empty_candidates"
+  | "below_eval_threshold"
+  | "inconsistent_match_result";
 
 export interface LeadMatchingGraphInput {
   workspace_id?: string;
@@ -57,6 +65,7 @@ export interface LeadMatchingDecision {
   match_score: number | null;
   match_reason: string | null;
   contact_resolution_ready: boolean;
+  defer_reason: LeadMatchingDeferReason | null;
   next_action:
     | "resolve_contacts"
     | "wait_for_budget"
@@ -88,7 +97,7 @@ export function createLeadMatchingGraph(opts: LeadMatchingGraphOptions = {}) {
         graph_name: LEAD_MATCHING_GRAPH_NAME,
         node_name: "request",
         bus: opts.bus,
-        handler: (state: BombsellLangGraphState) => {
+        handler: async (state: BombsellLangGraphState) => {
           const signal_id = signalIdFromState(state);
           return {
             signal_id,
@@ -131,9 +140,10 @@ export function createLeadMatchingGraph(opts: LeadMatchingGraphOptions = {}) {
         graph_name: LEAD_MATCHING_GRAPH_NAME,
         node_name: "rank",
         bus: opts.bus,
-        handler: (state: BombsellLangGraphState) => {
+        handler: async (state: BombsellLangGraphState) => {
           const result = getAttribute<LeadMatchingToolResult>(state, "signal_match_result");
           const decision = decisionFromMatchResult(result);
+          await recordLeadMatchingDefer(opts.bus, state, decision);
           return {
             attributes: mergeAttributes(state, {
               lead_matching: decision,
@@ -204,30 +214,103 @@ export async function runLeadMatchingGraphInWorkflowStep(opts: {
 }
 
 function decisionFromMatchResult(result: LeadMatchingToolResult): LeadMatchingDecision {
-  const ranked_matches = [...result.matches].sort(
-    (a, b) => b.match_score - a.match_score,
-  );
-  const contact_resolution_ready = result.status === "matched" && ranked_matches.length > 0;
+  const ranked_matches = rankMatches(result.matches);
+  const defer_reason = deferReason(result, ranked_matches);
+  const contact_resolution_ready = defer_reason == null && result.status === "matched";
+  const top = ranked_matches[0] ?? null;
   return {
     signal_id: result.signal_id,
-    status: result.status,
+    status: contact_resolution_ready ? "matched" : result.status === "dismissed" ? "dismissed" : "skipped",
     ranked_matches,
-    match_score: result.match_score,
-    match_reason: result.match_reason,
+    match_score: top?.match_score ?? result.match_score,
+    match_reason: top?.reason ?? result.match_reason,
     contact_resolution_ready,
-    next_action: nextAction(result, contact_resolution_ready),
+    defer_reason,
+    next_action: nextAction(result, contact_resolution_ready, defer_reason),
   };
 }
 
 function nextAction(
   result: LeadMatchingToolResult,
   contactResolutionReady: boolean,
+  deferReason: LeadMatchingDeferReason | null,
 ): LeadMatchingDecision["next_action"] {
   if (contactResolutionReady) return "resolve_contacts";
-  if (result.skip_reason === "budget") return "wait_for_budget";
-  if (result.skip_reason === "no_icps") return "configure_icp";
+  if (deferReason === "budget") return "wait_for_budget";
+  if (deferReason === "no_icps") return "configure_icp";
   if (result.status === "dismissed" || result.skip_reason === "filtered") return "skip";
   return "review_signal";
+}
+
+function rankMatches(matches: LeadMatchingMatch[]): LeadMatchingMatch[] {
+  const bestByIcp = new Map<string, LeadMatchingMatch>();
+  for (const match of matches) {
+    if (!match.icp_segment.trim()) continue;
+    if (!Number.isFinite(match.match_score)) continue;
+    if (match.match_score < 0 || match.match_score > 1) continue;
+    const normalized: LeadMatchingMatch = {
+      icp_segment: match.icp_segment,
+      match_score: match.match_score,
+      reason: match.reason,
+    };
+    const existing = bestByIcp.get(normalized.icp_segment);
+    if (!existing || compareMatches(normalized, existing) < 0) {
+      bestByIcp.set(normalized.icp_segment, normalized);
+    }
+  }
+  return [...bestByIcp.values()].sort(compareMatches);
+}
+
+function compareMatches(a: LeadMatchingMatch, b: LeadMatchingMatch): number {
+  return b.match_score - a.match_score ||
+    a.icp_segment.localeCompare(b.icp_segment) ||
+    a.reason.localeCompare(b.reason);
+}
+
+function deferReason(
+  result: LeadMatchingToolResult,
+  rankedMatches: LeadMatchingMatch[],
+): LeadMatchingDeferReason | null {
+  if (result.status !== "matched") return result.skip_reason ?? null;
+  if (rankedMatches.length === 0) return "empty_candidates";
+  const top = rankedMatches[0];
+  if (!top) return "empty_candidates";
+  if (!result.matched_icp_ids.includes(top.icp_segment)) {
+    return "inconsistent_match_result";
+  }
+  if (top.match_score < LEAD_MATCHING_MIN_MATCH_SCORE) {
+    return "below_eval_threshold";
+  }
+  return null;
+}
+
+async function recordLeadMatchingDefer(
+  bus: EventBus | undefined,
+  state: BombsellLangGraphState,
+  decision: LeadMatchingDecision,
+): Promise<void> {
+  if (!bus || !decision.defer_reason) return;
+  await recordAgentTraceSpan(bus, {
+    workspace_id: state.workspace_id,
+    kind: "langgraph.node",
+    name: `${LEAD_MATCHING_GRAPH_NAME}:rank.deferred`,
+    status: "deferred",
+    graph_name: LEAD_MATCHING_GRAPH_NAME,
+    node_name: "rank",
+    run_id: state.run_id,
+    thread_id: state.thread_id,
+    correlation_id: state.correlation_id,
+    causation_event_id: state.causation_event_id ?? null,
+    primitive_refs: primitiveRefsFromState(state),
+    attributes: {
+      signal_id: decision.signal_id,
+      defer_reason: decision.defer_reason,
+      match_score: decision.match_score,
+      ranked_match_count: decision.ranked_matches.length,
+      next_action: decision.next_action,
+    },
+    producer_ref: `langgraph:${LEAD_MATCHING_GRAPH_NAME}`,
+  });
 }
 
 function signalIdFromState(state: BombsellLangGraphState): string {

@@ -604,7 +604,7 @@ function contactRow(input: {
     title: input.title,
     company_id: input.companyId,
     emails: [input.email],
-    linkedin_url: null,
+    linkedin_url: `https://www.linkedin.com/in/${input.fullName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`,
     properties: {
       email_verification: {
         [input.email.toLowerCase()]: {
@@ -643,6 +643,9 @@ class MutableContactRowsPool {
   }
 
   private async query(sql: string, params: unknown[]): Promise<{ rows: unknown[] }> {
+    if (sql.includes("from graph_companies")) {
+      return { rows: [] };
+    }
     if (sql.includes("select id,") && sql.includes("from graph_persons")) {
       const companyId = String(params[1]);
       const channel = String(params[2]);

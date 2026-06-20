@@ -190,6 +190,94 @@ test("pollOnce: candidate that disappears from the upstream is expired + downstr
   }
 });
 
+test("pollOnce: expired upstream item that reappears reactivates and emits a fresh workspace signal", async (t) => {
+  const fx = await setupPg("poll_reappear");
+  if (!fx) return t.skip("DATABASE_URL not set");
+  const bus = await createProjectingBus(fx.pool);
+  try {
+    const s = await seed(fx.pool);
+    const company = (await getTrackedCompany(fx.pool, s.company_id))!;
+    let response: Response;
+    const fetchImpl = (async () => response) as unknown as typeof fetch;
+    const deps = {
+      pool: fx.pool,
+      bus,
+      embedder: createMockEmbeddingClient(),
+      fetchImpl,
+    };
+
+    response = ghJobsResponse([
+      { id: 7, title: "Founding AE", updated_at: "2026-05-24T00:00:00Z" },
+    ]);
+    const first = await pollOnce(deps, {
+      source_id: s.source_id,
+      adapter: greenhouseAdapter,
+      company,
+    });
+    assert.equal(first.inserted, 1);
+    await until(async () => {
+      const r = await fx.pool.query<{ n: string }>(
+        `select count(*)::text as n from signals where workspace_id = $1`,
+        [s.workspace_id],
+      );
+      return Number(r.rows[0].n) === 1;
+    });
+
+    response = ghJobsResponse([]);
+    const expired = await pollOnce(deps, {
+      source_id: s.source_id,
+      adapter: greenhouseAdapter,
+      company,
+    });
+    assert.equal(expired.expired, 1);
+    await until(async () => {
+      const r = await fx.pool.query<{ n: string }>(
+        `select count(*)::text as n
+           from signals
+          where workspace_id = $1 and status = 'spent'`,
+        [s.workspace_id],
+      );
+      return Number(r.rows[0].n) === 1;
+    });
+
+    response = ghJobsResponse([
+      { id: 7, title: "Founding AE", updated_at: "2026-06-01T00:00:00Z" },
+    ]);
+    const reappeared = await pollOnce(deps, {
+      source_id: s.source_id,
+      adapter: greenhouseAdapter,
+      company,
+    });
+    assert.equal(reappeared.inserted, 0);
+    assert.equal(reappeared.reactivated, 1);
+    assert.equal(reappeared.fanned_out, 1);
+
+    await until(async () => {
+      const r = await fx.pool.query<{ n: string }>(
+        `select count(*)::text as n from signals where workspace_id = $1`,
+        [s.workspace_id],
+      );
+      return Number(r.rows[0].n) === 2;
+    });
+    const { rows: candidate } = await fx.pool.query<{ status: string }>(
+      `select status from signal_candidates where source_id = $1 and external_id = '7'`,
+      [s.source_id],
+    );
+    assert.equal(candidate[0].status, "active");
+
+    const { rows: statuses } = await fx.pool.query<{ status: string }>(
+      `select status::text as status
+         from signals
+        where workspace_id = $1
+        order by ingested_at asc`,
+      [s.workspace_id],
+    );
+    assert.deepEqual(statuses.map((row) => row.status), ["spent", "ingested"]);
+  } finally {
+    await fx.close();
+  }
+});
+
 test("pollOnce: adapter failure records the error on the cursor and returns without throwing", async (t) => {
   const fx = await setupPg("poll_err");
   if (!fx) return t.skip("DATABASE_URL not set");
