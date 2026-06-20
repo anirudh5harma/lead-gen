@@ -106,6 +106,12 @@ interface ContactResolutionPolicy {
   prevent_team_contact_duplication: boolean;
 }
 
+interface ProviderDefer {
+  defer_reason: string;
+  provider_name: string;
+  provider_error: string;
+}
+
 export function createContactResolutionWorkflow(deps: ContactResolutionDeps) {
   return defineWorkflow<ContactResolutionInput, ContactResolutionOutput>({
     name: CONTACT_RESOLUTION_WORKFLOW,
@@ -157,20 +163,21 @@ export function createContactResolutionWorkflow(deps: ContactResolutionDeps) {
           try {
             people = await provider.discover(input);
           } catch (error) {
-            const defer_reason = providerDeferReason(provider.name, error);
-            console.warn(`[contact-resolution] deferred ${provider.name}: ${defer_reason}`);
+            const defer = providerDefer(provider.name, error);
+            console.warn(`[contact-resolution] deferred ${provider.name}: ${defer.defer_reason}`);
             await publishDeferred(
               ctx,
               input,
               contact_resolution_id,
-              defer_reason,
+              defer.defer_reason,
               0,
               providerOrderForDeferredProvider(deps, provider.name),
+              defer,
             );
             statuses.push({
               provider: provider.name,
               status: "deferred",
-              reason: defer_reason,
+              reason: defer.defer_reason,
             });
             continue;
           }
@@ -294,6 +301,7 @@ async function publishDeferred(
   defer_reason: string,
   candidate_count: number,
   provider_order: string[],
+  provider_defer?: ProviderDefer,
 ): Promise<void> {
   await ctx.publish("contact.resolution.deferred", {
     contact_resolution_id,
@@ -303,6 +311,8 @@ async function publishDeferred(
     rep_id: input.rep_id,
     channel: input.channel,
     defer_reason,
+    provider_name: provider_defer?.provider_name ?? null,
+    provider_error: provider_defer?.provider_error ?? null,
     candidate_count,
     provider_order,
   });
@@ -429,15 +439,16 @@ async function verifyCandidateEmails(
     try {
       result = await verifier.verify(email, input);
     } catch (error) {
-      const defer_reason = providerDeferReason(verifier.name, error);
-      console.warn(`[contact-resolution] deferred ${verifier.name}: ${defer_reason}`);
+      const defer = providerDefer(verifier.name, error);
+      console.warn(`[contact-resolution] deferred ${verifier.name}: ${defer.defer_reason}`);
       await publishDeferred(
         ctx,
         input,
         contact_resolution_id,
-        defer_reason,
+        defer.defer_reason,
         0,
         ["graph_cache", verifier.name],
+        defer,
       );
       continue;
     }
@@ -650,13 +661,20 @@ function providerOrderForDeferredProvider(
   return index === -1 ? ["graph_cache", providerName] : order.slice(0, index + 1);
 }
 
-function providerDeferReason(providerName: string, error: unknown): string {
-  const reason = error instanceof ContactProviderDeferredError
+function providerDefer(providerName: string, error: unknown): ProviderDefer {
+  const provider_error = error instanceof ContactProviderDeferredError
     ? error.reason
     : error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")
       ? "provider_timeout"
       : "provider_unavailable";
-  return `${providerName}.${reason}`;
+  const structuredProviderName = error instanceof ContactProviderDeferredError
+    ? error.provider
+    : providerName;
+  return {
+    defer_reason: `${structuredProviderName}.${provider_error}`,
+    provider_name: structuredProviderName,
+    provider_error,
+  };
 }
 
 function contactResolutionId(input: ContactResolutionInput): string {

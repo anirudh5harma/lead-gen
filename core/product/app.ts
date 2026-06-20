@@ -6374,14 +6374,27 @@ export async function matchWorkspaceSignal(
 ): Promise<MatchWorkspaceSignalResult> {
   const engine = await getProductEngine();
   await assertProductWorkspaceAccess(session, engine.pool);
-  const { rows } = await engine.pool.query<{ workspace_id: string }>(
-    `select workspace_id
+  const { rows } = await engine.pool.query<{
+    workspace_id: string;
+    status: string | null;
+    kind: string | null;
+    match_score: string | number | null;
+    match_reason: string | null;
+    audience_hint: Record<string, unknown> | null;
+  }>(
+    `select workspace_id,
+            status::text as status,
+            kind::text as kind,
+            match_score,
+            match_reason,
+            audience_hint
        from signals
       where id = $1
       limit 1`,
     [input.signal_id],
   );
-  const signalWorkspaceId = rows[0]?.workspace_id;
+  const signal = rows[0];
+  const signalWorkspaceId = signal?.workspace_id;
   if (!signalWorkspaceId) {
     return {
       workspace_id: session.workspace_id,
@@ -6397,6 +6410,9 @@ export async function matchWorkspaceSignal(
   }
   if (signalWorkspaceId !== session.workspace_id) {
     throw new Error("Signal not found in the active workspace.");
+  }
+  if (signal.status === "matched" || signal.status === "spent" || signal.status === "dismissed") {
+    return matchWorkspaceSignalTerminalResult(session.workspace_id, input.signal_id, signal);
   }
   const outcome = await classifySignal(
     {
@@ -6448,9 +6464,97 @@ export async function matchWorkspaceSignal(
   };
 }
 
+function matchWorkspaceSignalTerminalResult(
+  workspace_id: string,
+  signal_id: string,
+  signal: {
+    status: string | null;
+    kind: string | null;
+    match_score: string | number | null;
+    match_reason: string | null;
+    audience_hint: Record<string, unknown> | null;
+  },
+): MatchWorkspaceSignalResult {
+  if (signal.status === "matched") {
+    const matches = matchesFromAudienceHint(signal.audience_hint);
+    const matched_icp_ids = matches.map((match) => match.icp_segment);
+    return {
+      workspace_id,
+      signal_id,
+      status: "matched",
+      kind: parseSignalKindOrNull(signal.kind),
+      matched_icp_ids,
+      match_score: nullableNumber(signal.match_score),
+      match_reason: signal.match_reason,
+      matches,
+      skip_reason: null,
+    };
+  }
+  if (signal.status === "dismissed") {
+    return {
+      workspace_id,
+      signal_id,
+      status: "dismissed",
+      kind: parseSignalKindOrNull(signal.kind),
+      matched_icp_ids: [],
+      match_score: nullableNumber(signal.match_score),
+      match_reason: signal.match_reason,
+      matches: [],
+      skip_reason: null,
+    };
+  }
+  return {
+    workspace_id,
+    signal_id,
+    status: "skipped",
+    kind: parseSignalKindOrNull(signal.kind),
+    matched_icp_ids: [],
+    match_score: nullableNumber(signal.match_score),
+    match_reason: signal.match_reason,
+    matches: [],
+    skip_reason: null,
+  };
+}
+
+function matchesFromAudienceHint(
+  audience_hint: Record<string, unknown> | null,
+): Array<{ icp_segment: string; match_score: number; reason: string }> {
+  const matchedIcps = Array.isArray(audience_hint?.matched_icps)
+    ? audience_hint.matched_icps
+    : [];
+  const matches: Array<{ icp_segment: string; match_score: number; reason: string }> = [];
+  for (const entry of matchedIcps) {
+    if (!entry || typeof entry !== "object") continue;
+    const candidate = entry as Record<string, unknown>;
+    const icp_segment = typeof candidate.icp_id === "string"
+      ? candidate.icp_id
+      : typeof candidate.icp_segment === "string"
+        ? candidate.icp_segment
+        : null;
+    const match_score = nullableNumber(candidate.score ?? candidate.match_score);
+    if (!icp_segment || match_score == null) continue;
+    matches.push({
+      icp_segment,
+      match_score,
+      reason: typeof candidate.reason === "string" ? candidate.reason : "",
+    });
+  }
+  return matches;
+}
+
+function nullableNumber(value: unknown): number | null {
+  if (value == null) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 function parseSignalKind(kind: unknown): SignalKindValue {
   const parsed = SignalKind.safeParse(kind);
   return parsed.success ? parsed.data : "hiring";
+}
+
+function parseSignalKindOrNull(kind: unknown): SignalKindValue | null {
+  return typeof kind === "string" ? parseSignalKind(kind) : null;
 }
 
 function titleizeSignalKind(kind: string): string {

@@ -1991,6 +1991,27 @@ test("Signal ingress matching dispatch is centralized in the product dispatcher"
   assert.match(capabilityMap, /product-signal-matching-workflow-dispatcher-v1/);
 });
 
+test("matchWorkspaceSignal short-circuits terminal read-model states before classifying", () => {
+  const productApp = source("core/product/app.ts");
+  const matchWorkspaceSignal = productApp.slice(
+    productApp.indexOf("export async function matchWorkspaceSignal"),
+    productApp.indexOf("function parseSignalKind"),
+  );
+
+  assert.match(matchWorkspaceSignal, /status::text as status/);
+  assert.match(matchWorkspaceSignal, /audience_hint/);
+  assert.match(
+    matchWorkspaceSignal,
+    /signal\.status === "matched" \|\| signal\.status === "spent" \|\| signal\.status === "dismissed"/,
+  );
+  assert.match(matchWorkspaceSignal, /matchWorkspaceSignalTerminalResult/);
+  assert.ok(
+    matchWorkspaceSignal.indexOf("matchWorkspaceSignalTerminalResult") <
+      matchWorkspaceSignal.indexOf("classifySignal("),
+    "terminal read-model check must run before classifySignal",
+  );
+});
+
 test("channel connection wakes launch readiness through the product backend", () => {
   const productApp = source("core/product/app.ts");
   const channelWorkflow = source(

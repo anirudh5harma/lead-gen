@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import {
   CONTACT_RESOLUTION_WORKFLOW,
+  ContactProviderDeferredError,
   contactDiscoveryDomain,
   contactPersonFromExaResult,
   createContactResolutionProviders,
@@ -268,6 +269,55 @@ test("contact resolution workflow resolves with fewer than three verified contac
   assert.equal(deferred, undefined);
   assert.deepEqual(resolved?.payload.provider_order, ["graph_cache", "provider.no_extra_contacts"]);
   assert.equal(resolved?.payload.candidates[0]?.full_name, "Ava Founder");
+});
+
+test("contact resolution deferred event carries structured provider fields", async () => {
+  const workspaceId = randomUUID();
+  const signalId = randomUUID();
+  const companyId = randomUUID();
+  const playId = randomUUID();
+  const repId = randomUUID();
+  const bus = createInMemoryEventBus();
+  const runtime = createInProcessWorkflowRuntime({ bus });
+  runtime.register(
+    createContactResolutionWorkflow({
+      pool: mockContactRowsPool([]),
+      discoveryProviders: [{
+        name: "hunter",
+        async discover() {
+          throw new ContactProviderDeferredError(
+            "hunter",
+            "provider_unconfigured",
+            "missing HUNTER_API_KEY",
+          );
+        },
+      }],
+    }),
+  );
+
+  const run = await runtime.start<ContactResolutionInput, ContactResolutionOutput>({
+    workspace_id: workspaceId,
+    workflow_name: CONTACT_RESOLUTION_WORKFLOW,
+    input: {
+      workspace_id: workspaceId,
+      signal_id: signalId,
+      company_id: companyId,
+      play_id: playId,
+      rep_id: repId,
+      channel: "email",
+    },
+  });
+  const completed = await waitForCompletedRun(runtime, run.id);
+  const providerDeferred = bus.published.find((event) =>
+    event.event_type === "contact.resolution.deferred" &&
+    event.payload.defer_reason === "hunter.provider_unconfigured"
+  );
+
+  assert.equal(completed.output?.decision, "deferred");
+  assert.equal(providerDeferred?.payload.defer_reason, "hunter.provider_unconfigured");
+  assert.equal(providerDeferred?.payload.provider_name, "hunter");
+  assert.equal(providerDeferred?.payload.provider_error, "provider_unconfigured");
+  assert.deepEqual(providerDeferred?.payload.provider_order, ["graph_cache", "hunter"]);
 });
 
 test("contact resolution workflow defers email outreach when contacts are not verified", async () => {

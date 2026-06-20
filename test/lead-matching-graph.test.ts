@@ -295,6 +295,16 @@ test("lead matching graph: defers matched output with no candidates", async () =
   assert.equal(decision.next_action, "review_signal");
   assert.equal(decision.defer_reason, "empty_candidates");
   assert.equal(deferredReason(bus, signal_id), "empty_candidates");
+  const typedDeferred = matchingDeferred(bus, signal_id);
+  assert.equal(typedDeferred?.workspace_id, workspace_id);
+  assert.equal(typedDeferred?.payload.workspace_id, workspace_id);
+  assert.equal(typedDeferred?.payload.signal_id, signal_id);
+  assert.equal(typedDeferred?.payload.defer_reason, "empty_candidates");
+  assert.equal(typedDeferred?.source, "agent");
+  assert.match(
+    typedDeferred?.idempotency_key ?? "",
+    /lead\.matching_graph\.v1:deferred:.+:empty_candidates/,
+  );
 });
 
 test("lead matching graph: defers sub-threshold matches before contact resolution", async () => {
@@ -346,12 +356,26 @@ test("lead matching graph: defers sub-threshold matches before contact resolutio
   assert.equal(decision.defer_reason, "below_eval_threshold");
   assert.equal(deferredReason(bus, signal_id), "below_eval_threshold");
   assert.equal(
+    matchingDeferred(bus, signal_id)?.payload.defer_reason,
+    "below_eval_threshold",
+  );
+  assert.equal(
     bus.published.some((event) =>
       ["message.queued", "message.sent", "message.deferred"].includes(event.event_type)
     ),
     false,
   );
 });
+
+function matchingDeferred(
+  bus: ReturnType<typeof createInMemoryEventBus>,
+  signal_id: string,
+) {
+  return bus.published.find((event) =>
+    event.event_type === "signal.matching.deferred" &&
+    event.payload.signal_id === signal_id
+  );
+}
 
 function deferredReason(
   bus: ReturnType<typeof createInMemoryEventBus>,

@@ -290,6 +290,21 @@ async function recordLeadMatchingDefer(
   decision: LeadMatchingDecision,
 ): Promise<void> {
   if (!bus || !decision.defer_reason) return;
+  await bus.publish({
+    workspace_id: state.workspace_id,
+    event_type: "signal.matching.deferred",
+    source: "agent",
+    producer_ref: `langgraph:${LEAD_MATCHING_GRAPH_NAME}`,
+    correlation_id: state.correlation_id,
+    causation_id: state.causation_event_id ?? undefined,
+    idempotency_key:
+      `${LEAD_MATCHING_GRAPH_NAME}:deferred:${state.run_id}:${decision.signal_id}:${decision.defer_reason}`,
+    payload: {
+      workspace_id: state.workspace_id,
+      signal_id: decision.signal_id,
+      defer_reason: decision.defer_reason,
+    },
+  });
   await recordAgentTraceSpan(bus, {
     workspace_id: state.workspace_id,
     kind: "langgraph.node",

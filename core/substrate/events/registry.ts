@@ -330,6 +330,8 @@ const ContactResolutionDeferred = z.object({
   rep_id: z.string().uuid(),
   channel: z.enum(["email", "linkedin"]),
   defer_reason: z.string().min(1),
+  provider_name: z.string().min(1).nullable().optional(),
+  provider_error: z.string().min(1).nullable().optional(),
   candidate_count: z.number().int().nonnegative(),
   provider_order: z.array(z.string()),
 });
@@ -382,6 +384,21 @@ const SignalMatched = z.object({
   signal_id: z.string().uuid(),
   match_score: z.number().min(0).max(1),
   icp_segment: z.string().optional(),
+});
+
+const SignalMatchingDeferred = z.object({
+  workspace_id: z.string().uuid(),
+  signal_id: z.string().uuid(),
+  defer_reason: z.enum([
+    "no_icps",
+    "budget",
+    "not_found",
+    "non_json",
+    "filtered",
+    "empty_candidates",
+    "below_eval_threshold",
+    "inconsistent_match_result",
+  ]),
 });
 
 const SignalCompanyLinked = z.object({
@@ -1646,6 +1663,7 @@ export const eventRegistry = {
   "signal.discovered": SignalDiscovered,
   "signal.ingested": SignalIngested,
   "signal.matched": SignalMatched,
+  "signal.matching.deferred": SignalMatchingDeferred,
   "signal.company.linked": SignalCompanyLinked,
   "signal.dismissed": SignalDismissed,
   "signal.dismissal.requested": SignalDismissalRequested,
