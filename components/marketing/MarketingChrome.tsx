@@ -3,7 +3,6 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import BrandIcon from '@/components/BrandIcon'
-import Icon from '@/components/Icon'
 import { googleAuthPath, PRODUCT_HOME_PATH } from '@/lib/auth/next'
 
 export const FOUNDER_CALL_URL = 'https://cal.com/anirudh5harma/15min'
@@ -151,24 +150,15 @@ export function MarketingFooter() {
           </p>
           <div className="flex items-center gap-3">
             <a
-              href="https://x.com/bombsell"
+              href="https://x.com/TeamBombsell"
               target="_blank"
               rel="noopener noreferrer"
-              aria-label="X / Twitter"
+              aria-label="X"
               className="grid size-9 place-items-center rounded-full bg-[var(--color-ink-1)] text-[var(--color-text-3)] transition-colors hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
               </svg>
-            </a>
-            <a
-              href={FOUNDER_CALL_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Book a call"
-              className="grid size-9 place-items-center rounded-full bg-[var(--color-ink-1)] text-[var(--color-text-3)] transition-colors hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]"
-            >
-              <Icon name="event_available" size={14} />
             </a>
           </div>
         </div>

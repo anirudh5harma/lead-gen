@@ -7,16 +7,24 @@ import { MarketingNav, MarketingFooter, FOUNDER_CALL_URL } from '@/components/ma
 import { googleAuthPath } from '@/lib/auth/next'
 
 // Real integrations Bombsell actually connects to — honest "works with",
-// not borrowed-credibility "trusted by".
-const INTEGRATIONS = [
-  { name: 'Microsoft Outlook', slug: 'microsoftoutlook' },
-  { name: 'Gmail', slug: 'gmail' },
-  { name: 'LinkedIn', slug: 'linkedin' },
-  { name: 'Slack', slug: 'slack' },
+// not borrowed-credibility "trusted by". Outlook/LinkedIn/Slack ship as inline
+// SVG because Simple Icons removed those brand marks (trademark) and the CDN
+// 404s them; the rest load reliably from the Simple Icons CDN.
+type Integration = { name: string; slug?: string; path?: string }
+const INTEGRATIONS: Integration[] = [
+  {
+    name: 'Microsoft Outlook',
+    path: 'M7.88 12.04q0 .45-.11.87-.1.41-.33.74-.22.33-.58.52-.37.2-.87.2t-.85-.2q-.35-.21-.57-.55-.22-.33-.33-.75-.1-.42-.1-.86t.1-.87q.1-.43.34-.76.22-.34.59-.54.36-.2.87-.2t.86.2q.35.21.57.55.22.34.31.76.1.43.1.85zM24 12v9.38q0 .46-.33.8-.33.32-.8.32H7.13q-.46 0-.8-.33-.32-.33-.32-.8V18H1q-.41 0-.7-.3-.3-.29-.3-.7V7q0-.41.3-.7Q.58 6 1 6h6.5V2.55q0-.44.3-.75.3-.3.75-.3h12.9q.44 0 .75.3.3.3.3.75V10.85l1.24.72h.01q.1.07.18.18.07.12.07.25zm-6-8.25v3h3v-3zm0 4.5v3h3v-3zm0 4.5v1.83l3.05-1.83zm-5.25-9v3h3.75v-3zm0 4.5v3h3.75v-3zm0 4.5v2.03l2.41 1.5 1.34-.8v-2.73zM9 3.75V6h2l.13.01.12.04v-2.3zM5.98 15.98q.9 0 1.6-.3.7-.32 1.19-.86.48-.55.73-1.28.25-.74.25-1.61 0-.83-.25-1.55-.24-.71-.71-1.24t-1.15-.83q-.68-.3-1.55-.3-.92 0-1.64.3-.71.3-1.2.85-.5.54-.75 1.3-.25.74-.25 1.63 0 .85.26 1.56.26.72.74 1.24.48.52 1.17.81.69.28 1.56.28zM7.5 21h12.39L12 16.08V17q0 .41-.3.7-.29.3-.7.3H7.5z',
+  },
+  {
+    name: 'LinkedIn',
+    path: 'M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z',
+  },
+  {
+    name: 'Slack',
+    path: 'M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.685 8.834a2.528 2.528 0 0 1-2.521 2.521 2.527 2.527 0 0 1-2.521-2.521V2.522A2.527 2.527 0 0 1 15.164 0a2.528 2.528 0 0 1 2.521 2.522v6.312zM15.164 18.956a2.528 2.528 0 0 1 2.521 2.522A2.528 2.528 0 0 1 15.164 24a2.527 2.527 0 0 1-2.521-2.522v-2.522h2.521zM15.164 17.685a2.527 2.527 0 0 1-2.521-2.52 2.526 2.526 0 0 1 2.521-2.521h6.314A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.52h-6.314z',
+  },
   { name: 'HubSpot', slug: 'hubspot' },
-  { name: 'Supabase', slug: 'supabase' },
-  { name: 'Resend', slug: 'resend' },
-  { name: 'Anthropic', slug: 'anthropic' },
 ]
 
 const FEATURES = [
@@ -47,12 +55,12 @@ const FEATURES = [
 ]
 
 const STACK = [
-  { icon: 'edit', title: 'Copywriting', desc: 'Personalized at scale' },
-  { icon: 'account_tree', title: 'Sequencing', desc: 'Adaptive multi-step plays' },
-  { icon: 'sensors', title: 'Signals', desc: '15+ buying signals tracked' },
-  { icon: 'travel_explore', title: 'Finder', desc: 'TAM graph + lookalikes' },
-  { icon: 'verified', title: 'Verification', desc: 'Email + LinkedIn proof' },
-  { icon: 'auto_graph', title: 'Learning', desc: 'Win patterns by week' },
+  { icon: 'edit', title: 'Copywriting', desc: 'Personalized at scale', tone: 'pink' },
+  { icon: 'account_tree', title: 'Sequencing', desc: 'Adaptive multi-step plays', tone: 'blue' },
+  { icon: 'sensors', title: 'Signals', desc: '15+ buying signals tracked', tone: 'yellow' },
+  { icon: 'travel_explore', title: 'Finder', desc: 'TAM graph + lookalikes', tone: 'green' },
+  { icon: 'verified', title: 'Verification', desc: 'Email + LinkedIn proof', tone: 'blue' },
+  { icon: 'auto_graph', title: 'Learning', desc: 'Win patterns by week', tone: 'pink' },
 ]
 
 const STEPS = [
@@ -102,7 +110,7 @@ export default function Home() {
 
       {/* HERO */}
       <section className="relative px-4 pt-28 pb-16 md:px-8 md:pt-32 md:pb-24 lg:px-12">
-        <div className="mx-auto grid w-full max-w-[1280px] grid-cols-1 items-end gap-12 lg:grid-cols-[1.05fr_1fr] lg:gap-16">
+        <div className="mx-auto grid w-full max-w-[1280px] grid-cols-1 items-center gap-12 lg:grid-cols-[1.05fr_1fr] lg:gap-16">
           <div>
             <ScrollReveal delay={0.05}>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-cta-bg)] px-2.5 py-1 text-[12px] font-semibold leading-[1.4286] tracking-[-0.01em] text-[var(--color-brand-pink)]">
@@ -182,17 +190,33 @@ export default function Home() {
             Works with the tools you already use
           </p>
           <div className="flex flex-wrap items-center justify-center gap-x-10 gap-y-6 md:gap-x-14">
-            {INTEGRATIONS.map((logo) => (
-              <img
-                key={logo.slug}
-                src={`https://cdn.simpleicons.org/${logo.slug}/212121`}
-                alt={logo.name}
-                title={logo.name}
-                width={22}
-                height={22}
-                className="h-[22px] w-auto opacity-50 grayscale transition-opacity hover:opacity-100"
-              />
-            ))}
+            {INTEGRATIONS.map((logo) =>
+              logo.slug ? (
+                <img
+                  key={logo.name}
+                  src={`https://cdn.simpleicons.org/${logo.slug}/212121`}
+                  alt={logo.name}
+                  title={logo.name}
+                  width={22}
+                  height={22}
+                  className="h-[22px] w-auto opacity-50 grayscale transition-opacity hover:opacity-100"
+                />
+              ) : (
+                <svg
+                  key={logo.name}
+                  role="img"
+                  aria-label={logo.name}
+                  viewBox="0 0 24 24"
+                  width={22}
+                  height={22}
+                  fill="#212121"
+                  className="h-[22px] w-auto opacity-50 transition-opacity hover:opacity-100"
+                >
+                  <title>{logo.name}</title>
+                  <path d={logo.path} />
+                </svg>
+              ),
+            )}
           </div>
         </div>
       </section>
@@ -256,14 +280,18 @@ export default function Home() {
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
             {STACK.map((card, i) => (
               <ScrollReveal key={card.title} delay={i * 0.05}>
-                <div className="h-full rounded-[14px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-5 transition-colors hover:border-[var(--color-line-3)]">
-                  <div className="grid size-9 place-items-center rounded-[10px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
-                    <Icon name={card.icon} size={16} />
+                <div className="group relative h-full overflow-hidden rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-5 transition-colors hover:border-[var(--color-line-3)]">
+                  <div
+                    aria-hidden
+                    className={`pointer-events-none absolute -right-6 -top-6 size-16 rounded-full opacity-0 blur-2xl transition-opacity duration-300 group-hover:opacity-60 ${TONE_DOT[card.tone]}`}
+                  />
+                  <div className={`relative mb-4 inline-flex size-10 items-center justify-center rounded-[10px] ${TONE_BG[card.tone]}`}>
+                    <Icon name={card.icon} size={18} />
                   </div>
-                  <p className="mt-4 text-[15px] font-semibold tracking-[-0.01em] text-[var(--color-text-1)]">
+                  <p className="relative text-[15px] font-semibold tracking-[-0.01em] text-[var(--color-text-1)]">
                     {card.title}
                   </p>
-                  <p className="mt-1 text-[12.5px] leading-[1.5] text-[var(--color-text-3)]">
+                  <p className="relative mt-1 text-[12.5px] leading-[1.5] tracking-[-0.01em] text-[var(--color-text-3)]">
                     {card.desc}
                   </p>
                 </div>
@@ -392,7 +420,7 @@ function HeroPane() {
   return (
     <div className="relative w-full">
       {/* Decorative accent behind pane */}
-      <div aria-hidden className="pointer-events-none absolute -inset-x-6 -top-10 -bottom-6 -z-10 rounded-[28px] bg-gradient-to-br from-[var(--color-brand-pink)]/30 via-[var(--color-brand-yellow)]/20 to-[var(--color-brand-blue)]/30" />
+      <div aria-hidden className="pointer-events-none absolute -inset-x-6 -top-3 -bottom-6 -z-10 rounded-[28px] bg-gradient-to-br from-[var(--color-brand-pink)]/30 via-[var(--color-brand-yellow)]/20 to-[var(--color-brand-blue)]/30" />
 
       <div className="relative overflow-hidden rounded-[20px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] depth-stack">
         {/* Browser chrome */}
