@@ -10,7 +10,6 @@ import {
 import Icon from "@/components/Icon";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspace } from "@/lib/workspace";
-import FitFeedbackButton from "@/components/dashboard/FitFeedbackButton";
 import { recordPersonFitFeedbackAction } from "../../../actions";
 
 export const dynamic = "force-dynamic";
@@ -436,13 +435,23 @@ function FitFeedbackPanel({ contact }: { contact: ContactProfileRow }) {
               name="return_to"
               value={`/dashboard/agent/contacts/${contact.id}`}
             />
-            <FitFeedbackButton
-              icon={option.icon}
-              active={fit.decision === option.decision}
-              detail={option.detail}
+            <button
+              type="submit"
+              className={
+                "flex w-full items-center justify-between gap-3 rounded-[8px] border px-3 py-2 text-left transition-colors " +
+                (fit.decision === option.decision
+                  ? "border-[var(--color-accent)] bg-[var(--color-accent-bg)] text-[var(--color-accent)]"
+                  : "border-[var(--color-line-1)] bg-[var(--color-ink-0)] text-[var(--color-text-2)] hover:border-[var(--color-line-3)]")
+              }
             >
-              {option.label}
-            </FitFeedbackButton>
+              <span className="flex min-w-0 items-center gap-2">
+                <Icon name={option.icon} size={14} />
+                <span className="truncate text-sm font-semibold">{option.label}</span>
+              </span>
+              <span className="text-xs text-[var(--color-text-3)]">
+                {option.detail}
+              </span>
+            </button>
           </form>
         ))}
       </div>
@@ -542,7 +551,7 @@ function ConversationRow({
   return (
     <Link
       href={`/dashboard/agent/outreach/${conversation.id}`}
-      prefetch
+      prefetch={false}
       className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[1fr_auto] md:items-center"
     >
       <div className="min-w-0">

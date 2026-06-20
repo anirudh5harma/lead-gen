@@ -319,7 +319,7 @@ function TimelineItem({ item }: { item: TimelineItemData }) {
         {content}
       </a>
     ) : (
-      <Link href={item.href} prefetch className="min-w-0">
+      <Link href={item.href} prefetch={false} className="min-w-0">
         {content}
       </Link>
     );
@@ -392,7 +392,7 @@ function MeetingPrepPanel({
                   return_to: agentOutreachDetailHref(conversationId),
                 },
               }}
-              prefetch
+              prefetch={false}
               className="btn-quiet-sm w-fit"
             >
               <Icon name="event_available" size={14} />
@@ -831,7 +831,7 @@ export default async function AgentOutreachDetailPage({
           <p className="text-xs text-[var(--color-text-3)]">
             <Link
               href="/dashboard/agent#outreach"
-              prefetch
+              prefetch={false}
               className="hover:text-[var(--color-text-1)]"
             >
               Back to sent outreach

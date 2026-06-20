@@ -1431,7 +1431,7 @@ function BriefHotContactRow({ contact }: { contact: BriefHotContact }) {
   return (
     <Link
       href={`/dashboard/agent/contacts/${contact.id}`}
-      prefetch
+      prefetch={false}
       className="group grid gap-3 rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-[transform,border-color,box-shadow] duration-300 hover:-translate-y-0.5 hover:border-[var(--color-line-3)] hover:shadow-[0_18px_40px_-24px_rgba(0,0,0,0.22)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
     >
       <span className="flex min-w-0 items-start gap-3">
@@ -1698,7 +1698,7 @@ function OutcomeInsightRow({ insight }: { insight: BriefOutcomeInsight }) {
     : "/dashboard/agent#outreach";
   return (
     <article className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-      <Link href={href} prefetch className="min-w-0">
+      <Link href={href} prefetch={false} className="min-w-0">
         <span className="flex min-w-0 items-start gap-3">
           <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-pos-bg)] text-[var(--color-pos)]">
             <Icon
