@@ -29,27 +29,31 @@ const INTEGRATIONS: Integration[] = [
 
 const FEATURES = [
   {
+    tag: 'Profile',
+    step: '01',
     title: 'Your buyer profile builds itself',
     description: 'Drop a URL. Bombsell reads your site, distills positioning, audience, and pitch — no manual list building.',
-    icon: 'person',
     tone: 'pink',
   },
   {
+    tag: 'Signals',
+    step: '02',
     title: 'Quality signals, ranked by intent',
     description: 'Job posts, funding, product launches, inbound activity. Outreach starts from real timing evidence.',
-    icon: 'sensors',
     tone: 'yellow',
   },
   {
+    tag: 'Contacts',
+    step: '03',
     title: 'Verified contacts',
     description: 'Qualified signals become reachable people — verified email plus LinkedIn profile, never one without the other.',
-    icon: 'account_tree',
     tone: 'green',
   },
   {
+    tag: 'Outreach',
+    step: '04',
     title: 'Agent outreach with proof',
     description: 'The agent drafts, judges, and sends across email and LinkedIn. Every message inspectable. Every reply attributed.',
-    icon: 'fact_check',
     tone: 'blue',
   },
 ]
@@ -272,8 +276,13 @@ export default function Home() {
                     className={`feat-aurora ${i % 2 ? 'feat-aurora-2' : ''} pointer-events-none absolute -right-16 -top-20 size-52 rounded-full opacity-25 blur-[60px] transition-opacity duration-500 group-hover:opacity-60 ${TONE_SWEEP[feature.tone]}`}
                   />
                   <div className="relative">
-                    <div className={`mb-5 inline-flex size-11 items-center justify-center rounded-[12px] transition-transform duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover:scale-110 group-hover:-rotate-6 ${TONE_BG[feature.tone]}`}>
-                      <Icon name={feature.icon} size={20} />
+                    <div className="mb-6 flex items-center justify-between">
+                      <span className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] transition-transform duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover:scale-105 ${TONE_BG[feature.tone]}`}>
+                        {feature.tag}
+                      </span>
+                      <span className="font-mono text-[12px] tabular-nums text-[var(--color-text-4)]">
+                        {feature.step}
+                      </span>
                     </div>
                     <h3 className="inline-block text-[20px] font-semibold tracking-[-0.015em] text-[var(--color-text-1)]">
                       {feature.title}
