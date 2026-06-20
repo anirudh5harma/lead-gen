@@ -1,13 +1,17 @@
 import Icon from "@/components/Icon";
 
-type LoadingSurface = "agent" | "brief" | "dashboard" | "profile";
+type LoadingSurface =
+  | "agent"
+  | "brief"
+  | "dashboard"
+  | "profile";
 
 type LoadingLayout = "tiles" | "rows" | "split";
 
 const SURFACE_COPY: Record<LoadingSurface, { kicker: string; title: string; icon: string }> = {
   agent: { kicker: "Agent", title: "Loading live work", icon: "auto_awesome" },
   dashboard: { kicker: "Dashboard", title: "Gathering the morning view", icon: "dashboard" },
-  brief: { kicker: "Brief", title: "Gathering the morning view", icon: "dashboard" },
+  brief: { kicker: "Dashboard", title: "Gathering the morning view", icon: "dashboard" },
   profile: { kicker: "Profile", title: "Loading profile and integrations", icon: "verified" },
 };
 

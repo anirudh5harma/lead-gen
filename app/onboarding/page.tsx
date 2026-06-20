@@ -45,7 +45,7 @@ export default async function OnboardingPage({
           <ScrollReveal delay={0.05}>
             <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-cta-bg)] px-2.5 py-1 text-[12px] font-semibold tracking-[-0.01em] text-[var(--color-brand-green-bright)]">
               <span className="size-1.5 rounded-full bg-[var(--color-brand-green-bright)]" />
-              Launch Agent
+              Launch agent
             </span>
           </ScrollReveal>
           <ScrollReveal delay={0.15}>
@@ -53,13 +53,13 @@ export default async function OnboardingPage({
               className="mt-5 max-w-[14ch] text-[clamp(2.25rem,5vw,4rem)] font-bold leading-[1.0] tracking-[-0.03em] text-[var(--color-text-1)]"
               style={{ fontFamily: "var(--font-display)" }}
             >
-              Drop your URL. Agent does the rest.
+              Enter your website. Bombsell builds the Profile.
             </h1>
           </ScrollReveal>
           <ScrollReveal delay={0.25}>
             <p className="mt-6 max-w-[460px] text-[17px] leading-[1.55] tracking-[-0.01em] text-[var(--color-text-2)]">
-              Bombsell reads your site, builds positioning, ICP, voice, and the
-              signal map. Connect Outlook and LinkedIn — outreach starts.
+              Bombsell reads your site, builds positioning, proof, and goals,
+              then turns them into signal sources, verified contacts, and outreach.
             </p>
           </ScrollReveal>
           <ScrollReveal delay={0.35}>
@@ -74,13 +74,13 @@ export default async function OnboardingPage({
                 number="2"
                 tone="yellow"
                 label="Profile + channels"
-                text="Outlook and LinkedIn connect inside Profile."
+                text="Connect Outlook and LinkedIn in Profile."
               />
               <FlowStep
                 number="3"
                 tone="green"
                 label="Agent"
-                text="Signals, contacts, drafts, sends, replies — one surface."
+                text="Signals, verified contacts, drafts, sends, and replies."
               />
             </div>
           </ScrollReveal>
@@ -112,8 +112,7 @@ export default async function OnboardingPage({
                   Build launch Profile
                 </h2>
                 <p className="mt-1.5 text-[13.5px] leading-[1.55] tracking-[-0.01em] text-[var(--color-text-3)]">
-                  Website analysis plus the context to create sources, outreach
-                  rules, and the first Agent queue.
+                  Website analysis plus the context to create sources, outreach rules, and the first Agent queue.
                 </p>
               </div>
             </div>

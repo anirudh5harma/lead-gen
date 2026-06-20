@@ -71,6 +71,6 @@ test("product context summarizes Exa recommendation learning", () => {
   });
 
   assert.match(markdown, /All recommendations: reviewed=5 kept=3 skipped=2 keep_rate=60%/);
-  assert.match(markdown, /Content opportunities: reviewed=3 kept=2 skipped=1 keep_rate=67%/);
-  assert.match(markdown, /AEO gaps: reviewed=2 kept=1 skipped=1 keep_rate=50%/);
+  assert.match(markdown, /Signal suggestions: reviewed=3 kept=2 skipped=1 keep_rate=67%/);
+  assert.match(markdown, /Visibility gaps: reviewed=2 kept=1 skipped=1 keep_rate=50%/);
 });

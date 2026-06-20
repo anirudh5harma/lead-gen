@@ -70,6 +70,13 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     example: "https://app.example.com",
   },
   {
+    name: "NEXT_PUBLIC_APP_URL",
+    requirement: "optional",
+    category: "runtime",
+    description: "Optional public origin override used for MCP OAuth metadata.",
+    example: "https://app.example.com",
+  },
+  {
     name: "BOMBSELL_SUBSTRATE",
     requirement: "optional",
     category: "substrate",
@@ -146,6 +153,20 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     requirement: "optional",
     category: "runtime",
     description: "Supabase access token used only by verify:production-app to verify authenticated MCP readiness discovery.",
+  },
+  {
+    name: "DASHBOARD_VERIFY_ORIGIN",
+    requirement: "optional",
+    category: "runtime",
+    description: "Origin override used only by the dashboard surface verifier.",
+    example: "http://127.0.0.1:3023",
+  },
+  {
+    name: "DASHBOARD_VERIFY_SCREENSHOTS",
+    requirement: "optional",
+    category: "runtime",
+    description: "Set to 1 to capture screenshots during dashboard surface verification.",
+    example: "0",
   },
   {
     name: "DEEPSEEK_API_KEY",
