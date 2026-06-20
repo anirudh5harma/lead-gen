@@ -1587,3 +1587,17 @@ select:focus, select:focus-visible {
   opacity: 0;
   transform: translateX(-12px);
 }
+
+/* ── Landing feature cards: drifting brand aurora ────────────── */
+@keyframes feat-aurora {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-16px, 14px) scale(1.18); }
+}
+.feat-aurora {
+  animation: feat-aurora 9s ease-in-out infinite;
+  will-change: transform;
+}
+.feat-aurora-2 { animation-duration: 11s; animation-delay: -3s; }
+@media (prefers-reduced-motion: reduce) {
+  .feat-aurora { animation: none; }
+}

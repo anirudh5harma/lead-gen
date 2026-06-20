@@ -102,6 +102,28 @@ const TONE_DOT: Record<string, string> = {
   blue: 'bg-[var(--color-brand-blue)]',
 }
 
+// Solid brand fill used for the "six tools" hover-sweep + feature aurora.
+const TONE_SWEEP: Record<string, string> = {
+  pink: 'bg-[var(--color-brand-pink)]',
+  yellow: 'bg-[var(--color-brand-yellow)]',
+  green: 'bg-[var(--color-brand-green)]',
+  blue: 'bg-[var(--color-brand-blue)]',
+}
+
+// Ink-on-brand text once a card is swept with its brand color.
+const TONE_HOVER_TITLE: Record<string, string> = {
+  pink: 'group-hover:text-[#9a0103]',
+  yellow: 'group-hover:text-[#441f16]',
+  green: 'group-hover:text-[#273416]',
+  blue: 'group-hover:text-[#0a0d27]',
+}
+const TONE_HOVER_BODY: Record<string, string> = {
+  pink: 'group-hover:text-[#9a0103cc]',
+  yellow: 'group-hover:text-[#441f16cc]',
+  green: 'group-hover:text-[#273416cc]',
+  blue: 'group-hover:text-[#0a0d27cc]',
+}
+
 export default function Home() {
   return (
     <main className="relative isolate min-h-[100dvh] overflow-hidden bg-[var(--color-ink-1)] text-[var(--color-text-1)]">
@@ -245,15 +267,25 @@ export default function Home() {
             {FEATURES.map((feature, i) => (
               <ScrollReveal key={feature.title} delay={i * 0.08}>
                 <article className="group relative h-full overflow-hidden rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-7 transition-[transform,border-color,box-shadow] duration-300 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] hover:-translate-y-1 hover:border-[var(--color-line-3)] hover:shadow-[0_18px_40px_-24px_rgba(0,0,0,0.22)]">
-                  <div className={`mb-5 inline-flex size-10 items-center justify-center rounded-[10px] transition-transform duration-300 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] group-hover:scale-105 ${TONE_BG[feature.tone]}`}>
-                    <Icon name={feature.icon} size={18} />
+                  <div
+                    aria-hidden
+                    className={`feat-aurora ${i % 2 ? 'feat-aurora-2' : ''} pointer-events-none absolute -right-16 -top-20 size-52 rounded-full opacity-25 blur-[60px] transition-opacity duration-500 group-hover:opacity-60 ${TONE_SWEEP[feature.tone]}`}
+                  />
+                  <div className="relative">
+                    <div className={`mb-5 inline-flex size-11 items-center justify-center rounded-[12px] transition-transform duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover:scale-110 group-hover:-rotate-6 ${TONE_BG[feature.tone]}`}>
+                      <Icon name={feature.icon} size={20} />
+                    </div>
+                    <h3 className="inline-block text-[20px] font-semibold tracking-[-0.015em] text-[var(--color-text-1)]">
+                      {feature.title}
+                      <span
+                        aria-hidden
+                        className={`mt-1 block h-[2px] w-0 rounded-full transition-[width] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:w-full ${TONE_SWEEP[feature.tone]}`}
+                      />
+                    </h3>
+                    <p className="mt-3 max-w-[42ch] text-[14.5px] leading-[1.55] tracking-[-0.01em] text-[var(--color-text-2)]">
+                      {feature.description}
+                    </p>
                   </div>
-                  <h3 className="text-[20px] font-semibold tracking-[-0.015em] text-[var(--color-text-1)]">
-                    {feature.title}
-                  </h3>
-                  <p className="mt-3 max-w-[42ch] text-[14.5px] leading-[1.55] tracking-[-0.01em] text-[var(--color-text-2)]">
-                    {feature.description}
-                  </p>
                 </article>
               </ScrollReveal>
             ))}
@@ -280,16 +312,22 @@ export default function Home() {
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
             {STACK.map((card, i) => (
               <ScrollReveal key={card.title} delay={i * 0.05}>
-                <div className="group relative h-full overflow-hidden rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-5 transition-[transform,border-color,box-shadow] duration-300 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] hover:-translate-y-1 hover:border-[var(--color-line-3)] hover:shadow-[0_18px_40px_-24px_rgba(0,0,0,0.22)]">
-                  <div className={`mb-4 inline-flex size-10 items-center justify-center rounded-[10px] transition-transform duration-300 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] group-hover:scale-105 ${TONE_BG[card.tone]}`}>
-                    <Icon name={card.icon} size={18} />
+                <div className="group relative h-full overflow-hidden rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-5 transition-[transform,border-color] duration-300 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] hover:-translate-y-1 hover:border-transparent hover:shadow-[0_18px_40px_-24px_rgba(0,0,0,0.22)]">
+                  <div
+                    aria-hidden
+                    className={`pointer-events-none absolute inset-0 translate-y-full transition-transform duration-[450ms] ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:translate-y-0 ${TONE_SWEEP[card.tone]}`}
+                  />
+                  <div className="relative">
+                    <div className={`mb-4 inline-flex size-10 items-center justify-center rounded-[10px] transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover:scale-110 group-hover:-rotate-6 group-hover:bg-[var(--color-ink-0)] ${TONE_BG[card.tone]}`}>
+                      <Icon name={card.icon} size={18} />
+                    </div>
+                    <p className={`text-[15px] font-semibold tracking-[-0.01em] text-[var(--color-text-1)] transition-colors duration-300 ${TONE_HOVER_TITLE[card.tone]}`}>
+                      {card.title}
+                    </p>
+                    <p className={`mt-1 text-[12.5px] leading-[1.5] tracking-[-0.01em] text-[var(--color-text-3)] transition-colors duration-300 ${TONE_HOVER_BODY[card.tone]}`}>
+                      {card.desc}
+                    </p>
                   </div>
-                  <p className="relative text-[15px] font-semibold tracking-[-0.01em] text-[var(--color-text-1)]">
-                    {card.title}
-                  </p>
-                  <p className="relative mt-1 text-[12.5px] leading-[1.5] tracking-[-0.01em] text-[var(--color-text-3)]">
-                    {card.desc}
-                  </p>
                 </div>
               </ScrollReveal>
             ))}
