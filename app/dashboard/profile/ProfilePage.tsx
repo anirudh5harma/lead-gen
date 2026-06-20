@@ -544,10 +544,10 @@ export default async function ProfilePage() {
         kicker="Profile"
         title={
           <>
-            Profile and <em>integrations</em>.
+            Profile setup.
           </>
         }
-        description="Company context, buyer fit, email, LinkedIn, contact quality, and connected tools in one setup surface."
+        description="Company fit, Rep voice, channels, signal watchlist, contact quality, and protection rules in one clean setup surface."
         meta={
           <div className="flex flex-wrap gap-2">
             <HeroStat
@@ -567,26 +567,6 @@ export default async function ProfilePage() {
       <ProfileSetupHub
         profile={profile}
         state={state}
-        mode={mode}
-        readiness={readiness}
-      />
-
-      <ProfileActivationFlow
-        profile={profile}
-        state={state}
-        readiness={readiness}
-      />
-
-      <ProfileLaunchModel
-        profile={profile}
-        state={state}
-        mode={mode}
-        readiness={readiness}
-      />
-
-      <ProfileSignalBuilderPanel
-        profile={profile}
-        state={state}
         readiness={readiness}
       />
 
@@ -596,113 +576,190 @@ export default async function ProfilePage() {
         linkedInAccount={state.linkedInAccount}
         rep={state.rep}
         icp={state.icp}
-        mode={mode}
         suppressionStats={state.suppressionStats}
         contactQuality={state.contactQuality}
       />
 
       <div id="profile">
-        <SurfaceSection title="Profile">
+        <SurfaceSection title="Company and buyer fit">
           <CompanyProfileForm profile={profile} />
         </SurfaceSection>
       </div>
 
       <span id="motion" className="block scroll-mt-28" aria-hidden="true" />
       <div id="agent">
-        <SurfaceSection title="Agent inputs and outreach templates">
+        <SurfaceSection title="Rep voice and outreach templates">
           <AgentActivationForm
             rep={state.rep}
             icp={state.icp}
             outlookAccount={state.outlookAccount}
           />
+          <WorkspaceAutonomyForm mode={mode} formMode={formMode} />
+        </SurfaceSection>
+      </div>
+
+      <div id="channels">
+        <SurfaceSection title="Channels and sending limits">
+          <div className="grid scroll-mt-28 gap-6 md:grid-cols-2">
+            <div id="email">
+              <OutlookPanel account={state.outlookAccount} />
+            </div>
+
+            <div id="linkedin">
+              <LinkedInPanel accounts={state.linkedInAccounts} />
+            </div>
+          </div>
         </SurfaceSection>
       </div>
 
       <div id="contact-quality">
-        <SurfaceSection title="Contact quality">
+        <SurfaceSection title="Signal watchlist and contact-quality gates">
+          <ProfileSignalBuilderPanel
+            profile={profile}
+            state={state}
+            readiness={readiness}
+          />
           <ContactQualityPanel stats={state.contactQuality} />
         </SurfaceSection>
       </div>
 
-      <section className="mt-6 grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-        <div id="account">
-          <SurfaceSection title="Account">
+      <div id="blocklist">
+        <SurfaceSection title="Blocklist / contact protection">
+          <BlocklistPanel
+            stats={state.suppressionStats}
+            recent={state.recentSuppressions}
+          />
+        </SurfaceSection>
+      </div>
+
+      <DeveloperAdvancedPanel
+        identity={identity}
+        workspaceName={active.workspace.name}
+        workspaceSlug={active.workspace.slug}
+        role={active.role}
+        profile={profile}
+        state={state}
+        readiness={readiness}
+      />
+    </div>
+  );
+}
+
+function WorkspaceAutonomyForm({
+  mode,
+  formMode,
+}: {
+  mode: ProfileAutonomyMode;
+  formMode: "autonomous" | "review_only";
+}) {
+  return (
+    <form
+      action={updateWorkspaceAutonomyAction}
+      className="section-note grid gap-5"
+    >
+      <input type="hidden" name="return_to" value="/dashboard/profile" />
+      <div className="flex min-w-0 items-start gap-3">
+        <span className="brief-note-icon shrink-0">
+          <Icon name="task_alt" size={18} />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-[var(--color-text-1)]">
+            Play review mode
+          </p>
+          <p className="mt-1 text-sm leading-6 text-[var(--color-text-3)]">
+            Choose whether qualified outreach can move after checks pass or
+            waits for approval.
+          </p>
+        </div>
+      </div>
+      <div id="autonomy" className="grid scroll-mt-28 gap-3 sm:grid-cols-2">
+        <AutonomyOption
+          value="autonomous"
+          title="Autopilot"
+          description="Send after evals, caps, contact checks, and channel health pass."
+          defaultChecked={formMode === "autonomous"}
+        />
+        <AutonomyOption
+          value="review_only"
+          title="Copilot review"
+          description="Prepare every move, then wait for a human approval before outreach."
+          defaultChecked={formMode === "review_only"}
+        />
+      </div>
+      {mode === "custom" ? (
+        <p className="text-sm text-[var(--color-text-3)]">
+          Current agent and outreach policies are mixed. Saving here applies one
+          mode across the workspace.
+        </p>
+      ) : null}
+      <PendingSubmitButton
+        className="btn-solid w-fit"
+        icon="check"
+        pendingLabel="Saving mode"
+      >
+        Save mode
+      </PendingSubmitButton>
+    </form>
+  );
+}
+
+function DeveloperAdvancedPanel({
+  identity,
+  workspaceName,
+  workspaceSlug,
+  role,
+  profile,
+  state,
+  readiness,
+}: {
+  identity: RequestAuthIdentity | null;
+  workspaceName: string;
+  workspaceSlug: string;
+  role: string;
+  profile: ProductCompanyProfile | null;
+  state: ProfileState;
+  readiness: ProductLaunchReadinessResult;
+}) {
+  return (
+    <section id="tools" className="scroll-mt-28">
+      <details className="section-note group grid gap-5">
+        <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-4 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 marker:hidden">
+          <span className="flex min-w-0 items-start gap-3">
+            <span className="grid size-10 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
+              <Icon name="account_tree" size={18} />
+            </span>
+            <span className="min-w-0">
+              <span
+                className="block text-[18px] font-semibold text-[var(--color-text-1)]"
+                style={{ fontFamily: "var(--font-display)" }}
+              >
+                Developer / Advanced
+              </span>
+              <span className="mt-1 block text-sm leading-6 text-[var(--color-text-3)]">
+                Source IDs, visitor scripts, webhook payloads, MCP sessions,
+                CRM contracts, and workspace account details.
+              </span>
+            </span>
+          </span>
+          <span className="inline-flex items-center gap-2 rounded-[8px] bg-[var(--color-ink-2)] px-3 py-2 text-xs font-medium text-[var(--color-text-2)]">
+            <Icon
+              name="expand_more"
+              size={16}
+              className="transition-transform group-open:rotate-180"
+            />
+            Advanced setup
+          </span>
+        </summary>
+        <div className="mt-5 grid gap-6">
+          <SurfaceSection title="Workspace account">
             <AccountPanel
               identity={identity}
-              workspaceName={active.workspace.name}
-              workspaceSlug={active.workspace.slug}
-              role={active.role}
+              workspaceName={workspaceName}
+              workspaceSlug={workspaceSlug}
+              role={role}
             />
           </SurfaceSection>
-        </div>
-
-        <section id="channels" className="grid scroll-mt-28 gap-6 md:grid-cols-2">
-          <div id="email">
-            <SurfaceSection title="Email integration">
-              <OutlookPanel account={state.outlookAccount} />
-            </SurfaceSection>
-          </div>
-
-          <div id="linkedin">
-            <SurfaceSection title="LinkedIn integration">
-              <LinkedInPanel accounts={state.linkedInAccounts} />
-            </SurfaceSection>
-          </div>
-        </section>
-      </section>
-
-      <section className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="grid gap-6">
-          <div id="autonomy">
-            <SurfaceSection title="Autonomy">
-              <form
-                action={updateWorkspaceAutonomyAction}
-                className="section-note grid gap-5"
-              >
-                <input type="hidden" name="return_to" value="/dashboard/profile" />
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <AutonomyOption
-                    value="autonomous"
-                    title="Autopilot"
-                    description="Send after evals, caps, contact checks, and channel health pass."
-                    defaultChecked={formMode === "autonomous"}
-                  />
-                  <AutonomyOption
-                    value="review_only"
-                    title="Copilot review"
-                    description="Prepare every move, then wait for a human approval before outreach."
-                    defaultChecked={formMode === "review_only"}
-                  />
-                </div>
-                {mode === "custom" ? (
-                  <p className="text-sm text-[var(--color-text-3)]">
-                    Current agent and outreach policies are mixed. Saving here
-                    applies one mode across the workspace.
-                  </p>
-                ) : null}
-                <PendingSubmitButton
-                  className="btn-solid w-fit"
-                  icon="check"
-                  pendingLabel="Saving mode"
-                >
-                  Save mode
-                </PendingSubmitButton>
-              </form>
-            </SurfaceSection>
-          </div>
-
-          <div id="blocklist">
-            <SurfaceSection title="Blocklist">
-              <BlocklistPanel
-                stats={state.suppressionStats}
-                recent={state.recentSuppressions}
-              />
-            </SurfaceSection>
-          </div>
-        </div>
-
-        <div id="tools">
-          <SurfaceSection title="Output destinations">
+          <SurfaceSection title="Developer destinations and contracts">
             <IntegrationPanel
               profile={profile}
               state={state}
@@ -710,20 +767,18 @@ export default async function ProfilePage() {
             />
           </SurfaceSection>
         </div>
-      </section>
-    </div>
+      </details>
+    </section>
   );
 }
 
 function ProfileSetupHub({
   profile,
   state,
-  mode,
   readiness,
 }: {
   profile: ProductCompanyProfile | null;
   state: ProfileState;
-  mode: ProfileAutonomyMode;
   readiness: ProductLaunchReadinessResult;
 }) {
   const website = profileWebsite(profile);
@@ -742,7 +797,7 @@ function ProfileSetupHub({
   const next = profileReadinessNextAction(readiness);
   const setupItems = [
     {
-      title: "Company profile",
+      title: "Company and buyer fit",
       detail: profile?.company_name
         ? `${profile.company_name}${website ? ` - ${website}` : ""}`
         : "Add the website and positioning the agent should represent.",
@@ -751,7 +806,7 @@ function ProfileSetupHub({
       ready: Boolean(profile?.company_name && website),
     },
     {
-      title: "Agent and buyer fit",
+      title: "Rep voice and templates",
       detail:
         state.rep && state.icp
           ? `${agentDisplayName(state.rep.role)} acts on ${state.icp.name}.`
@@ -761,41 +816,32 @@ function ProfileSetupHub({
       ready: Boolean(state.rep && state.icp),
     },
     {
-      title: "Email",
-      detail: state.outlookAccount
-        ? `${outlookMailbox(state.outlookAccount)} - ${statusLabel(state.outlookAccount.status)}`
-        : "Connect Outlook for native email threads and reply sync.",
-      href: "#email",
-      icon: "mail",
-      ready: state.outlookAccount?.status === "connected",
+      title: "Channels and limits",
+      detail: channelSummary,
+      href: "#channels",
+      icon: "hub",
+      ready:
+        state.outlookAccount?.status === "connected" ||
+        state.linkedInAccount?.status === "connected",
     },
     {
-      title: "LinkedIn",
-      detail: state.linkedInAccount
-        ? `${state.linkedInAccount.display_name} - ${statusLabel(state.linkedInAccount.status)}`
-        : "Connect LinkedIn for connection requests and DMs.",
-      href: "#linkedin",
-      icon: "linkedin",
-      ready: state.linkedInAccount?.status === "connected",
-    },
-    {
-      title: "Contact quality",
+      title: "Signals and gates",
       detail: `${contactSummary}; ${state.contactQuality.verifiedEmails} verified emails and ${state.contactQuality.linkedInProfiles} LinkedIn profiles.`,
-      href: "#contact-quality",
-      icon: "verified",
-      ready: state.contactQuality.reachable > 0,
+      href: "#signal-setup",
+      icon: "sensors",
+      ready:
+        state.contactQuality.reachable > 0 &&
+        state.signalSetup.activeSources > 0,
     },
     {
-      title: "Control mode",
+      title: "Blocklist",
       detail:
-        mode === "custom"
-          ? "Agent and outreach policies are mixed."
-          : mode === "review_only"
-            ? "Copilot waits for approval before outreach."
-            : "Autopilot can send after evals and channel checks pass.",
-      href: "#autonomy",
-      icon: "task_alt",
-      ready: mode !== "custom",
+        state.suppressionStats.total > 0
+          ? `${state.suppressionStats.total} contacts protected`
+          : "Bounces, unsubscribes, and do-not-contact.",
+      href: "#blocklist",
+      icon: "report",
+      ready: true,
     },
   ];
   const readyCount = setupItems.filter((step) => step.ready).length;
@@ -810,12 +856,11 @@ function ProfileSetupHub({
             className="mt-1 text-[18px] font-semibold text-[var(--color-text-1)]"
             style={{ fontFamily: "var(--font-display)" }}
           >
-            Profile, email, LinkedIn, contacts, and Agent controls.
+            The user-facing setup path.
           </h2>
           <p className="mt-2 text-sm leading-6 text-[var(--color-text-3)]">
-            Website context shapes the buyer profile, connected accounts unlock
-            outreach, and verified contact coverage decides whether the Agent can
-            turn quality signals into email sends, LinkedIn requests, or DMs.
+            Company context shapes buyer fit, Rep voice guides drafts, connected
+            channels set limits, and contact gates decide what can safely move.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -828,7 +873,7 @@ function ProfileSetupHub({
           </Link>
         </div>
       </div>
-      <div className="grid gap-3 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         {setupItems.map((step) => (
           <Link
             key={step.title}
@@ -888,361 +933,6 @@ function profileReadinessNextAction(
     icon: readinessActionIcon(blocker.id),
     label: blocker.action.label,
   };
-}
-
-function ProfileActivationFlow({
-  profile,
-  state,
-  readiness,
-}: {
-  profile: ProductCompanyProfile | null;
-  state: ProfileState;
-  readiness: ProductLaunchReadinessResult;
-}) {
-  const signalSources = readinessCheck(readiness, "signal_sources");
-  const outreachSequence = readinessCheck(readiness, "plays");
-  const channelReady =
-    state.outlookAccount?.status === "connected" ||
-    state.linkedInAccount?.status === "connected";
-  const next = profileReadinessNextAction(readiness);
-  const flowSteps = [
-    {
-      title: "Website profile",
-      detail: profile?.company_name
-        ? `${profile.company_name}${profileWebsite(profile) ? ` - ${profileWebsite(profile)}` : ""}`
-        : "Add the site and company context Bombsell should represent.",
-      href: "#profile",
-      icon: "public",
-      ready: Boolean(profile?.company_name && profileWebsite(profile)),
-    },
-    {
-      title: "Signal sources",
-      detail: signalSources?.detail ?? "Source checks watch for timing evidence.",
-      href: signalSources?.action?.surface ?? "/dashboard/profile#signal-setup",
-      icon: "sensors",
-      ready: signalSources?.status === "ready",
-    },
-    {
-      title: "Verified contacts",
-      detail:
-        state.contactQuality.reachable > 0
-          ? `${state.contactQuality.reachable} reachable, ${state.contactQuality.verifiedEmails} verified emails, ${state.contactQuality.linkedInProfiles} LinkedIn profiles.`
-          : "Contacts need verified email or LinkedIn profile coverage before outreach.",
-      href: "#contact-quality",
-      icon: "verified",
-      ready: state.contactQuality.reachable > 0,
-    },
-    {
-      title: "Channels",
-      detail: channelReady
-        ? `${channelReadinessCount(state)}; qualified contacts can use connected email or LinkedIn channels.`
-        : "Connect Outlook or LinkedIn so qualified contacts can become outreach.",
-      href: "#channels",
-      icon: "hub",
-      ready: channelReady,
-    },
-    {
-      title: "Outreach",
-      detail: readiness.launch_ready
-        ? "The Agent can prepare judged email or LinkedIn outreach from qualified signals."
-        : outreachSequence?.status !== "ready"
-          ? outreachSequence?.detail ?? "Outreach rules need configuration."
-          : "Finish the remaining blocker before the Agent can send.",
-      href: readiness.launch_ready
-        ? "/dashboard/agent#outreach"
-        : next.href,
-      icon: "send",
-      ready: readiness.launch_ready,
-    },
-  ];
-  return (
-    <section className="section-note grid gap-5">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="max-w-2xl">
-          <p className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent)]">
-            Activation flow
-          </p>
-          <h2
-            className="mt-1 text-[18px] font-semibold text-[var(--color-text-1)]"
-            style={{ fontFamily: "var(--font-display)" }}
-          >
-            From company profile to sent outreach.
-          </h2>
-          <p className="mt-2 text-sm leading-6 text-[var(--color-text-3)]">
-            Bombsell forms the profile from the website, watches signal sources,
-            resolves verified contacts, then uses connected email or LinkedIn to
-            send only after quality checks pass.
-          </p>
-        </div>
-        <Link
-          href={next.href}
-          prefetch={false}
-          className="btn-solid-sm w-fit"
-        >
-          <Icon name={next.icon} size={14} />
-          {next.label}
-        </Link>
-      </div>
-
-      <div className="grid gap-3 lg:grid-cols-5">
-        {flowSteps.map((step, index) => (
-          <Link
-            key={step.title}
-            href={step.href}
-            prefetch={false}
-            className="group relative min-h-[176px] rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]/60"
-          >
-            {index < flowSteps.length - 1 ? (
-              <span
-                className="pointer-events-none absolute right-[-18px] top-8 hidden h-px w-8 bg-[var(--color-line-2)] lg:block"
-                aria-hidden="true"
-              />
-            ) : null}
-            <div className="flex items-start justify-between gap-3">
-              <span
-                className={
-                  "grid size-9 shrink-0 place-items-center rounded-[8px] " +
-                  (step.ready
-                    ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
-                    : "bg-[var(--color-ink-2)] text-[var(--color-text-2)]")
-                }
-              >
-                <Icon name={step.icon} size={17} />
-              </span>
-              <span className="font-mono text-[11px] text-[var(--color-text-4)]">
-                {String(index + 1).padStart(2, "0")}
-              </span>
-            </div>
-            <p className="mt-4 text-sm font-semibold text-[var(--color-text-1)]">
-              {step.title}
-            </p>
-            <p className="mt-2 line-clamp-3 text-xs leading-5 text-[var(--color-text-3)]">
-              {step.detail}
-            </p>
-            <div className="mt-4">
-              <StatusPill ready={step.ready} />
-            </div>
-          </Link>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function readinessCheck(
-  readiness: ProductLaunchReadinessResult,
-  id: ProductLaunchReadinessResult["checks"][number]["id"],
-) {
-  return readiness.checks.find((check) => check.id === id);
-}
-
-function ProfileLaunchModel({
-  profile,
-  state,
-  mode,
-  readiness,
-}: {
-  profile: ProductCompanyProfile | null;
-  state: ProfileState;
-  mode: ProfileAutonomyMode;
-  readiness: ProductLaunchReadinessResult;
-}) {
-  const buyerFit =
-    state.icp?.description ??
-    profile?.target_titles ??
-    profile?.target_markets ??
-    "Define the companies and people the agent should qualify before outreach.";
-  const signals = profileSignalList(profile);
-  const contactCoverage =
-    state.contactQuality.people > 0
-      ? `${state.contactQuality.reachable}/${state.contactQuality.people} reachable`
-      : "Waiting for first contacts";
-  const matchThreshold = state.icp
-    ? `${Math.round(Number(state.icp.match_threshold) * 100)}% fit gate`
-    : "Fit gate pending";
-  const channelPaths = [
-    {
-      title: "Email channel",
-      icon: <BrandIcon name="microsoft" size={16} />,
-      ready: state.outlookAccount?.status === "connected",
-      detail: state.outlookAccount
-        ? `${outlookMailbox(state.outlookAccount)} - ${statusLabel(state.outlookAccount.status)}`
-        : "Connect Outlook for native sends and reply sync.",
-      href: "#email",
-    },
-    {
-      title: "LinkedIn channel",
-      icon: <BrandIcon name="linkedin" size={16} />,
-      ready: state.linkedInAccount?.status === "connected",
-      detail: state.linkedInAccount
-        ? `${state.linkedInAccount.display_name} - ${statusLabel(state.linkedInAccount.status)}`
-        : "Connect LinkedIn for connection requests and DMs.",
-      href: "#linkedin",
-    },
-  ];
-  return (
-    <section className="section-note grid gap-5">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="max-w-2xl">
-          <p className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent)]">
-            Launch model
-          </p>
-          <h2
-            className="mt-1 text-[18px] font-semibold text-[var(--color-text-1)]"
-            style={{ fontFamily: "var(--font-display)" }}
-          >
-            What the agent learned and how it can act.
-          </h2>
-          <p className="mt-2 text-sm leading-6 text-[var(--color-text-3)]">
-            Profile turns the website, buyer fit, signal watchlist, channel
-            accounts, contact coverage, and review mode into one operating model.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <StatusPill ready={readiness.launch_ready} />
-          <span className="rounded-[8px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] px-3 py-1 text-xs text-[var(--color-text-3)]">
-            {modeLabel(mode)}
-          </span>
-        </div>
-      </div>
-
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-        <article className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
-          <div className="flex items-start gap-3">
-            <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-accent-bg)] text-[var(--color-accent)]">
-              <Icon name="person_search" size={17} />
-            </span>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-[var(--color-text-1)]">
-                Buyer fit
-              </p>
-              <p className="mt-2 line-clamp-3 text-sm leading-6 text-[var(--color-text-3)]">
-                {buyerFit}
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <LaunchModelPill icon="fact_check">{matchThreshold}</LaunchModelPill>
-                <LaunchModelPill icon="verified">{contactCoverage}</LaunchModelPill>
-                <LaunchModelPill icon="block">
-                  {profile?.prevent_team_contact_duplication === false
-                    ? "Duplicate checks off"
-                    : "Duplicate checks on"}
-                </LaunchModelPill>
-              </div>
-            </div>
-          </div>
-        </article>
-
-        <article className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
-          <div className="flex items-start gap-3">
-            <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
-              <Icon name="sensors" size={17} />
-            </span>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-[var(--color-text-1)]">
-                Signals watched
-              </p>
-              <p className="mt-2 text-sm leading-6 text-[var(--color-text-3)]">
-                {signals.length > 0
-                  ? "These terms guide source checks and contact matching."
-                  : "Add signal keywords and competitors so source checks find timing evidence."}
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {(signals.length > 0 ? signals : ["Launches", "Hiring", "Competitors"]).map(
-                  (signal) => (
-                    <span
-                      key={signal}
-                      className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]"
-                    >
-                      {signal}
-                    </span>
-                  ),
-                )}
-              </div>
-            </div>
-          </div>
-        </article>
-      </div>
-
-      <div className="grid gap-3 md:grid-cols-2">
-        {channelPaths.map((path) => (
-          <Link
-            key={path.title}
-            href={path.href}
-            prefetch={false}
-            className="group rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]"
-          >
-            <span className="flex flex-col items-start gap-3 sm:flex-row sm:justify-between">
-              <span className="flex min-w-0 items-start gap-3">
-                <span
-                  className={
-                    "grid size-9 shrink-0 place-items-center rounded-[8px] " +
-                    (path.ready
-                      ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
-                      : "bg-[var(--color-ink-2)] text-[var(--color-text-2)]")
-                  }
-                >
-                  {path.icon}
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-sm font-semibold text-[var(--color-text-1)]">
-                    {path.title}
-                  </span>
-                  <span className="mt-1 block truncate text-sm text-[var(--color-text-3)]">
-                    {path.detail}
-                  </span>
-                </span>
-              </span>
-              <StatusPill ready={path.ready} />
-            </span>
-          </Link>
-        ))}
-      </div>
-
-      <div className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 md:grid-cols-[1fr_auto] md:items-center">
-        <p className="text-sm leading-6 text-[var(--color-text-3)]">
-          {readiness.launch_ready
-            ? "The agent can now move qualified signals into verified email or LinkedIn outreach after evals, caps, and review rules pass."
-            : "Finish the launch blockers above so qualified signals can become verified contacts, judged drafts, and replies."}
-        </p>
-        <div className="flex flex-wrap gap-2 md:justify-end">
-          <form action={checkAgentSourcesAction}>
-            <input type="hidden" name="return_to" value="/dashboard/profile" />
-            <input type="hidden" name="limit" value="25" />
-            <PendingSubmitButton
-              className="btn-solid w-fit"
-              icon="sensors"
-              pendingLabel="Checking sources"
-            >
-              Check sources
-            </PendingSubmitButton>
-          </form>
-          <Link
-            href="/dashboard/agent#qualified-signals"
-            prefetch={false}
-            className="btn-quiet-sm w-fit"
-          >
-            <Icon name="arrow_forward" size={14} />
-            Open qualified signals
-          </Link>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function LaunchModelPill({
-  icon,
-  children,
-}: {
-  icon: string;
-  children: ReactNode;
-}) {
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
-      <Icon name={icon} size={13} />
-      {children}
-    </span>
-  );
 }
 
 function ProfileSignalBuilderPanel({
@@ -1547,27 +1237,6 @@ function QualityGateRow({
   );
 }
 
-function profileSignalList(profile: ProductCompanyProfile | null): string[] {
-  const terms = [
-    ...splitProfileTerms(profile?.signal_keywords),
-    ...splitProfileTerms(profile?.competitor_watchlist),
-    ...profileLinkedInBehaviors(profile),
-    ...(profile?.exa_market_terms ?? []),
-    ...(profile?.exa_competitor_mentions ?? []),
-  ];
-  const seen = new Set<string>();
-  const compact: string[] = [];
-  for (const term of terms) {
-    const clean = term.trim();
-    const key = clean.toLowerCase();
-    if (!clean || seen.has(key)) continue;
-    seen.add(key);
-    compact.push(clean.length > 28 ? clean.slice(0, 25) + "..." : clean);
-    if (compact.length === 5) break;
-  }
-  return compact;
-}
-
 function profileLinkedInBehaviors(
   profile: ProductCompanyProfile | null,
 ): string[] {
@@ -1622,7 +1291,6 @@ function ProfileSectionNav({
   linkedInAccount,
   rep,
   icp,
-  mode,
   suppressionStats,
   contactQuality,
 }: {
@@ -1631,69 +1299,45 @@ function ProfileSectionNav({
   linkedInAccount: ProfileLinkedInAccount | null;
   rep: ProfileRepRow | null;
   icp: ProfileIcpRow | null;
-  mode: ProfileAutonomyMode;
   suppressionStats: ProfileSuppressionStats;
   contactQuality: ProfileContactQuality;
 }) {
   const sections = [
     {
-      title: "Company",
+      title: "Company fit",
       detail: profile?.company_name ?? "Company profile",
       href: "#profile",
       icon: "add_business",
       ready: Boolean(profile?.company_name && profileWebsite(profile)),
     },
     {
-      title: "Agent",
+      title: "Rep voice",
       detail: rep && icp ? `${agentDisplayName(rep.role)} + ${icp.name}` : "Audience and voice",
       href: "#agent",
       icon: "badge",
       ready: Boolean(rep && icp),
     },
     {
-      title: "Templates",
-      detail: "AI outreach templates",
-      href: "#templates",
-      icon: "edit_note",
-      ready: Boolean(rep?.persona.story || rep?.persona.voice),
+      title: "Channels",
+      detail:
+        outlookAccount || linkedInAccount
+          ? channelReadinessLabel(outlookAccount, linkedInAccount)
+          : "Connect Outlook or LinkedIn",
+      href: "#channels",
+      icon: "hub",
+      ready:
+        outlookAccount?.status === "connected" ||
+        linkedInAccount?.status === "connected",
     },
     {
-      title: "Contact quality",
+      title: "Signals",
       detail:
         contactQuality.reachable > 0
-          ? `${contactQuality.reachable} reachable`
-          : "Email and LinkedIn coverage",
-      href: "#contact-quality",
-      icon: "verified",
+          ? `${contactQuality.reachable} reachable contacts`
+          : "Watchlist and quality gates",
+      href: "#signal-setup",
+      icon: "sensors",
       ready: contactQuality.reachable > 0,
-    },
-    {
-      title: "Account",
-      detail: "User and workspace",
-      href: "#account",
-      icon: "person",
-      ready: true,
-    },
-    {
-      title: "Email",
-      detail: outlookAccount ? outlookMailbox(outlookAccount) : "Connect Outlook",
-      href: "#email",
-      icon: "mail",
-      ready: outlookAccount?.status === "connected",
-    },
-    {
-      title: "LinkedIn",
-      detail: linkedInAccount ? linkedInAccount.display_name : "Connect account",
-      href: "#linkedin",
-      icon: "linkedin",
-      ready: linkedInAccount?.status === "connected",
-    },
-    {
-      title: "Autonomy",
-      detail: modeLabel(mode),
-      href: "#autonomy",
-      icon: "task_alt",
-      ready: mode !== "custom",
     },
     {
       title: "Blocklist",
@@ -1706,8 +1350,8 @@ function ProfileSectionNav({
       ready: true,
     },
     {
-      title: "Tools",
-      detail: "Output destinations",
+      title: "Advanced",
+      detail: "Developer tools",
       href: "#tools",
       icon: "account_tree",
       ready: true,
@@ -1755,6 +1399,17 @@ function channelReadinessCount(state: ProfileState): string {
     (state.outlookAccount?.status === "connected" ? 1 : 0) +
     (state.linkedInAccount?.status === "connected" ? 1 : 0);
   return `${ready}/2 ready`;
+}
+
+function channelReadinessLabel(
+  outlookAccount: ProfileOutlookAccount | null,
+  linkedInAccount: ProfileLinkedInAccount | null,
+): string {
+  const ready = [
+    outlookAccount?.status === "connected" ? "email" : null,
+    linkedInAccount?.status === "connected" ? "LinkedIn" : null,
+  ].filter(Boolean);
+  return ready.length > 0 ? ready.join(" + ") : "Connect channels";
 }
 
 function StatusPill({ ready }: { ready: boolean }) {
@@ -3422,12 +3077,6 @@ function profileMode(
     return "review_only";
   if (approvals.every((approval) => approval === "none")) return "autonomous";
   return "custom";
-}
-
-function modeLabel(mode: ProfileAutonomyMode): string {
-  if (mode === "review_only") return "Copilot review";
-  if (mode === "custom") return "Mixed";
-  return "Autopilot";
 }
 
 function profileWebsite(profile: ProductCompanyProfile | null): string {

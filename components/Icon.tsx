@@ -197,6 +197,13 @@ const icons: Record<string, IconNode> = {
       <path d="M4 7l8 6 8-6" />
     </>
   ),
+  mark_email_read: (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M4 7l8 6 8-6" />
+      <path d="M13.5 15.5l2 2L20 13" />
+    </>
+  ),
   monitor_heart: (
     <>
       <rect x="3" y="4" width="18" height="13" rx="2" />

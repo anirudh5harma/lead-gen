@@ -2,7 +2,6 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { EmptyState } from "@/components/dashboard/Shell";
 import {
-  HeroStat,
   SurfaceHero,
   SurfaceSection,
 } from "@/components/dashboard/SurfaceHero";
@@ -1625,9 +1624,6 @@ export default async function RepsPage() {
   const state = await loadSafeRepsState(active.workspace.id);
   const visibleReps = state.reps.filter(isVisibleProductAgent);
   const primaryAgent = visibleReps[0] ?? null;
-  const connectedChannels = state.channels.filter(
-    (channel) => channel.status === "connected",
-  ).length;
   const coverage = workspaceChannelCoverage(state.channels);
   const sequence =
     state.strategy.sequence.length > 0
@@ -1635,89 +1631,307 @@ export default async function RepsPage() {
       : fallbackSequenceFromReps(visibleReps);
 
   return (
-    <div className="space-y-10">
-      <SurfaceHero
-        kicker="Agent"
-        title={
-          <>
-            Watch email and LinkedIn <em>outreach</em>.
-          </>
-        }
-        description="Live work, sent emails and DMs, verified contacts, and reply learning in one focused workspace."
-        meta={
-          <div className="flex flex-wrap gap-2">
-            <HeroStat label="Outreach rules" value={sequence.length} />
-            <HeroStat label="Channels" value={connectedChannels} />
-            <HeroStat
-              label="Launch"
-              value={state.readiness.launch_ready ? "Ready" : "Blocked"}
-            />
-          </div>
-        }
-      />
-
-      <AgentCommandStrip
+    <div className="space-y-6">
+      <AgentStatusHeader
         readiness={state.readiness}
-        opportunities={state.opportunities}
-        outreach={state.outreach}
         coverage={coverage}
-      />
-
-      <AgentModeRail
-        activity={state.activity}
-        opportunities={state.opportunities}
-        contacts={state.contacts}
+        primaryAgent={primaryAgent}
+        reps={visibleReps}
         outreach={state.outreach}
-        replies={state.replies}
-        learning={state.learning}
-        readiness={state.readiness}
-      />
-
-      <AgentSetupSnapshot
-        strategy={state.strategy}
-        signalMix={state.signalMix}
-        contacts={state.contacts}
-        outreach={state.outreach}
-        coverage={coverage}
         sequence={sequence}
-        readiness={state.readiness}
-      />
-
-      <AgentActivityPanel activity={state.activity} />
-
-      <AgentOperatingLoopPanel
-        activity={state.activity}
-        opportunities={state.opportunities}
-        contacts={state.contacts}
-        outreach={state.outreach}
-        coverage={coverage}
       />
 
       <AgentReviewQueuePanel reviews={state.reviews} />
 
-      <AgentRejectedDraftsPanel rejected={state.rejectedDrafts} />
+      <AgentConversationsPanel
+        outreach={state.outreach}
+        replies={state.replies}
+        rejected={state.rejectedDrafts}
+      />
 
-      <AgentOutreachPanel outreach={state.outreach} />
-
-      <AgentOutputHandoffPanel destinations={state.outputDestinations} />
-
-      <AgentRepliesPanel replies={state.replies} />
+      <AgentOpportunityPanel
+        opportunities={state.opportunities}
+        signalMix={state.signalMix}
+      />
 
       <AgentLearningPanel learning={state.learning} />
-
-      <AgentOpportunityPanel opportunities={state.opportunities} />
-
-      <AgentContactsPanel contacts={state.contacts} />
-
-      <AgentSystemPanel
-        readiness={state.readiness}
-        strategy={state.strategy}
-        sequence={sequence}
-        learning={state.learning}
-        primaryAgent={primaryAgent}
-        coverage={coverage}
-      />
     </div>
+  );
+}
+
+function AgentStatusHeader({
+  readiness,
+  coverage,
+  primaryAgent,
+  reps,
+  outreach,
+  sequence,
+}: {
+  readiness: WorkspaceLaunchReadiness;
+  coverage: ChannelCoverage;
+  primaryAgent: RepRow | null;
+  reps: RepRow[];
+  outreach: AgentOutreachSummary;
+  sequence: AgentSequenceStep[];
+}) {
+  const next = readinessNextAction(readiness);
+  const emailPolicy = primaryAgent?.autonomy?.channels?.email;
+  const linkedInPolicy = primaryAgent
+    ? firstChannelPolicy(primaryAgent, ["linkedin_dm", "linkedin"])
+    : undefined;
+  const operatingMode = primaryAgent
+    ? agentOperatingMode(emailPolicy, linkedInPolicy)
+    : null;
+  const openConversations = sumRepMetric(reps, "open_conversations");
+  const sent7d = outreach.email_sent_7d + outreach.linkedin_sent_7d;
+  const blocker = commandBlockerCopy(readiness);
+  return (
+    <section
+      className="rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 shadow-[0_18px_45px_-38px_rgba(15,23,42,0.45)] md:p-5"
+      aria-label="Agent status"
+    >
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(300px,420px)] lg:items-start">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={
+                "inline-flex items-center gap-1.5 rounded-[8px] px-2.5 py-1 text-xs font-medium " +
+                (readiness.launch_ready
+                  ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+                  : "bg-[var(--color-warn-bg)] text-[var(--color-warn)]")
+              }
+            >
+              <Icon
+                name={readiness.launch_ready ? "check_circle" : "sync_problem"}
+                size={13}
+              />
+              {readiness.launch_ready ? "Ready for outreach" : "Outreach blocked"}
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
+              <Icon name="forum" size={13} />
+              {openConversations} open conversation
+              {openConversations === 1 ? "" : "s"}
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
+              <Icon name="rule" size={13} />
+              {sequence.length} outreach rule{sequence.length === 1 ? "" : "s"}
+            </span>
+          </div>
+
+          <h1
+            className="mt-4 text-2xl font-semibold tracking-normal text-[var(--color-text-1)] md:text-3xl"
+            style={{ fontFamily: "var(--font-display)" }}
+          >
+            Agent
+          </h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--color-text-3)]">
+            A conversation-first view of what needs your approval, which threads
+            have proof, which signals are ready, and what outcomes changed.
+          </p>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {readiness.launch_ready ? (
+              <form action={prepareQualifiedSignalsAction}>
+                <input type="hidden" name="limit" value="25" />
+                <input
+                  type="hidden"
+                  name="return_to"
+                  value="/dashboard/agent#qualified-signals"
+                />
+                <PendingSubmitButton
+                  className="btn-solid-sm"
+                  icon="send"
+                  iconSize={14}
+                  pendingLabel="Preparing"
+                >
+                  Prepare outreach
+                </PendingSubmitButton>
+              </form>
+            ) : (
+              <Link href={next.href} prefetch={false} className="btn-solid-sm">
+                <Icon name={next.icon} size={14} />
+                {next.label}
+              </Link>
+            )}
+            <span className="text-xs leading-5 text-[var(--color-text-3)]">
+              {readiness.launch_ready
+                ? `${sent7d} sent this week through connected channels.`
+                : blocker}
+            </span>
+          </div>
+        </div>
+
+        <aside className="grid gap-3 rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-3">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <AgentChannelPill
+              title="Outlook"
+              icon="mail"
+              connection={coverage.email}
+              policy={emailPolicy}
+            />
+            <AgentChannelPill
+              title="LinkedIn"
+              icon="linkedin"
+              connection={coverage.linkedIn}
+              policy={linkedInPolicy}
+            />
+          </div>
+          {operatingMode ? (
+            <AgentModeControl mode={operatingMode} />
+          ) : (
+            <Link
+              href="/dashboard/profile#agent"
+              prefetch={false}
+              className="group flex items-center justify-between gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-3 text-sm text-[var(--color-text-2)] transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-1)]"
+            >
+              <span>Finish Agent voice in Profile.</span>
+              <Icon
+                name="arrow_forward"
+                size={14}
+                className="text-[var(--color-text-4)] transition-transform group-hover:translate-x-0.5"
+              />
+            </Link>
+          )}
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+type AgentConversationItem =
+  | { kind: "reply"; key: string; at: Date; reply: AgentReplyRow }
+  | { kind: "sent"; key: string; at: Date; message: AgentOutreachRow }
+  | {
+      kind: "followup";
+      key: string;
+      at: Date;
+      followup: AgentAcceptedConnectionFollowupRow;
+    }
+  | { kind: "rejected"; key: string; at: Date; rejected: RejectedDraftRow };
+
+function AgentConversationsPanel({
+  outreach,
+  replies,
+  rejected,
+}: {
+  outreach: AgentOutreachSummary;
+  replies: AgentReplySummary;
+  rejected: RejectedDraftSummary;
+}) {
+  const items: AgentConversationItem[] = [
+    ...replies.recent.map((reply) => ({
+      kind: "reply" as const,
+      key: `reply:${reply.inbound_message_id}`,
+      at: reply.received_at,
+      reply,
+    })),
+    ...outreach.recent.map((message) => ({
+      kind: "sent" as const,
+      key: `sent:${message.id}`,
+      at: message.sent_at ?? message.created_at,
+      message,
+    })),
+    ...outreach.accepted_followups.map((followup) => ({
+      kind: "followup" as const,
+      key: `followup:${followup.accepted_event_id}`,
+      at: followup.accepted_at,
+      followup,
+    })),
+    ...rejected.recent.slice(0, 4).map((row) => ({
+      kind: "rejected" as const,
+      key: `rejected:${row.id}`,
+      at: row.created_at,
+      rejected: row,
+    })),
+  ]
+    .sort((left, right) => right.at.getTime() - left.at.getTime())
+    .slice(0, 14);
+  const replyCount =
+    replies.replies_7d +
+    outreach.email_replies_7d +
+    outreach.linkedin_invite_replies_7d +
+    outreach.linkedin_message_replies_7d;
+
+  return (
+    <div id="conversations" className="scroll-mt-28">
+      <SurfaceSection
+        title="Conversations"
+        action={
+          <Link href="/dashboard/agent#qualified-signals" className="btn-quiet-sm">
+            <Icon name="sensors" size={14} />
+            Open signals
+          </Link>
+        }
+      >
+        <div className="rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-[var(--color-text-1)]">
+                Proof-trace threads
+              </p>
+              <p className="mt-1 max-w-[70ch] text-xs leading-5 text-[var(--color-text-3)]">
+                Sent outreach, replies, LinkedIn accepts, and judge-held drafts
+                are grouped by the conversation proof you can inspect.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <ConversationProofPill icon="send">
+                {outreach.awaiting_reply} awaiting reply
+              </ConversationProofPill>
+              <ConversationProofPill icon="mail">
+                {replyCount} replies this week
+              </ConversationProofPill>
+            </div>
+          </div>
+
+          {items.length === 0 ? (
+            <div className="mt-4">
+              <EmptyState
+                title="No conversations yet"
+                hint="When the agent sends, receives a reply, or records a LinkedIn accept, the proof trace will appear here."
+                cta={{
+                  href: "/dashboard/profile#channels",
+                  label: "Connect accounts",
+                  icon: "account_tree",
+                }}
+              />
+            </div>
+          ) : (
+            <div className="mt-4 grid gap-2">
+              {items.map((item) => (
+                <AgentConversationRow key={item.key} item={item} />
+              ))}
+            </div>
+          )}
+        </div>
+      </SurfaceSection>
+    </div>
+  );
+}
+
+function AgentConversationRow({ item }: { item: AgentConversationItem }) {
+  if (item.kind === "reply") return <AgentReplyLink reply={item.reply} />;
+  if (item.kind === "followup") {
+    return <AcceptedConnectionFollowupLink row={item.followup} />;
+  }
+  if (item.kind === "rejected") {
+    return <RejectedDraftRowCard row={item.rejected} />;
+  }
+  return <AgentOutreachLink message={item.message} />;
+}
+
+function ConversationProofPill({
+  icon,
+  children,
+}: {
+  icon: string;
+  children: ReactNode;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
+      <Icon name={icon} size={13} />
+      {children}
+    </span>
   );
 }
 
@@ -2990,16 +3204,31 @@ function StrategyChips({
 
 function AgentOpportunityPanel({
   opportunities,
+  signalMix,
 }: {
   opportunities: QualifiedSignalWorkbench;
+  signalMix: AgentSignalMix;
 }) {
+  const warnings = signalReadinessWarnings(signalMix);
   return (
     <div id="qualified-signals" className="scroll-mt-28">
       <span id="opportunities" className="sr-only" aria-hidden="true" />
       <SurfaceSection
-        title="Qualified signals"
+        title="Signals ready"
         action={
           <div className="flex flex-wrap items-center gap-2">
+            <form action={checkAgentSourcesAction}>
+              <input type="hidden" name="return_to" value="/dashboard/agent#qualified-signals" />
+              <input type="hidden" name="limit" value="25" />
+              <PendingSubmitButton
+                className="btn-quiet-sm"
+                icon="sync_alt"
+                iconSize={14}
+                pendingLabel="Checking"
+              >
+                Check sources
+              </PendingSubmitButton>
+            </form>
             <form action={prepareQualifiedSignalsAction}>
               <input type="hidden" name="limit" value="25" />
               <input type="hidden" name="return_to" value="/dashboard/agent#qualified-signals" />
@@ -3012,47 +3241,47 @@ function AgentOpportunityPanel({
                 Prepare outreach
               </PendingSubmitButton>
             </form>
-            <Link href="/dashboard/agent#verified-contacts" className="btn-quiet-sm">
+            <Link href="/dashboard/agent#conversations" className="btn-quiet-sm">
               <Icon name="arrow_forward" size={14} />
-              View contacts
+              View conversations
             </Link>
           </div>
         }
       >
-        <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
-          <aside className="grid h-fit gap-2 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
-            <p className="text-sm font-semibold text-[var(--color-text-1)]">
-              Signal-to-outreach queue
-            </p>
-            <div className="grid gap-2 sm:grid-cols-5 lg:grid-cols-1">
-              <MiniStat label="Qualified" value={opportunities.stats.qualified} />
-              <MiniStat
-                label="Verified contacts"
-                value={opportunities.stats.with_verified_contacts}
-              />
-              <MiniStat
-                label="Drafted"
-                value={opportunities.stats.with_outreach_draft}
-              />
-              <MiniStat
-                label="Needs review"
-                value={opportunities.stats.ready_for_review}
-              />
-              <MiniStat
-                label="Fit blocked"
-                value={opportunities.stats.blocked_by_fit}
-              />
+        <div className="grid gap-4">
+          {warnings.length > 0 ? (
+            <div className="grid gap-2 md:grid-cols-3">
+              {warnings.map((warning) => (
+                <Link
+                  key={warning.key}
+                  href={warning.href}
+                  prefetch={false}
+                  className="group flex items-start gap-2 rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-3 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]"
+                >
+                  <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-[8px] bg-[var(--color-warn-bg)] text-[var(--color-warn)]">
+                    <Icon name={warning.icon} size={14} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-xs font-semibold text-[var(--color-text-1)]">
+                      {warning.label}
+                    </span>
+                    <span className="mt-1 block line-clamp-2 text-xs leading-5 text-[var(--color-text-3)]">
+                      {warning.detail}
+                    </span>
+                  </span>
+                  <Icon
+                    name="arrow_forward"
+                    size={13}
+                    className="ml-auto mt-1 text-[var(--color-text-4)] transition-transform group-hover:translate-x-0.5 group-hover:text-[var(--color-accent)]"
+                  />
+                </Link>
+              ))}
             </div>
-            <p className="text-xs leading-5 text-[var(--color-text-3)]">
-              The agent ranks qualified signals by fit, checks reachable people,
-              and prepares judged outreach before anything leaves a channel.
-            </p>
-          </aside>
-
+          ) : null}
           {opportunities.signals.length === 0 ? (
             <EmptyState
-              title="No qualified signals ready yet"
-              hint="Complete the profile, define targeting, and connect accounts so qualified signals can turn into verified outreach."
+              title="No signals ready yet"
+              hint="Check sources or tune the profile so fresh timing evidence can become outreach."
               cta={{
                 href: "/dashboard/profile#profile",
                 label: "Tune profile",
@@ -3082,7 +3311,7 @@ function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
   const isFitBlocked = fitGate?.tone === "blocked";
   const deferAction = contactDeferAction(signal.contact_defer_reason);
   return (
-    <article className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+    <article className="grid gap-3 rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
       <Link
         href={href}
         prefetch={false}
@@ -3096,7 +3325,7 @@ function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
             {company}
             <span className="font-normal text-[var(--color-text-3)]">
               {" "}
-              / {signal.kind.replace(/_/g, " ")}
+              / {signalKindLabel(signal.kind)}
             </span>
           </span>
           <span className="mt-1 block truncate text-sm text-[var(--color-text-2)]">
@@ -3139,7 +3368,7 @@ function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
       </Link>
       <div className="flex flex-wrap items-center gap-2 md:justify-end">
         <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
-          {statusLabel(signal.status)}
+          {signalQueueLabel(signal)}
         </span>
         <span className="text-xs tabular-nums text-[var(--color-text-3)]">
           {freshWhen(signal.freshness_at)}
@@ -3264,13 +3493,12 @@ function contactLabel(contact: QualifiedSignalContact): string {
 
 function contactSourceLabel(signal: QualifiedSignalItem): string {
   if (signal.contact_source === "resolution") {
-    const channel = signal.contact_channel
-      ? channelLabel(signal.contact_channel)
-      : "contact";
-    return `Waterfall ${channel}`;
+    return signal.contact_channel
+      ? `${channelLabel(signal.contact_channel)} contact ready`
+      : "Contact ready";
   }
-  if (signal.contact_source === "graph") return "Graph contact";
-  return "Needs enrichment";
+  if (signal.contact_source === "graph") return "Known contact";
+  return "Needs contacts";
 }
 
 function contactSourceTone(
@@ -3284,11 +3512,11 @@ function contactSourceTone(
 
 function contactDeferLabel(reason: string): string {
   const known: Record<string, string> = {
-    email_auto_enrich_disabled: "Email enrichment off",
+    email_auto_enrich_disabled: "Needs contact rules",
     no_email_ready_contact: "No verified email yet",
     no_linkedin_ready_contact: "No LinkedIn profile yet",
   };
-  return known[reason] ?? reason.replace(/_/g, " ");
+  return known[reason] ?? "Needs contacts";
 }
 
 function contactDeferAction(
@@ -3334,7 +3562,7 @@ function contactFitGate(
     return { label: "Good fit", tone: "fit" };
   }
   if (contact.contact_fit_decision === "not_fit") {
-    return { label: "Blocked by fit", tone: "blocked" };
+    return { label: "Not a fit", tone: "blocked" };
   }
   return { label: "Fit review", tone: "review" };
 }
@@ -3342,9 +3570,19 @@ function contactFitGate(
 function draftOpportunityLabel(status: string, channel: string): string {
   const label = channelLabel(channel);
   if (status === "draft") return `${label} draft`;
-  if (status === "deferred") return `${label} deferred`;
+  if (status === "deferred") return `${label} waiting`;
   if (status === "sent" || status === "delivered") return "Sent";
   return statusLabel(status);
+}
+
+function signalQueueLabel(signal: QualifiedSignalItem): string {
+  if (signal.outreach_draft?.pending_approval_id) return "Needs your thumb";
+  if (signal.outreach_draft) return "Draft ready";
+  if (needsContactResolution(signal)) return "Needs contacts";
+  if (signal.status === "matched" || signal.status === "in_play") {
+    return "Ready";
+  }
+  return "Review";
 }
 
 function opportunityHref(
@@ -3583,7 +3821,9 @@ function AgentContactLink({ contact }: { contact: AgentContactRow }) {
   const company = contact.company_name ?? contact.company_domain ?? "Unknown company";
   const signals = Number(contact.fresh_signals);
   const conversations = Number(contact.conversations);
-  const latestSignalKind = contact.latest_signal_kind?.replace(/_/g, " ");
+  const latestSignalKind = contact.latest_signal_kind
+    ? signalKindLabel(contact.latest_signal_kind)
+    : null;
   const latestSignalAt = contact.last_signal_at
     ? freshWhen(contact.last_signal_at)
     : freshWhen(contact.updated_at);
@@ -4527,7 +4767,7 @@ function AgentReviewQueuePanel({
   return (
     <div id="review-queue" className="scroll-mt-28">
       <SurfaceSection
-        title="Review queue"
+        title="Needs your thumb"
         action={
           reviews.pending_count > 0 ? (
             <Link href="/dashboard/agent#qualified-signals" className="btn-quiet-sm">
@@ -4539,31 +4779,32 @@ function AgentReviewQueuePanel({
       >
         {reviews.pending_count === 0 ? (
           <EmptyState
-            title="No outreach waiting on review"
-            hint="When judged email or LinkedIn drafts need a send decision, they will appear here before the Agent can continue."
+            title="Nothing waiting on you"
+            hint="When an email or LinkedIn draft needs approval, it appears here before the agent can continue."
             cta={{
               href: "/dashboard/agent#qualified-signals",
-              label: "Review signals",
+              label: "Open signals",
               icon: "rate_review",
             }}
           />
         ) : (
-          <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
-            <aside className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+          <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+            <aside className="grid h-fit gap-3 rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
               <span className="grid size-9 place-items-center rounded-[8px] bg-[var(--color-warn-bg)] text-[var(--color-warn)]">
                 <Icon name="rate_review" size={17} />
               </span>
               <div>
                 <p className="text-sm font-semibold text-[var(--color-text-1)]">
-                  Copilot review
+                  Approve or reject
                 </p>
                 <p className="mt-2 text-xs leading-5 text-[var(--color-text-3)]">
-                  Approval gates keep email sends and LinkedIn actions behind
-                  the same channel readiness, daily caps, and hot-path judge
-                  evidence as the Agent workflow.
+                  These drafts already have channel and judge proof. Your thumb
+                  decides whether the next message leaves.
                 </p>
               </div>
-              <MiniStat label="Waiting for review" value={reviews.pending_count} />
+              <span className="rounded-[10px] bg-[var(--color-warn-bg)] px-3 py-2 text-sm font-semibold tabular-nums text-[var(--color-warn)]">
+                {reviews.pending_count} waiting
+              </span>
             </aside>
 
             <div className="grid gap-2">
@@ -4604,7 +4845,7 @@ function AgentReviewRowCard({
   const dailyCap = numberPayload(payload, "daily_cap");
   const sentToday = numberPayload(payload, "sent_today");
   return (
-    <article className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+    <article className="grid gap-3 rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
       <span className="flex min-w-0 items-start gap-3">
         <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-warn-bg)] text-[var(--color-warn)]">
           <Icon name="rate_review" size={17} />
@@ -4752,11 +4993,11 @@ function RejectedDraftRowCard({ row }: { row: RejectedDraftRow }) {
       : "Unknown contact";
   const signalLine = row.signal_title
     ? row.signal_kind
-      ? `${row.signal_title} · ${row.signal_kind.replace(/_/g, " ")}`
+      ? `${row.signal_title} · ${signalKindLabel(row.signal_kind)}`
       : row.signal_title
-    : "no signal context";
+    : "No signal context";
   return (
-    <article className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+    <article className="grid gap-3 rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
       <span className="flex min-w-0 items-start gap-3">
         <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-warn-bg)] text-[var(--color-warn)]">
           <Icon name="block" size={17} />
@@ -5059,7 +5300,7 @@ function AcceptedConnectionFollowupLink({
     <Link
       href={acceptedConnectionHref(row)}
       prefetch={false}
-      className="grid gap-3 rounded-[8px] bg-[var(--color-ink-2)] px-3 py-3 transition-colors hover:bg-[var(--color-ink-3)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
+      className="grid gap-3 rounded-[12px] bg-[var(--color-ink-2)] px-3 py-3 transition-colors hover:bg-[var(--color-ink-3)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
     >
       <span className="flex min-w-0 items-start gap-3">
         <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-0)] text-[var(--color-text-2)]">
@@ -5556,24 +5797,29 @@ function AgentLearningPanel({
           </div>
         }
       >
-        <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
-          <aside className="grid gap-2 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
-            <p className="text-sm font-semibold text-[var(--color-text-1)]">
-              Reply evidence
-            </p>
-            <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1">
-              <MiniStat label="Replies 7d" value={learning.positive_replies_7d} />
-              <MiniStat label="Meetings 7d" value={learning.meetings_7d} />
-              <MiniStat label="Useful 30d" value={learning.useful_outcomes_30d} />
+        <div className="rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-[var(--color-text-1)]">
+                Outcome notes
+              </p>
+              <p className="mt-1 max-w-[72ch] text-xs leading-5 text-[var(--color-text-3)]">
+                Positive replies and meetings update which signals, channels,
+                and message patterns the agent should trust next.
+              </p>
             </div>
-            <p className="text-xs leading-5 text-[var(--color-text-3)]">
-              Reply and meeting outcomes teach the agent which signals,
-              channels, and message patterns deserve more volume.
-            </p>
-          </aside>
+            <div className="flex flex-wrap gap-2">
+              <ConversationProofPill icon="mail">
+                {learning.positive_replies_7d} positive replies
+              </ConversationProofPill>
+              <ConversationProofPill icon="event_available">
+                {learning.meetings_7d} meetings
+              </ConversationProofPill>
+            </div>
+          </div>
 
           {hasRecommendation ? (
-            <div className="grid gap-2">
+            <div className="mt-4 grid gap-2 lg:grid-cols-2">
               <LearningSummaryCard
                 icon="auto_graph"
                 title="Strategy recommendation"
@@ -5595,15 +5841,10 @@ function AgentLearningPanel({
               />
             </div>
           ) : (
-            <EmptyState
-              title="No learning recommendation yet"
-              hint="Once replies and meetings are attributed, the agent can recommend which sources, channels, and message patterns to scale."
-              cta={{
-                href: "/dashboard/agent#outreach",
-                label: "Review sent outreach",
-                icon: "arrow_forward",
-              }}
-            />
+            <p className="mt-4 rounded-[12px] bg-[var(--color-ink-2)] px-3 py-3 text-sm leading-6 text-[var(--color-text-3)]">
+              No recommendation yet. Once replies and meetings are attributed,
+              the agent can suggest which sources and messages to scale.
+            </p>
           )}
         </div>
       </SurfaceSection>
@@ -5627,7 +5868,7 @@ function LearningSummaryCard({
   badge?: string;
 }) {
   return (
-    <article className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+    <article className="rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
       <div className="flex flex-wrap items-center gap-2">
         <span className="grid size-8 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
           <Icon name={icon} size={15} />
@@ -5658,7 +5899,7 @@ function AgentOutreachLink({ message }: { message: AgentOutreachRow }) {
     <Link
       href={sentDraftHref(message.conversation_id, message.id)}
       prefetch={false}
-      className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[1fr_auto] md:items-center"
+      className="grid gap-3 rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[1fr_auto] md:items-center"
     >
       <span className="flex min-w-0 items-start gap-3">
         <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
@@ -5832,9 +6073,7 @@ function reviewKindLabel(kind: string): string {
   if (normalized.includes("reply")) return "Reply draft";
   if (normalized.includes("email")) return "Email review";
   if (normalized.includes("channel")) return "Channel review";
-  return kind
-    .replace(/[._-]+/g, " ")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return "Review";
 }
 
 function reviewPreview(value: string | null): string {
@@ -6274,14 +6513,22 @@ function approvalLabel(value: string): string {
   if (value === "always") return "Review every move";
   if (value === "approve_first") return "Review first move";
   if (value === "research_only") return "Research only";
-  return value.replace(/_/g, " ");
+  return "Custom review";
 }
 
 function statusLabel(status: string): string {
   if (status === "active") return "Active";
   if (status === "connected") return "Connected";
   if (status === "needs_reauth") return "Needs reauth";
-  return status.replace(/_/g, " ");
+  if (status === "draft") return "Draft";
+  if (status === "queued") return "Queued";
+  if (status === "deferred") return "Waiting";
+  if (status === "sent") return "Sent";
+  if (status === "delivered") return "Delivered";
+  if (status === "replied") return "Replied";
+  if (status === "matched") return "Ready";
+  if (status === "in_play") return "In play";
+  return "In progress";
 }
 
 function signalKindLabel(kind: string): string {
@@ -6357,7 +6604,7 @@ function channelLabel(channel: string): string {
   if (channel === "linkedin_inmail") return "LinkedIn InMail";
   if (channel === "linkedin_connection") return "LinkedIn connect";
   if (channel === "linkedin_comment") return "LinkedIn comment";
-  return channel.replace(/_/g, " ");
+  return "Other channel";
 }
 
 function ChannelMark({ channel, size }: { channel: string; size: number }) {
@@ -6470,3 +6717,36 @@ function NoWorkspaceReps() {
     </div>
   );
 }
+
+/*
+Agent dashboard redesign report
+
+Final visible sections:
+1. Compact status header: Rep/channel readiness, one blocker CTA, small channel/setup controls, and the preserved Autopilot/Copilot action.
+2. Needs your thumb: pending approval queue with the existing Approve/Reject server actions and proof links.
+3. Conversations: merged sent outreach, inbound replies, accepted LinkedIn follow-ups, and rejected draft context into one proof-trace list.
+4. Signals ready: qualified-signal queue with why-now copy, next action, contact resolution, fit feedback, skip, and approval controls.
+5. Learning: compact outcome-driven recommendations with preserved strategy/message optimization actions.
+
+Removed, merged, or relabeled:
+- Removed from the rendered surface: the sticky 8-anchor mode rail, operating-loop panel, live last-hour bar chart, event types list, active-workflows counter, system status panel, output handoff panel, contact workbench panel, setup snapshot metrics wall, and channel performance table.
+- Merged sent outreach and replies into Conversations; accepted LinkedIn follow-ups live there as next-touch conversation work.
+- Folded rejected drafts into Conversations as judge-held context instead of a top-level panel.
+- Folded weak signal warnings into Signals ready as plain next-action notes.
+- Relabeled "Review queue" to "Needs your thumb", "Qualified signals" to "Signals ready", and proof/eval statuses into user-facing badges.
+- Removed duplicate Brief-style metric cards for qualified signals, verified email counts, LinkedIn profile counts, active workflow totals, and last-hour activity.
+
+Functional controls preserved but visually de-emphasized:
+- prepareQualifiedSignalsAction, checkAgentSourcesAction, decideApprovalWithDraftAction, dismissQualifiedSignalAction, generateMeetingPrepAction, optimizeCampaignStrategyAction, optimizePlaySkillsAction, recordPersonFitFeedbackAction, resolveQualifiedSignalContactsAction, and updateWorkspaceAutonomyAction.
+- Autopilot/Copilot remains functional in the compact setup header; architecture still wants future per-Play x channel x volume gating instead of this coarse workspace control.
+- All data loaders and props remain intact, including output destinations, even when their old panel is no longer rendered.
+
+Shared-component changes flagged, not made:
+- SurfaceSection and EmptyState could use a compact dashboard variant with rounded-[16px] hairline cards and lower heading density.
+- PendingSubmitButton could expose an icon-only compact variant for dense approval rows.
+
+product-surface-contract.test.ts assertions needing updates:
+- Lines asserting AgentActivityPanel, AgentContactsPanel, AgentOutreachPanel, AgentRepliesPanel, AgentModeRail, aria-label="Agent work modes", System status, AgentHotSignalPaths, live last-hour operating-loop copy, AgentOperatingLoopPanel, AgentSetupSnapshot, OutputHandoff, and AgentSystemPanel should be replaced with the five-section surface.
+- Lines asserting exact render order ReviewQueue -> Outreach -> Replies -> Learning -> Opportunities -> Contacts -> System should be updated to StatusHeader -> ReviewQueue -> Conversations -> Signals -> Learning.
+- Lines asserting title="Sent outreach", "Agent outreach, last 7 days", "Replies ready", and "Qualified signals need contacts" should be updated to conversation-centric and plain-language labels.
+*/

@@ -5,7 +5,6 @@ import Icon from "@/components/Icon";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspaceSessionForDashboard } from "@/lib/workspace";
-import { EmptyState } from "@/components/dashboard/Shell";
 import { SurfaceSection } from "@/components/dashboard/SurfaceHero";
 import FirstSignalsLoading from "@/components/dashboard/FirstSignalsLoading";
 import {
@@ -122,22 +121,24 @@ interface BriefCapabilityReadiness {
   crm_destinations: number;
 }
 
-interface BriefNextMove {
-  icon: string;
-  title: string;
-  detail: string;
-  href: string;
-  action: string;
-  tone: "ready" | "attention" | "neutral";
-}
-
 interface BriefPriority {
   action?: "prepare_outreach";
   detail: string;
   href: string;
   icon: string;
   label: string;
+  title: string;
+  tone: "pink" | "yellow" | "green" | "blue";
 }
+
+type BriefTone = "pink" | "yellow" | "green" | "blue";
+
+const TONE_BG: Record<BriefTone, string> = {
+  pink: "bg-[var(--color-brand-pink)] text-[#9a0103]",
+  yellow: "bg-[var(--color-brand-yellow)] text-[#441f16]",
+  green: "bg-[var(--color-brand-green)] text-[#273416]",
+  blue: "bg-[var(--color-brand-blue)] text-[#0a0d27]",
+};
 
 async function loadBriefActionState(workspaceId: string): Promise<BriefActionState> {
   const pool = getPool();
@@ -472,10 +473,31 @@ async function loadBriefHotContacts(workspaceId: string): Promise<BriefHotContac
       where p.workspace_id = $1
         and (cardinality(coalesce(p.emails, '{}'::text[])) > 0 or p.linkedin_url is not null)
       order by latest_signal.signal_at desc
-      limit 4`,
+      limit 12`,
     [workspaceId],
   );
-  return rows;
+  return dedupeHotContacts(rows).slice(0, 5);
+}
+
+function dedupeHotContacts(contacts: BriefHotContact[]): BriefHotContact[] {
+  const seenIds = new Set<string>();
+  const seenEmails = new Set<string>();
+  const deduped: BriefHotContact[] = [];
+
+  for (const contact of contacts) {
+    const emails = contact.emails
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean);
+    const duplicateId = seenIds.has(contact.id);
+    const duplicateEmail = emails.some((email) => seenEmails.has(email));
+    if (duplicateId || duplicateEmail) continue;
+
+    seenIds.add(contact.id);
+    for (const email of emails) seenEmails.add(email);
+    deduped.push(contact);
+  }
+
+  return deduped;
 }
 
 async function loadBriefContactReadiness(
@@ -890,6 +912,7 @@ export default async function BriefPage() {
         outcomeInsights={[]}
         learning={EMPTY_LEARNING_INSIGHT}
         workspaceName="there"
+        workspaceSlug={null}
       />
     );
   }
@@ -934,6 +957,7 @@ export default async function BriefPage() {
       outcomeInsights={outcomeInsights}
       learning={learning}
       workspaceName={session.workspace.name}
+      workspaceSlug={session.workspace.slug}
     />
   );
 }
@@ -1031,6 +1055,7 @@ function BriefView({
   outcomeInsights,
   learning,
   workspaceName,
+  workspaceSlug,
 }: {
   actions: BriefActionState;
   signalKinds: SignalKindMetric[];
@@ -1042,6 +1067,7 @@ function BriefView({
   outcomeInsights: BriefOutcomeInsight[];
   learning: BriefLearningInsight;
   workspaceName: string;
+  workspaceSlug: string | null;
 }) {
   const today = new Date().toLocaleDateString(undefined, {
     weekday: "long",
@@ -1050,153 +1076,82 @@ function BriefView({
   });
   const totalSent24h = actions.emails_sent_24h + actions.dms_sent_24h;
   const totalSent7d = actions.emails_sent_7d + actions.dms_sent_7d;
-  const replyRate =
-    totalSent7d > 0 ? Math.round((actions.replies_7d / totalSent7d) * 100) : 0;
   const draftedSignals7d = signalKinds.reduce(
     (total, signal) => total + signal.with_drafts_7d,
     0,
   );
-  const priority = briefPriority(actions, channelReadiness, totalSent7d);
-  const nextMoves = briefNextMoves(
+  const priority = briefPriority(
     actions,
-    signalHealth,
-    contactReadiness,
     channelReadiness,
-    learning,
     totalSent7d,
+    signalHealth,
   );
+  const workspaceLabel = workspaceDisplayName(workspaceName, workspaceSlug);
+  const landedCount = outcomeInsights.length;
+  const briefLine = briefStatusLine(actions, priority, totalSent24h, landedCount);
+  const hasMomentum =
+    actions.qualified_signals_7d +
+      contactReadiness.signal_backed +
+      draftedSignals7d +
+      totalSent7d +
+      actions.replies_7d +
+      actions.meetings_7d >
+    0;
 
   return (
-    <div className="space-y-8">
-      <section className="rounded-[12px] border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] p-5 sm:p-7">
+    <div className="space-y-7">
+      <section className="overflow-hidden rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-6 sm:p-8">
         <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent)]">
           {today}
         </p>
         <h1
-          className="mt-4 max-w-full break-words text-[2rem] font-semibold leading-tight text-[var(--color-text-1)] [overflow-wrap:anywhere] sm:text-[3rem]"
+          className="mt-4 max-w-full break-words text-[clamp(2rem,5vw,4.25rem)] font-bold leading-[0.98] text-[var(--color-text-1)] [overflow-wrap:anywhere]"
           style={{ fontFamily: "var(--font-display)", letterSpacing: 0 }}
         >
-          Welcome back, {workspaceName}.
+          Morning brief for {workspaceLabel}.
         </h1>
-        <p className="mt-3 max-w-[72ch] break-words text-[15px] leading-7 text-[var(--color-text-2)] [overflow-wrap:anywhere]">
-          Your agent found {actions.qualified_signals_24h} qualified signals in
-          the last day, sent {totalSent24h} emails or LinkedIn DMs, and produced{" "}
-          {actions.replies_24h} replies with {actions.meetings_24h} meetings.
+        <p className="mt-5 max-w-[72ch] text-[15.5px] leading-7 tracking-[-0.01em] text-[var(--color-text-2)]">
+          {briefLine}
         </p>
       </section>
 
-      <BriefSnapshotPanel
-        actions={actions}
-        signalKinds={signalKinds}
-        signalHealth={signalHealth}
-      />
+      <BriefPrimaryAction priority={priority} />
 
-      <BriefSignalToOutreachPanel
-        actions={actions}
-        contactReadiness={contactReadiness}
-        draftedSignals7d={draftedSignals7d}
-        totalSent7d={totalSent7d}
-      />
+      <section className="grid gap-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+        <BriefApprovalsCard pendingReviews={actions.pending_reviews} />
+        <BriefLandedCard outcomeInsights={outcomeInsights} />
+      </section>
 
-      <BriefCapabilityCoveragePanel
-        actions={actions}
-        capabilityReadiness={capabilityReadiness}
-        channelReadiness={channelReadiness}
-        contactReadiness={contactReadiness}
-        draftedSignals7d={draftedSignals7d}
-        totalSent7d={totalSent7d}
-      />
-
-      <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-[var(--color-text-1)]">
-                Today priority
-              </p>
-              <p className="mt-1 text-sm leading-6 text-[var(--color-text-3)]">
-                {priority.detail}
-              </p>
-            </div>
-            {priority.action === "prepare_outreach" ? (
-              <form action={prepareQualifiedSignalsAction}>
-                <input
-                  type="hidden"
-                  name="return_to"
-                  value="/dashboard/agent#review-queue"
-                />
-                <input type="hidden" name="limit" value="25" />
-                <PendingSubmitButton
-                  className="btn-solid-sm w-fit"
-                  icon={priority.icon}
-                  iconSize={14}
-                  pendingLabel="Preparing"
-                >
-                  {priority.label}
-                </PendingSubmitButton>
-              </form>
-            ) : (
-              <Link href={priority.href} className="btn-solid-sm w-fit">
-                <Icon name={priority.icon} size={14} />
-                {priority.label}
-              </Link>
-            )}
-          </div>
-        </div>
-
-        <aside className="section-note">
-          <p className="text-sm font-semibold text-[var(--color-text-1)]">
-            Agent insight
-          </p>
-          <p className="mt-3 text-sm leading-6 text-[var(--color-text-3)]">
-            {totalSent7d === 0
-              ? "No outbound volume in the last week. Connect Outlook or LinkedIn, then let qualified signals become verified contacts and judged drafts."
-              : `${totalSent7d} emails or DMs went out in the last week. ${actions.replies_7d} got useful replies, ${actions.meetings_7d} became meetings, and the current reply rate is ${replyRate}%.`}
-          </p>
-          <Link href="/dashboard/agent#outreach" className="btn-solid-sm mt-4 w-fit">
+      <SurfaceSection
+        title="Fresh qualified contacts"
+        action={
+          <Link href="/dashboard/agent#verified-contacts" className="btn-quiet-sm">
             <Icon name="arrow_forward" size={14} />
-            Open Agent
+            View contacts
           </Link>
-        </aside>
-      </section>
-
-      <BriefNextMovesPanel moves={nextMoves} />
-
-      <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <SurfaceSection
-          title="Fresh qualified contacts"
-          action={
-            <Link href="/dashboard/agent#verified-contacts" className="btn-quiet-sm">
-              <Icon name="arrow_forward" size={14} />
-              View contacts
-            </Link>
-          }
-        >
-          {hotContacts.length === 0 ? (
-            <EmptyState
-              title="No signal-backed contacts yet"
-              hint="Once qualified signals resolve to verified emails or LinkedIn profiles, the freshest people will appear here."
-              cta={{
-                href: "/dashboard/agent#qualified-signals",
-                label: "Review signals",
-                icon: "person_search",
-              }}
-            />
-          ) : (
-            <div className="grid gap-2">
-              {hotContacts.map((contact) => (
-                <BriefHotContactRow key={contact.id} contact={contact} />
-              ))}
-            </div>
-          )}
-        </SurfaceSection>
-
-        <ReplySnapshotCard actions={actions} totalSent7d={totalSent7d} />
-      </section>
+        }
+      >
+        {hotContacts.length === 0 ? (
+          <BriefEmptyCard
+            icon="person_search"
+            title="No fresh qualified contacts yet"
+            hint="Connect a channel or review qualified signals; the first reachable people will appear here with proof."
+            href="/dashboard/agent#qualified-signals"
+            label="Review signals"
+            tone="yellow"
+          />
+        ) : (
+          <div className="grid gap-3">
+            {hotContacts.map((contact) => (
+              <BriefHotContactRow key={contact.id} contact={contact} />
+            ))}
+          </div>
+        )}
+      </SurfaceSection>
 
       <div id="weekly-learning" className="scroll-mt-28">
         <SurfaceSection
-          title="Weekly learning"
+          title="This week the agent learned..."
           action={
             <Link href="/dashboard/agent#learning" className="btn-quiet-sm">
               <Icon name="auto_graph" size={14} />
@@ -1208,740 +1163,265 @@ function BriefView({
         </SurfaceSection>
       </div>
 
-      <div id="reply-insights" className="scroll-mt-28">
-        <SurfaceSection title="Reply and meeting insights">
-          {outcomeInsights.length === 0 ? (
-            <EmptyState
-              title="No replies or meetings this week"
-              hint="Once outreach lands, the brief will show the person, company, signal, and exact conversation behind each reply or meeting."
-              cta={{
-                href: "/dashboard/agent#outreach",
-                label: "Review outreach",
-                icon: "mail",
-              }}
-            />
-          ) : (
-            <div className="grid gap-2">
-              {outcomeInsights.map((insight) => (
-                <OutcomeInsightRow key={insight.id} insight={insight} />
-              ))}
-            </div>
-          )}
-        </SurfaceSection>
-      </div>
+      <BriefFunnelSummary
+        hasMomentum={hasMomentum}
+        signals={actions.qualified_signals_7d}
+        contacts={contactReadiness.signal_backed}
+        drafts={draftedSignals7d}
+        sent={totalSent7d}
+        replies={actions.replies_7d}
+        meetings={actions.meetings_7d}
+        priority={priority}
+      />
     </div>
   );
 }
 
-function BriefNextMovesPanel({ moves }: { moves: BriefNextMove[] }) {
+function BriefPrimaryAction({ priority }: { priority: BriefPriority }) {
   return (
-    <section className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 sm:grid-cols-3">
-      {moves.map((move) => (
-        <Link
-          key={move.title}
-          href={move.href}
-          prefetch={false}
-          className="group grid min-h-[138px] gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-3)]"
+    <section className="group rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-5 transition-[transform,border-color,box-shadow] duration-300 hover:-translate-y-0.5 hover:border-[var(--color-line-3)] hover:shadow-[0_18px_40px_-24px_rgba(0,0,0,0.22)] sm:p-6">
+      <div className="grid gap-5 md:grid-cols-[auto_minmax(0,1fr)_auto] md:items-center">
+        <span
+          className={`grid size-11 place-items-center rounded-[10px] transition-transform duration-300 group-hover:scale-105 ${TONE_BG[priority.tone]}`}
         >
-          <span className="flex items-start justify-between gap-3">
-            <span
-              className={
-                "grid size-9 place-items-center rounded-[8px] " +
-                briefMoveToneClass(move.tone)
-              }
-            >
-              <Icon name={move.icon} size={17} />
-            </span>
-            <span className="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-accent)]">
-              {move.action}
-              <Icon
-                name="arrow_forward"
-                size={13}
-                className="transition-transform group-hover:translate-x-0.5"
-              />
-            </span>
-          </span>
-          <span>
-            <span className="block text-sm font-semibold text-[var(--color-text-1)]">
-              {move.title}
-            </span>
-            <span className="mt-2 line-clamp-3 block text-xs leading-5 text-[var(--color-text-3)]">
-              {move.detail}
-            </span>
-          </span>
-        </Link>
-      ))}
-    </section>
-  );
-}
-
-function briefMoveToneClass(tone: BriefNextMove["tone"]): string {
-  if (tone === "ready") return "bg-[var(--color-pos-bg)] text-[var(--color-pos)]";
-  if (tone === "attention") return "bg-[var(--color-warn-bg)] text-[var(--color-warn)]";
-  return "bg-[var(--color-ink-0)] text-[var(--color-text-2)]";
-}
-
-function BriefSnapshotPanel({
-  actions,
-  signalKinds,
-  signalHealth,
-}: {
-  actions: BriefActionState;
-  signalKinds: SignalKindMetric[];
-  signalHealth: BriefSignalHealth;
-}) {
-  const metrics = [
-    {
-      icon: "sensors",
-      label: "Qualified signals",
-      day: actions.qualified_signals_24h,
-      week: actions.qualified_signals_7d,
-      href: "/dashboard/agent#qualified-signals",
-    },
-    {
-      icon: "mail",
-      label: "Emails sent",
-      day: actions.emails_sent_24h,
-      week: actions.emails_sent_7d,
-      href: "/dashboard/agent#outreach",
-    },
-    {
-      icon: "linkedin",
-      label: "LinkedIn DMs",
-      day: actions.dms_sent_24h,
-      week: actions.dms_sent_7d,
-      href: "/dashboard/agent#outreach",
-    },
-    {
-      icon: "mark_email_read",
-      label: "Replies",
-      day: actions.replies_24h,
-      week: actions.replies_7d,
-      href: "/dashboard/brief#reply-insights",
-    },
-    {
-      icon: "event_available",
-      label: "Meetings",
-      day: actions.meetings_24h,
-      week: actions.meetings_7d,
-      href: "/dashboard/brief#reply-insights",
-    },
-  ];
-  return (
-    <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-      <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 sm:p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold text-[var(--color-text-1)]">
-              Last day and week
-            </p>
-            <p className="mt-1 text-sm leading-6 text-[var(--color-text-3)]">
-              The operating brief only tracks qualified signals, sent outreach,
-              replies, and meetings.
-            </p>
-          </div>
-          <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-3)]">
-            24h / 7d
-          </span>
+          <Icon name={priority.icon} size={20} />
+        </span>
+        <div className="min-w-0">
+          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-text-3)]">
+            Today
+          </p>
+          <h2
+            className="mt-1 text-[22px] font-semibold leading-tight text-[var(--color-text-1)]"
+            style={{ fontFamily: "var(--font-display)", letterSpacing: 0 }}
+          >
+            {priority.title}
+          </h2>
+          <p className="mt-2 max-w-[68ch] text-sm leading-6 text-[var(--color-text-2)]">
+            {priority.detail}
+          </p>
         </div>
-        <div className="mt-4 grid gap-2">
-          {metrics.map((metric) => (
-            <BriefWindowMetricRow key={metric.label} metric={metric} />
-          ))}
-        </div>
-      </div>
-
-      <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 sm:p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold text-[var(--color-text-1)]">
-              Signal types
-            </p>
-            <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
-              Qualified timing evidence by type.
-            </p>
-          </div>
-          <Link href="/dashboard/agent#qualified-signals" className="btn-quiet-sm">
-            <Icon name="arrow_forward" size={14} />
-            Open signals
-          </Link>
-        </div>
-        {signalKinds.length === 0 ? (
-          <div className="mt-4">
-            <EmptyState
-              title="No qualified signal types yet"
-              hint="Complete Profile and connect accounts so the agent can start qualifying timing evidence."
-              cta={{
-                href: "/dashboard/profile#profile",
-                label: "Open profile",
-                icon: "person",
-              }}
+        {priority.action === "prepare_outreach" ? (
+          <form action={prepareQualifiedSignalsAction}>
+            <input
+              type="hidden"
+              name="return_to"
+              value="/dashboard/agent#review-queue"
             />
-          </div>
+            <input type="hidden" name="limit" value="25" />
+            <PendingSubmitButton
+              className="btn-solid-sm w-fit"
+              icon={priority.icon}
+              iconSize={14}
+              pendingLabel="Preparing"
+            >
+              {priority.label}
+            </PendingSubmitButton>
+          </form>
         ) : (
-          <div className="mt-4 grid gap-2">
-            {signalKinds.map((signal) => (
-              <SignalKindRow key={signal.kind} signal={signal} />
-            ))}
-          </div>
+          <Link href={priority.href} className="btn-solid-sm w-fit">
+            <Icon name={priority.icon} size={14} />
+            {priority.label}
+          </Link>
         )}
-        <SignalHealthPanel actions={actions} health={signalHealth} />
       </div>
     </section>
   );
 }
 
-function SignalHealthPanel({
-  actions,
-  health,
-}: {
-  actions: BriefActionState;
-  health: BriefSignalHealth;
-}) {
-  const dailyAverage = actions.qualified_signals_7d / 7;
-  const attention = signalHealthAttention(health);
+function BriefApprovalsCard({ pendingReviews }: { pendingReviews: number }) {
   return (
-    <div className="mt-4 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-3">
-      <div className="flex items-center justify-between gap-3">
-        <p className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text-1)]">
-          <Icon name="monitor_heart" size={15} />
-          Signal health
-        </p>
-        <Link href="/dashboard/profile#signal-setup" className="btn-quiet-sm">
-          <Icon name="arrow_forward" size={14} />
-          Sources
-        </Link>
-      </div>
-      <div className="mt-3 grid gap-2 sm:grid-cols-4">
-        <SignalHealthMetric
-          label="Active sources"
-          value={`${health.active_sources}/${health.watched_sources}`}
-        />
-        <SignalHealthMetric
-          label="Productive 7d"
-          value={health.productive_sources_7d}
-        />
-        <SignalHealthMetric
-          label="Avg/day"
-          value={formatDailyAverage(dailyAverage)}
-        />
-        <SignalHealthMetric
-          label="Next check"
-          value={signalNextCheckLabel(health)}
-        />
-      </div>
-      <p
-        className={
-          "mt-3 rounded-[8px] px-3 py-2 text-xs leading-5 " +
-          (attention
-            ? "bg-[var(--color-warn-bg)] text-[var(--color-warn)]"
-            : "bg-[var(--color-pos-bg)] text-[var(--color-pos)]")
-        }
-      >
-        {attention ??
-          "Signal engine is active. Productive sources are creating qualified timing evidence this week."}
-      </p>
-      {health.next_check_source_name ? (
-        <p className="mt-2 flex flex-wrap items-center gap-1.5 text-xs leading-5 text-[var(--color-text-3)]">
-          <Icon name="schedule" size={13} />
-          Next source check: {health.next_check_source_name}{" "}
-          {signalNextCheckLabel(health)}.
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-function SignalHealthMetric({
-  label,
-  value,
-}: {
-  label: string;
-  value: number | string;
-}) {
-  return (
-    <div className="rounded-[8px] bg-[var(--color-ink-0)] px-3 py-2">
-      <p className="text-[11px] text-[var(--color-text-4)]">{label}</p>
-      <p className="mt-1 text-base font-semibold tabular-nums text-[var(--color-text-1)]">
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function BriefSignalToOutreachPanel({
-  actions,
-  contactReadiness,
-  draftedSignals7d,
-  totalSent7d,
-}: {
-  actions: BriefActionState;
-  contactReadiness: BriefContactReadiness;
-  draftedSignals7d: number;
-  totalSent7d: number;
-}) {
-  const outcomeCount7d = actions.replies_7d + actions.meetings_7d;
-  const steps = [
-    {
-      icon: "sensors",
-      label: "Qualified signals",
-      value: actions.qualified_signals_7d,
-      detail: "Matched timing evidence",
-      href: "/dashboard/agent#qualified-signals",
-      ready: actions.qualified_signals_7d > 0,
-    },
-    {
-      icon: "person_search",
-      label: "Signal-backed contacts",
-      value: contactReadiness.signal_backed,
-      detail: "People tied to fresh signals",
-      href: "/dashboard/agent#verified-contacts",
-      ready: contactReadiness.signal_backed > 0,
-    },
-    {
-      icon: "verified",
-      label: "Verified email",
-      value: contactReadiness.verified_email,
-      detail: "Deliverable email handles",
-      href: "/dashboard/agent#verified-contacts",
-      ready: contactReadiness.verified_email > 0,
-    },
-    {
-      icon: "linkedin",
-      label: "LinkedIn profiles",
-      value: contactReadiness.linkedin_profiles,
-      detail: "Profiles ready for social outreach",
-      href: "/dashboard/agent#verified-contacts",
-      ready: contactReadiness.linkedin_profiles > 0,
-    },
-    {
-      icon: "rate_review",
-      label: "Judged drafts",
-      value: draftedSignals7d,
-      detail: "Drafts behind eval and review",
-      href: "/dashboard/agent#qualified-signals",
-      ready: draftedSignals7d > 0,
-    },
-    {
-      icon: "send",
-      label: "Sent outreach",
-      value: totalSent7d,
-      detail: "Emails and LinkedIn DMs",
-      href: "/dashboard/agent#outreach",
-      ready: totalSent7d > 0,
-    },
-  ];
-
-  return (
-    <section className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 sm:p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <section className="rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-5 sm:p-6">
+      <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-sm font-semibold text-[var(--color-text-1)]">
-            Signal-to-outreach flow
+            Needs your thumb
           </p>
-          <p className="mt-1 max-w-[76ch] text-sm leading-6 text-[var(--color-text-3)]">
-            Quality signals should become verified email or LinkedIn contacts,
-            judged drafts, sent outreach, and reply learning without making you
-            hunt through separate tabs.
+          <p className="mt-2 text-sm leading-6 text-[var(--color-text-3)]">
+            {pendingReviews > 0
+              ? `${pendingReviews} judged draft${
+                  pendingReviews === 1 ? " is" : "s are"
+                } waiting for approval.`
+              : "No drafts need review right now."}
+          </p>
+        </div>
+        <span className="grid size-10 shrink-0 place-items-center rounded-[10px] bg-[var(--color-brand-yellow)] text-[#441f16]">
+          <Icon name="check" size={18} />
+        </span>
+      </div>
+      {pendingReviews > 0 ? (
+        <Link href="/dashboard/agent#review-queue" className="btn-solid-sm mt-5 w-fit">
+          <Icon name="rate_review" size={14} />
+          Review drafts
+        </Link>
+      ) : (
+        <Link href="/dashboard/agent#outreach" className="btn-quiet-sm mt-5 w-fit">
+          <Icon name="mail" size={14} />
+          View outreach
+        </Link>
+      )}
+    </section>
+  );
+}
+
+function BriefLandedCard({
+  outcomeInsights,
+}: {
+  outcomeInsights: BriefOutcomeInsight[];
+}) {
+  return (
+    <section id="reply-insights" className="scroll-mt-28 rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-5 sm:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-[var(--color-text-1)]">
+            What landed
+          </p>
+          <p className="mt-2 text-sm leading-6 text-[var(--color-text-3)]">
+            Replies and meetings with the conversation proof attached.
           </p>
         </div>
         <Link href="/dashboard/agent#outreach" className="btn-quiet-sm">
           <Icon name="arrow_forward" size={14} />
+          Open conversations
+        </Link>
+      </div>
+      {outcomeInsights.length === 0 ? (
+        <div className="mt-5">
+          <BriefEmptyCard
+            icon="mark_email_read"
+            title="Nothing landed yet"
+            hint="Send the first approved batch, then replies and meetings will collect here."
+            href="/dashboard/agent#review-queue"
+            label="Review drafts"
+            tone="green"
+          />
+        </div>
+      ) : (
+        <div className="mt-5 grid gap-3">
+          {outcomeInsights.slice(0, 4).map((insight) => (
+            <OutcomeInsightRow key={insight.id} insight={insight} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function BriefEmptyCard({
+  icon,
+  title,
+  hint,
+  href,
+  label,
+  tone,
+}: {
+  icon: string;
+  title: string;
+  hint: string;
+  href: string;
+  label: string;
+  tone: BriefTone;
+}) {
+  return (
+    <div className="rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-5">
+      <span className={`grid size-10 place-items-center rounded-[10px] ${TONE_BG[tone]}`}>
+        <Icon name={icon} size={18} />
+      </span>
+      <p className="mt-4 text-sm font-semibold text-[var(--color-text-1)]">
+        {title}
+      </p>
+      <p className="mt-2 max-w-[56ch] text-sm leading-6 text-[var(--color-text-3)]">
+        {hint}
+      </p>
+      <Link href={href} className="btn-quiet-sm mt-4 w-fit">
+        <Icon name="arrow_forward" size={14} />
+        {label}
+      </Link>
+    </div>
+  );
+}
+
+function BriefFunnelSummary({
+  hasMomentum,
+  signals,
+  contacts,
+  drafts,
+  sent,
+  replies,
+  meetings,
+  priority,
+}: {
+  hasMomentum: boolean;
+  signals: number;
+  contacts: number;
+  drafts: number;
+  sent: number;
+  replies: number;
+  meetings: number;
+  priority: BriefPriority;
+}) {
+  const steps = [
+    { label: "Signals", value: signals, href: "/dashboard/agent#qualified-signals" },
+    { label: "Contacts", value: contacts, href: "/dashboard/agent#verified-contacts" },
+    { label: "Drafts", value: drafts, href: "/dashboard/agent#review-queue" },
+    { label: "Sent", value: sent, href: "/dashboard/agent#outreach" },
+    { label: "Replies", value: replies, href: "/dashboard/brief#reply-insights" },
+    { label: "Meetings", value: meetings, href: "/dashboard/brief#reply-insights" },
+  ];
+
+  return (
+    <section className="rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-5 sm:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm font-semibold text-[var(--color-text-1)]">
+          This week at a glance
+        </p>
+        <Link href="/dashboard/agent" className="btn-quiet-sm">
+          <Icon name="arrow_forward" size={14} />
           Open Agent
         </Link>
       </div>
-      <div className="mt-4 grid gap-2 md:grid-cols-3 xl:grid-cols-6">
-        {steps.map((step) => (
-          <BriefFlowStep key={step.label} step={step} />
-        ))}
-      </div>
-      <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-[var(--color-text-3)]">
-        <span className="inline-flex items-center gap-1.5 rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1">
-          <Icon name="mail" size={13} />
-          {actions.replies_7d} replies
-        </span>
-        <span className="inline-flex items-center gap-1.5 rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1">
-          <Icon name="event_available" size={13} />
-          {actions.meetings_7d} meetings
-        </span>
-        <span className="inline-flex items-center gap-1.5 rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1">
-          <Icon name="auto_graph" size={13} />
-          {outcomeCount7d} reply or meeting signal
-          {outcomeCount7d === 1 ? "" : "s"} for learning
-        </span>
-      </div>
-    </section>
-  );
-}
-
-function BriefCapabilityCoveragePanel({
-  actions,
-  capabilityReadiness,
-  channelReadiness,
-  contactReadiness,
-  draftedSignals7d,
-  totalSent7d,
-}: {
-  actions: BriefActionState;
-  capabilityReadiness: BriefCapabilityReadiness;
-  channelReadiness: BriefChannelReadiness;
-  contactReadiness: BriefContactReadiness;
-  draftedSignals7d: number;
-  totalSent7d: number;
-}) {
-  const outreachReady =
-    (channelReadiness.email_connected || channelReadiness.linkedin_connected) &&
-    (draftedSignals7d > 0 || totalSent7d > 0);
-  const growLoop = [
-    {
-      icon: "radar",
-      label: "Visitors identified",
-      value: capabilityReadiness.visitor_signals_7d,
-      href: "/dashboard/profile#visitor-intent",
-    },
-    {
-      icon: "fact_check",
-      label: "ICP matches",
-      value: capabilityReadiness.visitor_qualified_7d,
-      href: "/dashboard/agent#qualified-signals",
-    },
-    {
-      icon: "person_search",
-      label: "Contacts found",
-      value: capabilityReadiness.visitor_contacts_7d,
-      href: "/dashboard/agent#verified-contacts",
-    },
-    {
-      icon: "send",
-      label: "Outreach queued",
-      value: capabilityReadiness.visitor_outreach_7d,
-      href: "/dashboard/agent#outreach",
-    },
-  ];
-  const capabilities = [
-    {
-      icon: "radar",
-      label: "Visitor de-anonymization",
-      value:
-        capabilityReadiness.visitor_signals_7d > 0
-          ? `${capabilityReadiness.visitor_signals_7d} visits`
-          : capabilityReadiness.push_signal_sources > 0
-            ? `${capabilityReadiness.push_signal_sources} source${
-                capabilityReadiness.push_signal_sources === 1 ? "" : "s"
-              }`
-            : "Ready",
-      detail:
-        capabilityReadiness.visitor_signals_7d > 0
-          ? "Identified website visitors are entering the Signal path."
-          : "Install the Bombsell visitor script or connect RB2B, Clearbit, Factors, Warmly, or custom events.",
-      href: "/dashboard/profile#tools",
-      ready:
-        capabilityReadiness.visitor_signals_7d > 0 ||
-        capabilityReadiness.push_signal_sources > 0,
-    },
-    {
-      icon: "auto_graph",
-      label: "Intent signals and scoring",
-      value: `${actions.qualified_signals_7d} scored`,
-      detail:
-        actions.qualified_signals_7d > 0
-          ? "Fresh Signals are qualifying through source quality, ICP fit, and match score."
-          : "Sources are ready, but no qualified timing evidence landed this week.",
-      href: "/dashboard/agent#qualified-signals",
-      ready: actions.qualified_signals_7d > 0,
-    },
-    {
-      icon: "send",
-      label: "Automated personalized outreach",
-      value: `${totalSent7d} sent`,
-      detail:
-        totalSent7d > 0
-          ? "Judged email and LinkedIn outreach has moved through Agent this week."
-          : `${draftedSignals7d} judged draft${
-              draftedSignals7d === 1 ? "" : "s"
-            } and ${contactReadiness.signal_backed} signal-backed contact${
-              contactReadiness.signal_backed === 1 ? "" : "s"
-            } are ready for Agent work.`,
-      href:
-        draftedSignals7d > 0
-          ? "/dashboard/agent#review-queue"
-          : "/dashboard/agent#qualified-signals",
-      ready: outreachReady,
-    },
-    {
-      icon: "corporate_fare",
-      label: "CRM handoff",
-      value:
-        capabilityReadiness.crm_destinations > 0
-          ? `${capabilityReadiness.crm_destinations} connected`
-          : `${contactReadiness.signal_backed} contacts`,
-      detail:
-        capabilityReadiness.crm_destinations > 0
-          ? "Qualified contacts, signal proof, and outreach context can sync through the configured CRM handoff."
-          : contactReadiness.signal_backed > 0
-            ? "Qualified contacts are available through Bombsell MCP/API handoff; configure CRM in Profile."
-            : "CRM handoff is available once qualified contacts clear signal and contact proof.",
-      href: "/dashboard/profile#crm-sync",
-      ready:
-        capabilityReadiness.crm_destinations > 0 ||
-        contactReadiness.signal_backed > 0,
-    },
-  ];
-
-  return (
-    <section className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 sm:p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-[var(--color-text-1)]">
-            Launch capability coverage
-          </p>
-          <p className="mt-1 max-w-[76ch] text-sm leading-6 text-[var(--color-text-3)]">
-            The core offer stays visible from Brief: identify visitors, score
-            intent, personalize outreach, and hand qualified contacts to CRM
-            workflows.
-          </p>
-        </div>
-        <Link href="/dashboard/profile#tools" className="btn-quiet-sm">
-          <Icon name="arrow_forward" size={14} />
-          Output paths
-        </Link>
-      </div>
-      <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-        {capabilities.map((capability) => (
-          <Link
-            key={capability.label}
-            href={capability.href}
-            className="grid min-h-[150px] content-between gap-3 rounded-[8px] bg-[var(--color-ink-2)] p-3 transition-colors hover:bg-[var(--color-ink-3)]"
-          >
-            <span className="flex items-start justify-between gap-3">
-              <span
-                className={
-                  "grid size-8 shrink-0 place-items-center rounded-[8px] " +
-                  (capability.ready
-                    ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
-                    : "bg-[var(--color-warn-bg)] text-[var(--color-warn)]")
-                }
-              >
-                <Icon name={capability.icon} size={15} />
-              </span>
-              <span className="rounded-[8px] bg-[var(--color-ink-0)] px-2 py-1 font-mono text-[11px] text-[var(--color-text-3)]">
-                {capability.value}
-              </span>
+      {hasMomentum ? (
+        <div className="mt-5 flex flex-wrap items-center gap-2">
+          {steps.map((step, index) => (
+            <span key={step.label} className="contents">
+              <BriefFunnelChip {...step} />
+              {index < steps.length - 1 ? (
+                <Icon
+                  name="arrow_forward"
+                  size={14}
+                  className="text-[var(--color-text-4)]"
+                />
+              ) : null}
             </span>
-            <span>
-              <span className="block text-sm font-semibold text-[var(--color-text-1)]">
-                {capability.label}
-              </span>
-              <span className="mt-1 block text-xs leading-5 text-[var(--color-text-3)]">
-                {capability.detail}
-              </span>
-            </span>
-          </Link>
-        ))}
-      </div>
-      <div className="mt-4 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold text-[var(--color-text-1)]">
-              Website intent loop
-            </p>
-            <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
-              Visitor de-anonymization should move from identified account to
-              ICP match, reachable contact, and email or LinkedIn outreach.
-            </p>
-          </div>
-          <Link href="/dashboard/profile#visitor-intent" className="btn-quiet-sm">
-            <Icon name="radar" size={14} />
-            Visitor setup
-          </Link>
-        </div>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          {growLoop.map((step) => (
-            <BriefGrowLoopStep key={step.label} step={step} />
           ))}
         </div>
-      </div>
+      ) : (
+        <div className="mt-5 rounded-[12px] bg-[var(--color-ink-2)] px-4 py-4">
+          <p className="text-sm leading-6 text-[var(--color-text-2)]">
+            Nothing has shipped yet. {priority.detail}
+          </p>
+        </div>
+      )}
     </section>
   );
 }
 
-function BriefGrowLoopStep({
-  step,
+function BriefFunnelChip({
+  label,
+  value,
+  href,
 }: {
-  step: {
-    icon: string;
-    label: string;
-    value: number;
-    href: string;
-  };
+  label: string;
+  value: number;
+  href: string;
 }) {
   return (
     <Link
-      href={step.href}
-      className="grid min-h-[96px] content-between rounded-[8px] bg-[var(--color-ink-0)] px-3 py-3 transition-colors hover:bg-[var(--color-ink-3)]"
+      href={href}
+      className="inline-flex items-center gap-2 rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 text-sm transition-[transform,border-color,box-shadow] duration-300 hover:-translate-y-0.5 hover:border-[var(--color-line-3)] hover:shadow-[0_14px_28px_-24px_rgba(0,0,0,0.2)]"
     >
-      <span className="flex items-center justify-between gap-3">
-        <span
-          className={
-            "grid size-8 place-items-center rounded-[8px] " +
-            (step.value > 0
-              ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
-              : "bg-[var(--color-ink-2)] text-[var(--color-text-3)]")
-          }
-        >
-          <Icon name={step.icon} size={15} />
-        </span>
-        <strong className="text-xl font-semibold tabular-nums text-[var(--color-text-1)]">
-          {step.value}
-        </strong>
-      </span>
-      <span className="mt-3 text-xs font-medium text-[var(--color-text-2)]">
-        {step.label}
-      </span>
+      <strong className="tabular-nums text-[var(--color-text-1)]">{value}</strong>
+      <span className="text-[var(--color-text-3)]">{label}</span>
     </Link>
-  );
-}
-
-function BriefFlowStep({
-  step,
-}: {
-  step: {
-    icon: string;
-    label: string;
-    value: number;
-    detail: string;
-    href: string;
-    ready: boolean;
-  };
-}) {
-  return (
-    <Link
-      href={step.href}
-      className="grid min-h-[142px] gap-3 rounded-[8px] bg-[var(--color-ink-2)] p-3 transition-colors hover:bg-[var(--color-ink-3)]"
-    >
-      <span className="flex items-center justify-between gap-3">
-        <span
-          className={
-            "grid size-8 place-items-center rounded-[8px] " +
-            (step.ready
-              ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
-              : "bg-[var(--color-ink-0)] text-[var(--color-text-3)]")
-          }
-        >
-          <Icon name={step.icon} size={15} />
-        </span>
-        <strong className="text-xl font-semibold tabular-nums text-[var(--color-text-1)]">
-          {step.value}
-        </strong>
-      </span>
-      <span>
-        <span className="block text-sm font-semibold text-[var(--color-text-1)]">
-          {step.label}
-        </span>
-        <span className="mt-1 block text-xs leading-5 text-[var(--color-text-3)]">
-          {step.detail}
-        </span>
-      </span>
-    </Link>
-  );
-}
-
-function signalHealthAttention(health: BriefSignalHealth): string | null {
-  if (health.watched_sources === 0) {
-    return "No signal sources are configured yet. Complete Profile so the Agent can watch for timing evidence.";
-  }
-  if (health.active_sources === 0) {
-    return "Signal sources exist, but none are active. Re-enable sources before qualified signals can flow.";
-  }
-  if (health.attention_source_name && health.attention_reason) {
-    return `${health.attention_source_name} needs attention: ${health.attention_reason}.`;
-  }
-  if (health.quiet_sources > 0) {
-    return `${health.quiet_sources} active source${
-      health.quiet_sources === 1 ? " is" : "s are"
-    } quiet this week. Review source mix if qualified signals slow down.`;
-  }
-  return null;
-}
-
-function signalNextCheckLabel(health: BriefSignalHealth): string {
-  if (health.due_sources > 0) {
-    return health.due_sources === 1 ? "Due now" : `${health.due_sources} due`;
-  }
-  return upcomingWhen(health.next_check_at);
-}
-
-function formatDailyAverage(value: number): string {
-  if (value === 0) return "0";
-  if (value < 1) return value.toFixed(1);
-  return String(Math.round(value));
-}
-
-function BriefWindowMetricRow({
-  metric,
-}: {
-  metric: {
-    icon: string;
-    label: string;
-    day: number;
-    week: number;
-    href: string;
-  };
-}) {
-  return (
-    <Link
-      href={metric.href}
-      className="group grid grid-cols-[32px_minmax(0,1fr)_48px_48px] items-center gap-2 rounded-[8px] bg-[var(--color-ink-2)] px-3 py-2 transition-colors hover:bg-[var(--color-ink-3)] sm:grid-cols-[32px_minmax(0,1fr)_72px_72px] sm:gap-3"
-    >
-      <span className="grid size-8 place-items-center rounded-[8px] bg-[var(--color-ink-0)] text-[var(--color-text-2)]">
-        <Icon name={metric.icon} size={15} />
-      </span>
-      <span className="truncate text-sm font-semibold text-[var(--color-text-1)]">
-        {metric.label}
-      </span>
-      <span className="text-right">
-        <span className="block text-[11px] text-[var(--color-text-4)]">24h</span>
-        <strong className="block text-base font-semibold tabular-nums text-[var(--color-text-1)]">
-          {metric.day}
-        </strong>
-      </span>
-      <span className="text-right">
-        <span className="block text-[11px] text-[var(--color-text-4)]">7d</span>
-        <strong className="block text-base font-semibold tabular-nums text-[var(--color-text-1)]">
-          {metric.week}
-        </strong>
-      </span>
-    </Link>
-  );
-}
-
-function ReplySnapshotCard({
-  actions,
-  totalSent7d,
-}: {
-  actions: BriefActionState;
-  totalSent7d: number;
-}) {
-  const replyRate =
-    totalSent7d > 0 ? Math.round((actions.replies_7d / totalSent7d) * 100) : 0;
-  return (
-    <SurfaceSection title="Replies and meetings">
-      <div className="grid gap-3">
-        <FunnelStep label="Replies 24h" value={actions.replies_24h} />
-        <FunnelStep label="Replies 7d" value={actions.replies_7d} />
-        <FunnelStep label="Meetings 24h" value={actions.meetings_24h} />
-        <FunnelStep label="Meetings 7d" value={actions.meetings_7d} />
-      </div>
-      <p className="mt-4 text-sm leading-6 text-[var(--color-text-3)]">
-        {totalSent7d === 0
-          ? "No reply-rate signal yet because no email or LinkedIn outreach has gone out this week."
-          : `${replyRate}% reply rate from ${totalSent7d} emails and DMs in the last week.`}
-      </p>
-      <Link href="/dashboard/brief#reply-insights" className="btn-quiet-sm mt-4 w-fit">
-        <Icon name="arrow_forward" size={14} />
-        View insights
-      </Link>
-    </SurfaceSection>
   );
 }
 
@@ -1952,10 +1432,10 @@ function BriefHotContactRow({ contact }: { contact: BriefHotContact }) {
     <Link
       href={`/dashboard/agent/contacts/${contact.id}`}
       prefetch={false}
-      className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
+      className="group grid gap-3 rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-[transform,border-color,box-shadow] duration-300 hover:-translate-y-0.5 hover:border-[var(--color-line-3)] hover:shadow-[0_18px_40px_-24px_rgba(0,0,0,0.22)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
     >
       <span className="flex min-w-0 items-start gap-3">
-        <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-accent-bg)] text-[var(--color-accent)]">
+        <span className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-[var(--color-brand-blue)] text-[#0a0d27] transition-transform duration-300 group-hover:scale-105">
           <Icon name="person_search" size={17} />
         </span>
         <span className="min-w-0">
@@ -2027,6 +1507,7 @@ function briefPriority(
   actions: BriefActionState,
   channelReadiness: BriefChannelReadiness,
   totalSent7d: number,
+  signalHealth: BriefSignalHealth,
 ): BriefPriority {
   if (actions.pending_reviews > 0) {
     return {
@@ -2036,6 +1517,8 @@ function briefPriority(
       href: "/dashboard/agent#review-queue",
       icon: "rate_review",
       label: "Review drafts",
+      title: "Approve the drafts waiting on you",
+      tone: "yellow",
     };
   }
   if (actions.unhealthy_channels > 0) {
@@ -2046,6 +1529,8 @@ function briefPriority(
       href: "/dashboard/profile#channels",
       icon: "sync_problem",
       label: "Fix accounts",
+      title: "Fix the account that is blocking sends",
+      tone: "pink",
     };
   }
   if (channelReadiness.connected_count === 0) {
@@ -2055,6 +1540,19 @@ function briefPriority(
       href: "/dashboard/profile#channels",
       icon: "hub",
       label: "Connect accounts",
+      title: "Connect Outlook or LinkedIn to start outreach",
+      tone: "blue",
+    };
+  }
+  if (signalHealth.watched_sources === 0) {
+    return {
+      detail:
+        "Add your first signal source so the agent has timing evidence to qualify.",
+      href: "/dashboard/profile#signal-setup",
+      icon: "sensors",
+      label: "Add signals",
+      title: "Add a signal source",
+      tone: "green",
     };
   }
   if (actions.qualified_signals_7d > 0 && totalSent7d === 0) {
@@ -2065,6 +1563,8 @@ function briefPriority(
       href: "/dashboard/agent#qualified-signals",
       icon: "send",
       label: "Prepare outreach",
+      title: "Turn qualified signals into outreach",
+      tone: "green",
     };
   }
   return {
@@ -2073,168 +1573,9 @@ function briefPriority(
     href: "/dashboard/agent",
     icon: "arrow_forward",
     label: "Open Agent",
+    title: "Review the conversations in motion",
+    tone: "blue",
   };
-}
-
-function briefNextMoves(
-  actions: BriefActionState,
-  signalHealth: BriefSignalHealth,
-  contactReadiness: BriefContactReadiness,
-  channelReadiness: BriefChannelReadiness,
-  learning: BriefLearningInsight,
-  totalSent7d: number,
-): BriefNextMove[] {
-  const moves: BriefNextMove[] = [];
-
-  if (actions.pending_reviews > 0) {
-    moves.push({
-      icon: "rate_review",
-      title: "Review drafted outreach",
-      detail: `${actions.pending_reviews} judged draft${
-        actions.pending_reviews === 1 ? "" : "s"
-      } ${actions.pending_reviews === 1 ? "needs" : "need"} a send decision before the agent can move them forward.`,
-      href: "/dashboard/agent#review-queue",
-      action: "Review",
-      tone: "attention",
-    });
-  } else if (channelReadiness.connected_count === 0) {
-    moves.push({
-      icon: "hub",
-      title: "Connect accounts",
-      detail:
-        "Outlook or LinkedIn must be connected before the agent can turn qualified signals into sent outreach.",
-      href: "/dashboard/profile#channels",
-      action: "Connect",
-      tone: "attention",
-    });
-  } else if (actions.qualified_signals_7d > 0 && totalSent7d === 0) {
-    moves.push({
-      icon: "send",
-      title: "Turn signals into outreach",
-      detail: `${actions.qualified_signals_7d} qualified signal${
-        actions.qualified_signals_7d === 1 ? "" : "s"
-      } are waiting for verified email sends or LinkedIn outreach.`,
-      href: "/dashboard/agent#qualified-signals",
-      action: "Prepare",
-      tone: "ready",
-    });
-  } else {
-    moves.push({
-      icon: "campaign",
-      title: "Review sent outreach",
-      detail: `${actions.emails_sent_7d} emails and ${actions.dms_sent_7d} LinkedIn DMs went out in the last week.`,
-      href: "/dashboard/agent#outreach",
-      action: "Open",
-      tone: totalSent7d > 0 ? "ready" : "neutral",
-    });
-  }
-
-  if (!channelReadiness.linkedin_connected) {
-    moves.push({
-      icon: "linkedin",
-      title: "Connect LinkedIn",
-      detail:
-        "LinkedIn unlocks profile-backed connection requests, DMs, and reply capture for signal-ready contacts.",
-      href: "/dashboard/profile#linkedin",
-      action: "Connect",
-      tone: channelReadiness.email_connected ? "neutral" : "attention",
-    });
-  } else if (contactReadiness.signal_backed > 0) {
-    moves.push({
-      icon: "person_search",
-      title: "Inspect hot contacts",
-      detail:
-        contactReadiness.needs_email_verification > 0
-          ? `${contactReadiness.signal_backed} signal-backed contact${
-              contactReadiness.signal_backed === 1 ? "" : "s"
-            }: ${contactReadiness.verified_email} verified email, ${contactReadiness.linkedin_profiles} LinkedIn, ${contactReadiness.needs_email_verification} email ${
-              contactReadiness.needs_email_verification === 1 ? "handle needs" : "handles need"
-            } verification.`
-          : `${contactReadiness.signal_backed} signal-backed contact${
-              contactReadiness.signal_backed === 1 ? "" : "s"
-            }: ${contactReadiness.verified_email} verified email, ${contactReadiness.linkedin_profiles} LinkedIn, ${contactReadiness.fit_reviewed} fit reviewed.`,
-      href: "/dashboard/agent#verified-contacts",
-      action: "Inspect",
-      tone:
-        contactReadiness.verified_email > 0 || contactReadiness.linkedin_profiles > 0
-          ? "ready"
-          : "neutral",
-    });
-  } else {
-    moves.push({
-      icon: "manage_search",
-      title: "Resolve contact quality",
-      detail: "Qualified signals become useful only after the agent finds verified emails or LinkedIn profiles.",
-      href: "/dashboard/agent#qualified-signals",
-      action: "Resolve",
-      tone: "neutral",
-    });
-  }
-
-  if (signalHealth.attention_source_name || signalHealth.quiet_sources > 0) {
-    moves.push({
-      icon: "monitor_heart",
-      title: "Tune signal sources",
-      detail:
-        signalHealth.attention_source_name && signalHealth.attention_reason
-          ? `${signalHealth.attention_source_name} needs attention: ${signalHealth.attention_reason}.`
-          : `${signalHealth.quiet_sources} active source${
-              signalHealth.quiet_sources === 1 ? " is" : "s are"
-            } quiet this week.`,
-      href: "/dashboard/profile#signal-setup",
-      action: "Tune",
-      tone: "attention",
-    });
-  } else if (
-    learning.strategy_summary ||
-    learning.skill_summary ||
-    learning.top_signal_kind_7d ||
-    learning.top_channel_7d
-  ) {
-    moves.push({
-      icon: "auto_graph",
-      title: "Apply weekly learning",
-      detail: learningMoveDetail(learning),
-      href: "/dashboard/agent#learning",
-      action: "Apply",
-      tone: "ready",
-    });
-  } else {
-    moves.push({
-      icon: "badge",
-      title: "Keep Profile current",
-      detail: "Website context, buyer fit, voice, email, LinkedIn, and contact rules control what the agent can do next.",
-      href: "/dashboard/profile#profile",
-      action: "Open",
-      tone: "neutral",
-    });
-  }
-
-  return moves;
-}
-
-function learningMoveDetail(learning: BriefLearningInsight): string {
-  if (learning.top_signal_kind_7d && learning.top_channel_7d) {
-    return `${signalKindLabel(learning.top_signal_kind_7d)} via ${briefChannelLabel(
-      learning.top_channel_7d,
-    )} produced recent replies or meetings. Review before the next batch scales.`;
-  }
-  return (
-    learning.strategy_summary ??
-    learning.skill_summary ??
-    "Replies and meetings are shaping the next outreach batch."
-  );
-}
-
-function FunnelStep({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-[8px] bg-[var(--color-ink-2)] px-3 py-2">
-      <p className="text-[11px] text-[var(--color-text-3)]">{label}</p>
-      <p className="mt-1 text-lg font-semibold tabular-nums text-[var(--color-text-1)]">
-        {value}
-      </p>
-    </div>
-  );
 }
 
 function BriefLearningPanel({
@@ -2250,63 +1591,42 @@ function BriefLearningPanel({
   );
   if (!hasOutcomeLearning && !hasRecommendation) {
     return (
-      <EmptyState
+      <BriefEmptyCard
+        icon="auto_graph"
         title="No weekly learning yet"
-        hint="Once replies and meetings are attributed, the agent will show what it learned about sources, channels, and message patterns."
-        cta={{
-          href: "/dashboard/agent#learning",
-          label: "Open learning",
-          icon: "auto_graph",
-        }}
+        hint="Once replies and meetings are attributed, the agent will show what changed in sources, channels, and message patterns."
+        href="/dashboard/agent#learning"
+        label="Open learning"
+        tone="blue"
       />
     );
   }
   return (
-    <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
-      <aside className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
-        <p className="text-sm font-semibold text-[var(--color-text-1)]">
-          Reply memory
-        </p>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
-          <FunnelStep label="Useful 30d" value={learning.useful_outcomes_30d} />
-          <FunnelStep
-            label="Signal wins 7d"
-            value={learning.top_signal_kind_wins_7d}
-          />
-          <FunnelStep
-            label="Channel wins 7d"
-            value={learning.top_channel_wins_7d}
-          />
-          <FunnelStep label="Patterns" value={learning.recommended_patterns} />
-        </div>
-        <p className="mt-3 text-xs leading-5 text-[var(--color-text-3)]">
-          Replies and meetings feed the agent's source, channel, and message
-          choices before the next outreach batch.
-        </p>
-      </aside>
-      <div className="grid gap-2">
-        <BriefLearningCard
-          icon="sensors"
-          title="What to scale"
-          summary={learningScaleSummary(learning)}
-          updatedAt={null}
-          empty="No outcome-backed signal or channel winner yet."
-        />
-        <BriefLearningCard
-          icon="auto_graph"
-          title="Strategy"
-          summary={learning.strategy_summary}
-          updatedAt={learning.strategy_updated_at}
-          empty="No strategy recommendation yet."
-        />
-        <BriefLearningCard
-          icon="science"
-          title="Messages"
-          summary={learning.skill_summary}
-          updatedAt={learning.skill_updated_at}
-          empty="No message recommendation yet."
-        />
-      </div>
+    <div className="grid gap-3 lg:grid-cols-3">
+      <BriefLearningCard
+        icon="sensors"
+        title="Scale"
+        summary={learningScaleSummary(learning)}
+        updatedAt={null}
+        empty="No outcome-backed signal or channel winner yet."
+        tone="green"
+      />
+      <BriefLearningCard
+        icon="auto_graph"
+        title="Targeting"
+        summary={learning.strategy_summary}
+        updatedAt={learning.strategy_updated_at}
+        empty="No targeting recommendation yet."
+        tone="blue"
+      />
+      <BriefLearningCard
+        icon="science"
+        title="Messaging"
+        summary={learning.skill_summary}
+        updatedAt={learning.skill_updated_at}
+        empty="No message recommendation yet."
+        tone="yellow"
+      />
     </div>
   );
 }
@@ -2336,17 +1656,19 @@ function BriefLearningCard({
   summary,
   updatedAt,
   empty,
+  tone,
 }: {
   icon: string;
   title: string;
   summary: string | null;
   updatedAt: Date | null;
   empty: string;
+  tone: BriefTone;
 }) {
   return (
-    <article className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+    <article className="group rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-5 transition-[transform,border-color,box-shadow] duration-300 hover:-translate-y-0.5 hover:border-[var(--color-line-3)] hover:shadow-[0_18px_40px_-24px_rgba(0,0,0,0.22)]">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="grid size-8 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
+        <span className={`grid size-9 place-items-center rounded-[10px] transition-transform duration-300 group-hover:scale-105 ${TONE_BG[tone]}`}>
           <Icon name={icon} size={15} />
         </span>
         <p className="text-sm font-semibold text-[var(--color-text-1)]">
@@ -2456,47 +1778,44 @@ function meetingPrepLabel(action: string | null): string {
   return "Prep ready";
 }
 
-function SignalKindRow({ signal }: { signal: SignalKindMetric }) {
-  const contactWidth =
-    signal.count_7d > 0
-      ? Math.min(100, Math.round((signal.with_contacts_7d / signal.count_7d) * 100))
-      : 0;
-  const draftWidth =
-    signal.count_7d > 0
-      ? Math.min(100, Math.round((signal.with_drafts_7d / signal.count_7d) * 100))
-      : 0;
-  return (
-    <Link
-      href="/dashboard/agent#qualified-signals"
-      className="grid gap-3 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-3 transition-colors hover:border-[var(--color-line-3)] md:grid-cols-[minmax(0,1fr)_92px] md:items-center"
-    >
-      <span className="min-w-0">
-        <span className="block truncate text-sm font-semibold text-[var(--color-text-1)]">
-          {signalKindLabel(signal.kind)}
-        </span>
-        <span className="mt-0.5 block text-xs text-[var(--color-text-3)]">
-          {signal.count_24h} in 24h; {signal.with_contacts_7d} contact-ready,{" "}
-          {signal.with_drafts_7d} drafted
-        </span>
-        <span
-          className="mt-2 grid h-1.5 grid-cols-1 overflow-hidden rounded-full bg-[var(--color-ink-3)]"
-          aria-label={`${signalKindLabel(signal.kind)} contact and draft readiness`}
-        >
-          <span
-            className="col-start-1 row-start-1 block h-full rounded-full bg-[var(--color-accent)]"
-            style={{ width: `${contactWidth}%` }}
-          />
-          <span
-            className="col-start-1 row-start-1 block h-full rounded-full bg-[var(--color-pos)]"
-            style={{ width: `${draftWidth}%` }}
-          />
-        </span>
-      </span>
-      <span className="font-mono text-sm text-[var(--color-text-2)] md:text-right">
-        {signal.count_7d}
-      </span>
-    </Link>
-  );
+function workspaceDisplayName(name: string, slug: string | null): string {
+  const trimmed = name.trim();
+  if (trimmed && !/^default workspace$/i.test(trimmed)) return trimmed;
+  const fromSlug = slug
+    ?.split(/[-_]+/)
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  if (fromSlug && !/^default workspace$/i.test(fromSlug)) return titleCase(fromSlug);
+  return "your workspace";
+}
+
+function titleCase(value: string): string {
+  return value.replace(/\b[a-z]/g, (match) => match.toUpperCase());
+}
+
+function briefStatusLine(
+  actions: BriefActionState,
+  priority: BriefPriority,
+  totalSent24h: number,
+  landedCount: number,
+): string {
+  const happened =
+    totalSent24h > 0 || landedCount > 0
+      ? `${totalSent24h} message${totalSent24h === 1 ? "" : "s"} went out and ${landedCount} repl${
+          landedCount === 1 ? "y or meeting landed" : "ies or meetings landed"
+        }`
+      : actions.qualified_signals_24h > 0
+        ? `${actions.qualified_signals_24h} fresh signal${
+            actions.qualified_signals_24h === 1 ? "" : "s"
+          } qualified`
+        : "No outreach shipped yet";
+
+  return `${happened}; ${lowerFirst(priority.detail)}`;
+}
+
+function lowerFirst(value: string): string {
+  return value ? value.charAt(0).toLowerCase() + value.slice(1) : value;
 }
 
 function signalKindLabel(kind: string): string {
@@ -2552,15 +1871,4 @@ function freshWhen(value: Date): string {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
-}
-
-function upcomingWhen(value: Date | null): string {
-  if (!value) return "Not scheduled";
-  const diff = new Date(value).getTime() - Date.now();
-  if (diff <= 0) return "Due now";
-  const minutes = Math.ceil(diff / 60_000);
-  if (minutes < 60) return `in ${minutes}m`;
-  const hours = Math.ceil(minutes / 60);
-  if (hours < 24) return `in ${hours}h`;
-  return `in ${Math.ceil(hours / 24)}d`;
 }
