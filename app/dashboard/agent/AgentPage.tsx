@@ -1714,7 +1714,6 @@ export default async function RepsPage() {
       <AgentConversationsPanel
         outreach={state.outreach}
         replies={state.replies}
-        reviews={state.reviews}
         rejected={state.rejectedDrafts}
       />
 
@@ -1984,7 +1983,6 @@ function AgentStatusHeader({
 type AgentConversationItem =
   | { kind: "reply"; key: string; at: Date; reply: AgentReplyRow }
   | { kind: "sent"; key: string; at: Date; message: AgentOutreachRow }
-  | { kind: "draft"; key: string; at: Date; approval: AgentReviewRow }
   | {
       kind: "followup";
       key: string;
@@ -1996,12 +1994,10 @@ type AgentConversationItem =
 function AgentConversationsPanel({
   outreach,
   replies,
-  reviews,
   rejected,
 }: {
   outreach: AgentOutreachSummary;
   replies: AgentReplySummary;
-  reviews: AgentReviewSummary;
   rejected: RejectedDraftSummary;
 }) {
   const items: AgentConversationItem[] = [
@@ -2011,14 +2007,6 @@ function AgentConversationsPanel({
       at: reply.received_at,
       reply,
     })),
-    ...reviews.recent
-      .filter((approval) => Boolean(approval.conversation_id))
-      .map((approval) => ({
-        kind: "draft" as const,
-        key: `draft:${approval.id}`,
-        at: approval.created_at,
-        approval,
-      })),
     ...outreach.recent.map((message) => ({
       kind: "sent" as const,
       key: `sent:${message.id}`,
@@ -2066,8 +2054,9 @@ function AgentConversationsPanel({
                 Email and LinkedIn threads
               </p>
               <p className="mt-1 max-w-[70ch] text-xs leading-5 text-[var(--color-text-3)]">
-                Replies that need approval stay at the top with the draft ready
-                to send. Sent threads stay visible until the next reply lands.
+                Sent outreach and inbound replies stay visible here once the
+                conversation is live. Approval-only drafts move through Needs
+                your thumb instead.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -2107,9 +2096,6 @@ function AgentConversationsPanel({
 
 function AgentConversationRow({ item }: { item: AgentConversationItem }) {
   if (item.kind === "reply") return <AgentReplyLink reply={item.reply} />;
-  if (item.kind === "draft") {
-    return <AgentDraftConversationRow approval={item.approval} />;
-  }
   if (item.kind === "followup") {
     return <AcceptedConnectionFollowupLink row={item.followup} />;
   }
@@ -2263,6 +2249,24 @@ function commandBlockerCopy(readiness: WorkspaceLaunchReadiness): string {
     return "Set email or LinkedIn rules before signals can become messages.";
   }
   return "Finish Profile before outreach can run.";
+}
+
+function isPostApprovalOutreachStatus(
+  status: string | null | undefined,
+): boolean {
+  return status === "sent" || status === "delivered" || status === "replied";
+}
+
+function isSignalPendingApproval(signal: QualifiedSignalItem): boolean {
+  return Boolean(signal.outreach_draft?.pending_approval_id);
+}
+
+function isSignalInConversationStage(signal: QualifiedSignalItem): boolean {
+  return isPostApprovalOutreachStatus(signal.outreach_draft?.status);
+}
+
+function isLeadStageSignal(signal: QualifiedSignalItem): boolean {
+  return !isSignalPendingApproval(signal) && !isSignalInConversationStage(signal);
 }
 
 function AgentModeRail({
@@ -3824,6 +3828,7 @@ function AgentLeadsPanel({
   opportunities: QualifiedSignalWorkbench;
   contacts: AgentContactSummary;
 }) {
+  const leadSignals = opportunities.signals.filter(isLeadStageSignal);
   return (
     <div id="leads" className="scroll-mt-28">
       <span id="qualified-signals" className="sr-only" aria-hidden="true" />
@@ -3852,7 +3857,7 @@ function AgentLeadsPanel({
               </p>
               <p className="mt-1 max-w-[70ch] text-xs leading-5 text-[var(--color-text-3)]">
                 A scannable view of who the agent is working, why now matters,
-                and whether the next touch is contacted, drafted, or waiting.
+                and whether the next touch is drafted or waiting.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -3865,7 +3870,7 @@ function AgentLeadsPanel({
             </div>
           </div>
 
-          {opportunities.signals.length === 0 ? (
+          {leadSignals.length === 0 ? (
             <div className="mt-4">
               <EmptyState
                 title="No leads ready yet"
@@ -3879,7 +3884,7 @@ function AgentLeadsPanel({
             </div>
           ) : (
             <div className="mt-4 grid gap-2">
-              {opportunities.signals.map((signal) => (
+              {leadSignals.map((signal) => (
                 <AgentLeadRow key={signal.id} signal={signal} />
               ))}
             </div>
@@ -3958,52 +3963,12 @@ function AgentLeadRow({ signal }: { signal: QualifiedSignalItem }) {
         {draft ? (
           <span className="inline-flex items-center gap-1.5 rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
             <ChannelMark channel={draft.channel} size={13} />
-            {draft.pending_approval_id
-              ? "Draft ready to send"
-              : draftOpportunityLabel(draft.status, draft.channel)}
+            {draftOpportunityLabel(draft.status, draft.channel)}
           </span>
         ) : null}
         <span className="text-xs tabular-nums text-[var(--color-text-3)]">
           {freshWhen(signal.freshness_at)}
         </span>
-        {draft?.pending_approval_id ? (
-          <>
-            <form action={decideApprovalWithDraftAction}>
-              <input type="hidden" name="return_to" value="/dashboard/agent#leads" />
-              <input
-                type="hidden"
-                name="approval_id"
-                value={draft.pending_approval_id}
-              />
-              <input type="hidden" name="decision" value="approved" />
-              <PendingSubmitButton
-                className="btn-solid-sm"
-                icon="check"
-                iconSize={14}
-                pendingLabel="Sending"
-              >
-                Approve
-              </PendingSubmitButton>
-            </form>
-            <form action={decideApprovalWithDraftAction}>
-              <input type="hidden" name="return_to" value="/dashboard/agent#leads" />
-              <input
-                type="hidden"
-                name="approval_id"
-                value={draft.pending_approval_id}
-              />
-              <input type="hidden" name="decision" value="rejected" />
-              <PendingSubmitButton
-                className="btn-quiet-sm"
-                icon="close"
-                iconSize={14}
-                pendingLabel="Rejecting"
-              >
-                Reject
-              </PendingSubmitButton>
-            </form>
-          </>
-        ) : null}
         {contact?.person_id ? (
           <ContactQualificationControls
             personId={contact.person_id}
@@ -4059,278 +4024,11 @@ function leadStatusLabel(
   signal: QualifiedSignalItem,
 ): { label: string; tone: "ready" | "review" | "waiting" } {
   const draft = signal.outreach_draft;
-  if (
-    draft?.status === "sent" ||
-    draft?.status === "delivered" ||
-    draft?.status === "replied"
-  ) {
+  if (isSignalInConversationStage(signal)) {
     return { label: "Contacted", tone: "ready" };
   }
   if (draft) return { label: "Drafted", tone: "review" };
   return { label: "Waiting", tone: "waiting" };
-}
-
-function AgentOpportunityPanel({
-  opportunities,
-  signalMix,
-}: {
-  opportunities: QualifiedSignalWorkbench;
-  signalMix: AgentSignalMix;
-}) {
-  const warnings = signalReadinessWarnings(signalMix);
-  return (
-    <div id="qualified-signals" className="scroll-mt-28">
-      <span id="opportunities" className="sr-only" aria-hidden="true" />
-      <SurfaceSection
-        title="Signals ready"
-        action={
-          <div className="flex flex-wrap items-center gap-2">
-            <form action={checkAgentSourcesAction}>
-              <input type="hidden" name="return_to" value="/dashboard/agent#qualified-signals" />
-              <input type="hidden" name="limit" value="25" />
-              <PendingSubmitButton
-                className="btn-quiet-sm"
-                icon="sync_alt"
-                iconSize={14}
-                pendingLabel="Checking"
-              >
-                Check sources
-              </PendingSubmitButton>
-            </form>
-            <form action={prepareQualifiedSignalsAction}>
-              <input type="hidden" name="limit" value="25" />
-              <input type="hidden" name="return_to" value="/dashboard/agent#qualified-signals" />
-              <PendingSubmitButton
-                className="btn-solid-sm"
-                icon="send"
-                iconSize={14}
-                pendingLabel="Preparing"
-              >
-                Prepare outreach
-              </PendingSubmitButton>
-            </form>
-            <Link href="/dashboard/agent#conversations" className="btn-quiet-sm">
-              <Icon name="arrow_forward" size={14} />
-              View conversations
-            </Link>
-          </div>
-        }
-      >
-        <div className="grid gap-4">
-          {warnings.length > 0 ? (
-            <div className="grid gap-2 md:grid-cols-3">
-              {warnings.map((warning) => (
-                <Link
-                  key={warning.key}
-                  href={warning.href}
-                  prefetch
-                  className="group flex items-start gap-2 rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-3 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]"
-                >
-                  <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-[8px] bg-[var(--color-warn-bg)] text-[var(--color-warn)]">
-                    <Icon name={warning.icon} size={14} />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-xs font-semibold text-[var(--color-text-1)]">
-                      {warning.label}
-                    </span>
-                    <span className="mt-1 block line-clamp-2 text-xs leading-5 text-[var(--color-text-3)]">
-                      {warning.detail}
-                    </span>
-                  </span>
-                  <Icon
-                    name="arrow_forward"
-                    size={13}
-                    className="ml-auto mt-1 text-[var(--color-text-4)] transition-transform group-hover:translate-x-0.5 group-hover:text-[var(--color-accent)]"
-                  />
-                </Link>
-              ))}
-            </div>
-          ) : null}
-          {opportunities.signals.length === 0 ? (
-            <EmptyState
-              title="No signals ready yet"
-              hint="Check sources or tune the profile so fresh timing evidence can become outreach."
-              cta={{
-                href: "/dashboard/profile#profile",
-                label: "Tune profile",
-                icon: "person_search",
-              }}
-            />
-          ) : (
-            <div className="grid gap-2">
-              {opportunities.signals.map((signal) => (
-                <AgentOpportunityLink key={signal.id} signal={signal} />
-              ))}
-            </div>
-          )}
-        </div>
-      </SurfaceSection>
-    </div>
-  );
-}
-
-function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
-  const contact = signal.contacts[0];
-  const draft = signal.outreach_draft;
-  const company = signal.company.name ?? signal.company.domain ?? "Unknown company";
-  const score = signal.match_score == null ? null : Math.round(signal.match_score * 100);
-  const href = opportunityHref(signal, contact);
-  const fitGate = contactFitGate(contact);
-  const isFitBlocked = fitGate?.tone === "blocked";
-  const deferAction = contactDeferAction(signal.contact_defer_reason);
-  return (
-    <article className="grid gap-3 rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-      <Link
-        href={href}
-        prefetch
-        className="flex min-w-0 items-start gap-3 rounded-[8px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
-      >
-        <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-accent-bg)] text-[var(--color-accent)]">
-          <Icon name="sensors" size={17} />
-        </span>
-        <span className="min-w-0">
-          <span className="block truncate text-sm font-semibold text-[var(--color-text-1)]">
-            {company}
-            <span className="font-normal text-[var(--color-text-3)]">
-              {" "}
-              / {signalKindLabel(signal.kind)}
-            </span>
-          </span>
-          <span className="mt-1 block truncate text-sm text-[var(--color-text-2)]">
-            {signal.title}
-          </span>
-          <span className="mt-2 flex flex-wrap gap-2">
-            {score == null ? null : (
-              <OpportunityPill tone="fit">{score}% fit</OpportunityPill>
-            )}
-            <OpportunityPill tone={contact ? "ready" : "waiting"}>
-              {contact ? contactLabel(contact) : "Resolving contact"}
-            </OpportunityPill>
-            <OpportunityPill tone={contactSourceTone(signal)}>
-              {contactSourceLabel(signal)}
-            </OpportunityPill>
-            {signal.contact_defer_reason ? (
-              <OpportunityPill tone="review">
-                {contactDeferLabel(signal.contact_defer_reason)}
-              </OpportunityPill>
-            ) : null}
-            {fitGate ? (
-              <OpportunityPill tone={fitGate.tone}>{fitGate.label}</OpportunityPill>
-            ) : null}
-            <OpportunityPill
-              tone={draft ? "ready" : isFitBlocked ? "blocked" : "waiting"}
-            >
-              {draft
-                ? draftOpportunityLabel(draft.status, draft.channel)
-                : isFitBlocked
-                  ? "Outreach gated"
-                  : "Draft pending"}
-            </OpportunityPill>
-          </span>
-          {signal.match_reason ? (
-            <span className="mt-2 block line-clamp-2 text-xs leading-5 text-[var(--color-text-3)]">
-              {signal.match_reason}
-            </span>
-          ) : null}
-        </span>
-      </Link>
-      <div className="flex flex-wrap items-center gap-2 md:justify-end">
-        <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
-          {signalQueueLabel(signal)}
-        </span>
-        <span className="text-xs tabular-nums text-[var(--color-text-3)]">
-          {freshWhen(signal.freshness_at)}
-        </span>
-        {draft?.pending_approval_id ? (
-          <>
-            <form action={decideApprovalWithDraftAction}>
-              <input type="hidden" name="return_to" value="/dashboard/agent#qualified-signals" />
-              <input
-                type="hidden"
-                name="approval_id"
-                value={draft.pending_approval_id}
-              />
-              <input type="hidden" name="decision" value="approved" />
-              <PendingSubmitButton
-                className="btn-solid-sm"
-                icon="check"
-                iconSize={14}
-                pendingLabel="Approving"
-              >
-                Approve
-              </PendingSubmitButton>
-            </form>
-            <form action={decideApprovalWithDraftAction}>
-              <input type="hidden" name="return_to" value="/dashboard/agent#qualified-signals" />
-              <input
-                type="hidden"
-                name="approval_id"
-                value={draft.pending_approval_id}
-              />
-              <input type="hidden" name="decision" value="rejected" />
-              <PendingSubmitButton
-                className="btn-quiet-sm"
-                icon="close"
-                iconSize={14}
-                pendingLabel="Rejecting"
-              >
-                Reject
-              </PendingSubmitButton>
-            </form>
-          </>
-        ) : null}
-        {contact?.person_id ? (
-          <ContactQualificationControls
-            personId={contact.person_id}
-            currentDecision={contact.contact_fit_decision}
-            returnTo="/dashboard/agent#qualified-signals"
-            compact
-          />
-        ) : null}
-        {deferAction ? (
-          <Link
-            href={deferAction.href}
-            className="btn-quiet-sm"
-          >
-            <Icon name={deferAction.icon} size={14} />
-            {deferAction.label}
-          </Link>
-        ) : null}
-        {needsContactResolution(signal) ? (
-          <form action={resolveQualifiedSignalContactsAction}>
-            <input type="hidden" name="signal_id" value={signal.id} />
-            <input type="hidden" name="return_to" value="/dashboard/agent#qualified-signals" />
-            <PendingSubmitButton
-              className="btn-quiet-sm"
-              icon="person_search"
-              iconSize={14}
-              pendingLabel="Resolving"
-            >
-              Resolve contacts
-            </PendingSubmitButton>
-          </form>
-        ) : null}
-        <form action={dismissQualifiedSignalAction}>
-          <input type="hidden" name="signal_id" value={signal.id} />
-          <input type="hidden" name="return_to" value="/dashboard/agent" />
-          <input
-            type="hidden"
-            name="reason"
-            value="Skipped from Agent because the signal is not a fit for outreach."
-          />
-          <PendingSubmitButton
-            className="btn-quiet-sm"
-            icon="block"
-            iconSize={14}
-            pendingLabel="Skipping"
-            title="Skip signal"
-          >
-            Skip
-          </PendingSubmitButton>
-        </form>
-      </div>
-    </article>
-  );
 }
 
 function OpportunityPill({
@@ -4362,25 +4060,6 @@ function contactLabel(contact: QualifiedSignalContact): string {
   if (contact.linkedin_url) return "LinkedIn profile";
   if (contact.emails.length > 0) return "Email found";
   return "Contact found";
-}
-
-function contactSourceLabel(signal: QualifiedSignalItem): string {
-  if (signal.contact_source === "resolution") {
-    return signal.contact_channel
-      ? `${channelLabel(signal.contact_channel)} contact ready`
-      : "Contact ready";
-  }
-  if (signal.contact_source === "graph") return "Known contact";
-  return "Needs contacts";
-}
-
-function contactSourceTone(
-  signal: QualifiedSignalItem,
-): "blocked" | "fit" | "ready" | "review" | "waiting" {
-  if (signal.contact_source === "resolution") return "fit";
-  if (signal.contact_source === "graph") return "ready";
-  if (signal.contact_defer_reason) return "review";
-  return "waiting";
 }
 
 function contactDeferLabel(reason: string): string {
@@ -4427,35 +4106,12 @@ function needsContactResolution(signal: QualifiedSignalItem): boolean {
   return true;
 }
 
-function contactFitGate(
-  contact: QualifiedSignalContact | undefined,
-): { label: string; tone: "blocked" | "fit" | "review" } | null {
-  if (!contact?.contact_fit_decision) return null;
-  if (contact.contact_fit_decision === "fit") {
-    return { label: "Good fit", tone: "fit" };
-  }
-  if (contact.contact_fit_decision === "not_fit") {
-    return { label: "Not a fit", tone: "blocked" };
-  }
-  return { label: "Fit review", tone: "review" };
-}
-
 function draftOpportunityLabel(status: string, channel: string): string {
   const label = channelLabel(channel);
   if (status === "draft") return `${label} draft`;
   if (status === "deferred") return `${label} waiting`;
   if (status === "sent" || status === "delivered") return "Sent";
   return statusLabel(status);
-}
-
-function signalQueueLabel(signal: QualifiedSignalItem): string {
-  if (signal.outreach_draft?.pending_approval_id) return "Needs your thumb";
-  if (signal.outreach_draft) return "Draft ready";
-  if (needsContactResolution(signal)) return "Needs contacts";
-  if (signal.status === "matched" || signal.status === "in_play") {
-    return "Ready";
-  }
-  return "Review";
 }
 
 function opportunityHref(
@@ -5628,80 +5284,6 @@ function OperatingLoopChannel({
         </span>
       </span>
     </Link>
-  );
-}
-
-function AgentDraftConversationRow({
-  approval,
-}: {
-  approval: AgentReviewRow;
-}) {
-  const payload = recordPayload(approval.payload) ?? {};
-  const subject =
-    stringPayload(payload, "subject") ??
-    approval.message_subject ??
-    reviewKindLabel(approval.kind);
-  const body =
-    stringPayload(payload, "body") ??
-    stringPayload(payload, "draft") ??
-    approval.reason;
-  const href = reviewProofHref(approval) ?? "/dashboard/agent#conversations";
-  const channel = approval.channel ?? stringPayload(payload, "channel");
-  return (
-    <article className="grid gap-3 rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-      <Link href={href} prefetch className="flex min-w-0 items-start gap-3">
-        <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-warn-bg)] text-[var(--color-warn)]">
-          <Icon name="rate_review" size={17} />
-        </span>
-        <span className="min-w-0">
-          <span className="block truncate text-sm font-semibold text-[var(--color-text-1)]">
-            {approval.counterparty_name ?? "Unknown contact"}
-            {approval.company_name ? (
-              <span className="font-normal text-[var(--color-text-3)]">
-                {" "}
-                at {approval.company_name}
-              </span>
-            ) : null}
-          </span>
-          <span className="mt-1 block truncate text-sm text-[var(--color-text-2)]">
-            {subject}
-          </span>
-          <span className="mt-1 block truncate text-xs text-[var(--color-text-3)]">
-            {reviewPreview(body)}
-          </span>
-          {approval.signal_title ? (
-            <span className="mt-2 block truncate text-xs text-[var(--color-text-3)]">
-              Why now: {approval.signal_title}
-            </span>
-          ) : null}
-        </span>
-      </Link>
-
-      <span className="flex flex-wrap items-center gap-2 md:justify-end">
-        <span className="rounded-[8px] bg-[var(--color-warn-bg)] px-2.5 py-1 text-xs font-medium text-[var(--color-warn)]">
-          Draft ready to send
-        </span>
-        <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
-          {channel ? channelLabel(channel) : reviewKindLabel(approval.kind)}
-        </span>
-        <span className="text-xs tabular-nums text-[var(--color-text-3)]">
-          {freshWhen(approval.created_at)}
-        </span>
-        <form action={decideApprovalWithDraftAction}>
-          <input type="hidden" name="return_to" value="/dashboard/agent#conversations" />
-          <input type="hidden" name="approval_id" value={approval.id} />
-          <input type="hidden" name="decision" value="approved" />
-          <PendingSubmitButton
-            className="btn-solid-sm"
-            icon="check"
-            iconSize={14}
-            pendingLabel="Sending"
-          >
-            Approve
-          </PendingSubmitButton>
-        </form>
-      </span>
-    </article>
   );
 }
 
