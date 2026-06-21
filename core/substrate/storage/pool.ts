@@ -12,6 +12,23 @@ import type { Pool, PoolConfig } from "pg";
 
 let _pool: Pool | null = null;
 
+const TRANSIENT_CONNECTION_ERROR_CODES = new Set([
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "EAI_AGAIN",
+  "ENETUNREACH",
+  "ENOTFOUND",
+  "ETIMEDOUT",
+]);
+
+const TRANSIENT_CONNECTION_ERROR_PATTERNS = [
+  /connection terminated unexpectedly/i,
+  /econnreset/i,
+  /getaddrinfo/i,
+  /timeout/i,
+  /timed out/i,
+] as const;
+
 function shouldTrustSupabasePooler(connectionString?: string): boolean {
   if (!connectionString) return false;
   try {
@@ -75,6 +92,49 @@ export function getPool(): Pool {
     );
   }
   return pool;
+}
+
+export function isTransientConnectionError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const candidate = error as {
+    code?: unknown;
+    cause?: unknown;
+    message?: unknown;
+  };
+  if (
+    typeof candidate.code === "string" &&
+    TRANSIENT_CONNECTION_ERROR_CODES.has(candidate.code)
+  ) {
+    return true;
+  }
+  const candidateMessage = candidate.message;
+  if (
+    typeof candidateMessage === "string" &&
+    TRANSIENT_CONNECTION_ERROR_PATTERNS.some((pattern) =>
+      pattern.test(candidateMessage)
+    )
+  ) {
+    return true;
+  }
+  return candidate.cause !== undefined &&
+    candidate.cause !== error &&
+    isTransientConnectionError(candidate.cause);
+}
+
+export async function withTransientConnectionRetry<T>(
+  operation: () => Promise<T>,
+  opts: { delayMs?: number } = {},
+): Promise<T> {
+  const delayMs = Math.max(0, Math.trunc(opts.delayMs ?? 250));
+  try {
+    return await operation();
+  } catch (error) {
+    if (!isTransientConnectionError(error)) throw error;
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, delayMs);
+    });
+    return operation();
+  }
 }
 
 /**

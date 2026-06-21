@@ -34,6 +34,7 @@ import {
   revokeMcpTokenAction,
   updateWorkspaceAutonomyAction,
 } from "../actions";
+import { loadDashboardData } from "../server-data";
 
 export const dynamic = "force-dynamic";
 
@@ -62,7 +63,7 @@ interface ProfileRepRow {
   id: string;
   name: string;
   role: string;
-  persona: { voice?: string; story?: string };
+  persona: { voice?: string; story?: string } | null;
   autonomy: {
     channels?: { email?: { daily_cap?: number; approval?: string } };
   } | null;
@@ -163,6 +164,58 @@ interface ProfileState {
   visitorIntentSource: ProfileVisitorIntentSource | null;
 }
 
+function emptyProfileState(): ProfileState {
+  return {
+    settings: {},
+    outlookAccount: null,
+    linkedInAccount: null,
+    linkedInAccounts: [],
+    crmAccount: null,
+    rep: null,
+    icp: null,
+    approvals: [],
+    suppressionStats: {
+      total: 0,
+      bounces: 0,
+      unsubscribes: 0,
+      doNotContact: 0,
+    },
+    recentSuppressions: [],
+    contactQuality: {
+      people: 0,
+      emailHandles: 0,
+      verifiedEmails: 0,
+      linkedInProfiles: 0,
+      reachable: 0,
+    },
+    signalSetup: {
+      activeSources: 0,
+      watchedSources: 0,
+      sourceKinds: [],
+      qualifiedSignals7d: 0,
+    },
+    mcpTokens: [],
+    mcpActivity: [],
+    visitorIntentSource: null,
+  };
+}
+
+function unavailableProfileReadiness(
+  workspaceId: string,
+): ProductLaunchReadinessResult {
+  return {
+    workspace_id: workspaceId,
+    checked_at: new Date().toISOString(),
+    required_channel: "any",
+    status: "blocked",
+    launch_ready: false,
+    next_action: "configure_profile",
+    checks: [],
+    blockers: ["Profile readiness is temporarily unavailable."],
+    warnings: [],
+  };
+}
+
 async function loadProfileMcpTokens(
   pool: Pool,
   userId: string,
@@ -227,290 +280,398 @@ function isMissingMcpOauthSchema(error: unknown): boolean {
 
 async function loadProfileState(workspaceId: string, userId: string): Promise<ProfileState> {
   const pool = getPool();
+  const emptyState = emptyProfileState();
   const [
-    workspace,
-    outlook,
-    linkedIn,
+    settings,
+    outlookAccount,
+    linkedInAccounts,
     rep,
     icp,
-    policies,
+    approvals,
     suppressionStats,
     recentSuppressions,
     contactQuality,
     signalSetup,
     mcpTokens,
     mcpActivity,
-    crm,
-    visitorIntent,
+    crmAccount,
+    visitorIntentSource,
   ] = await Promise.all([
-    pool.query<{ settings: Record<string, unknown> }>(
-      `select settings
-         from workspaces
-        where id = $1`,
-      [workspaceId],
+    loadDashboardData(
+      "profile",
+      "workspace settings",
+      emptyState.settings,
+      async () => {
+        const { rows } = await pool.query<{ settings: Record<string, unknown> | null }>(
+          `select settings
+             from workspaces
+            where id = $1`,
+          [workspaceId],
+        );
+        return isRecord(rows[0]?.settings) ? rows[0].settings : {};
+      },
     ),
-    pool.query<ProfileOutlookAccount>(
-      `with ranked_accounts as (
-         select id,
-                display_name,
-                status::text as status,
-                daily_cap,
-                last_error,
-                properties,
-                updated_at,
-                row_number() over (
-                  partition by 'outlook:' || coalesce(
-                    nullif(lower(properties ->> 'mailbox_email'), ''),
-                    nullif(lower(display_name), ''),
-                    id::text
-                  )
-                  order by case
-                             when status = 'connected' then 0
-                             when status = 'needs_reauth' then 1
-                             else 2
-                           end,
-                           case
-                             when properties -> 'outlook_subscription' is not null
-                               and properties -> 'outlook_subscription' ->> 'clientState' is not null
-                             then 0
-                             else 1
-                           end,
-                           updated_at desc,
-                           created_at desc
-                ) as account_rank
-           from channel_accounts
-          where workspace_id = $1
-            and kind = 'oauth_outlook'
-       )
-       select id, display_name, status, daily_cap, last_error, properties, updated_at
-         from ranked_accounts
-        where account_rank = 1
-        order by updated_at desc
-        limit 1`,
-      [workspaceId],
+    loadDashboardData(
+      "profile",
+      "outlook account",
+      emptyState.outlookAccount,
+      async () => {
+        const { rows } = await pool.query<ProfileOutlookAccount>(
+          `with ranked_accounts as (
+             select id,
+                    display_name,
+                    status::text as status,
+                    daily_cap,
+                    last_error,
+                    properties,
+                    updated_at,
+                    row_number() over (
+                      partition by 'outlook:' || coalesce(
+                        nullif(lower(properties ->> 'mailbox_email'), ''),
+                        nullif(lower(display_name), ''),
+                        id::text
+                      )
+                      order by case
+                                 when status = 'connected' then 0
+                                 when status = 'needs_reauth' then 1
+                                 else 2
+                               end,
+                               case
+                                 when properties -> 'outlook_subscription' is not null
+                                   and properties -> 'outlook_subscription' ->> 'clientState' is not null
+                                 then 0
+                                 else 1
+                               end,
+                               updated_at desc,
+                               created_at desc
+                    ) as account_rank
+               from channel_accounts
+              where workspace_id = $1
+                and kind = 'oauth_outlook'
+           )
+           select id, display_name, status, daily_cap, last_error, properties, updated_at
+             from ranked_accounts
+            where account_rank = 1
+            order by updated_at desc
+            limit 1`,
+          [workspaceId],
+        );
+        return rows[0] ?? null;
+      },
     ),
-    pool.query<ProfileLinkedInAccount>(
-      `select id,
-              display_name,
-              status::text as status,
-              daily_cap,
-              last_error,
-              updated_at
-         from channel_accounts
-        where workspace_id = $1
-          and kind in ('linkedin_session','linkedin_oauth')
-        order by case when status = 'connected' then 0 else 1 end,
-                 updated_at desc,
-                 created_at desc
-        limit 2`,
-      [workspaceId],
+    loadDashboardData(
+      "profile",
+      "linkedin accounts",
+      emptyState.linkedInAccounts,
+      async () => (
+        await pool.query<ProfileLinkedInAccount>(
+          `select id,
+                  display_name,
+                  status::text as status,
+                  daily_cap,
+                  last_error,
+                  updated_at
+             from channel_accounts
+            where workspace_id = $1
+              and kind in ('linkedin_session','linkedin_oauth')
+            order by case when status = 'connected' then 0 else 1 end,
+                     updated_at desc,
+                     created_at desc
+            limit 2`,
+          [workspaceId],
+        )
+      ).rows,
     ),
-    pool.query<ProfileRepRow>(
-      `select id, name, role::text as role, persona, autonomy
-         from reps
-        where workspace_id = $1
-          and status <> 'retired'
-        order by created_at asc
-        limit 1`,
-      [workspaceId],
+    loadDashboardData(
+      "profile",
+      "rep",
+      emptyState.rep,
+      async () => {
+        const { rows } = await pool.query<ProfileRepRow>(
+          `select id, name, role::text as role, persona, autonomy
+             from reps
+            where workspace_id = $1
+              and status <> 'retired'
+            order by created_at asc
+            limit 1`,
+          [workspaceId],
+        );
+        return rows[0] ?? null;
+      },
     ),
-    pool.query<ProfileIcpRow>(
-      `select id, name, description, match_threshold::text as match_threshold
-         from workspace_icps
-        where workspace_id = $1
-        order by created_at asc
-        limit 1`,
-      [workspaceId],
+    loadDashboardData(
+      "profile",
+      "icp",
+      emptyState.icp,
+      async () => {
+        const { rows } = await pool.query<ProfileIcpRow>(
+          `select id, name, description, match_threshold::text as match_threshold
+             from workspace_icps
+            where workspace_id = $1
+            order by created_at asc
+            limit 1`,
+          [workspaceId],
+        );
+        return rows[0] ?? null;
+      },
     ),
-    pool.query<{ autonomy: Record<string, unknown> | null }>(
-      `select autonomy
-         from reps
-        where workspace_id = $1
-          and status <> 'retired'
-       union all
-       select autonomy
-         from plays
-        where workspace_id = $1
-          and status in ('draft', 'active', 'paused', 'archived')`,
-      [workspaceId],
+    loadDashboardData(
+      "profile",
+      "approval policies",
+      emptyState.approvals,
+      async () => {
+        const { rows } = await pool.query<{ autonomy: Record<string, unknown> | null }>(
+          `select autonomy
+             from reps
+            where workspace_id = $1
+              and status <> 'retired'
+           union all
+           select autonomy
+             from plays
+            where workspace_id = $1
+              and status in ('draft', 'active', 'paused', 'archived')`,
+          [workspaceId],
+        );
+        return rows.flatMap((row) => approvalsFromAutonomy(row.autonomy));
+      },
     ),
-    pool.query<{
-      total: string;
-      bounces: string;
-      unsubscribes: string;
-      do_not_contact: string;
-    }>(
-      `select count(*)::text as total,
-              count(*) filter (where kind = 'bounce')::text as bounces,
-              count(*) filter (where kind = 'unsubscribe')::text as unsubscribes,
-              count(*) filter (where kind = 'do_not_contact')::text as do_not_contact
-         from outcomes
-        where workspace_id = $1
-          and kind in ('bounce','unsubscribe','do_not_contact')`,
-      [workspaceId],
+    loadDashboardData(
+      "profile",
+      "suppression stats",
+      emptyState.suppressionStats,
+      async () => {
+        const { rows } = await pool.query<{
+          total: string;
+          bounces: string;
+          unsubscribes: string;
+          do_not_contact: string;
+        }>(
+          `select count(*)::text as total,
+                  count(*) filter (where kind = 'bounce')::text as bounces,
+                  count(*) filter (where kind = 'unsubscribe')::text as unsubscribes,
+                  count(*) filter (where kind = 'do_not_contact')::text as do_not_contact
+             from outcomes
+            where workspace_id = $1
+              and kind in ('bounce','unsubscribe','do_not_contact')`,
+          [workspaceId],
+        );
+        const row = rows[0];
+        return {
+          total: Number(row?.total ?? 0),
+          bounces: Number(row?.bounces ?? 0),
+          unsubscribes: Number(row?.unsubscribes ?? 0),
+          doNotContact: Number(row?.do_not_contact ?? 0),
+        };
+      },
     ),
-    pool.query<ProfileSuppressionRow>(
-      `select o.id,
-              o.kind::text as kind,
-              o.recorded_at,
-              o.conversation_id,
-              p.full_name as counterparty_name,
-              co.name as company_name
-         from outcomes o
-         left join conversations c on c.id = o.conversation_id
-         left join graph_persons p on p.id = coalesce(o.subject_person_id, c.counterparty_person_id)
-         left join graph_companies co on co.id = coalesce(o.subject_company_id, c.counterparty_company_id)
-        where o.workspace_id = $1
-          and o.kind in ('bounce','unsubscribe','do_not_contact')
-        order by coalesce(o.recorded_at, o.occurred_at) desc
-        limit 5`,
-      [workspaceId],
+    loadDashboardData(
+      "profile",
+      "recent suppressions",
+      emptyState.recentSuppressions,
+      async () => (
+        await pool.query<ProfileSuppressionRow>(
+          `select o.id,
+                  o.kind::text as kind,
+                  o.recorded_at,
+                  o.conversation_id,
+                  p.full_name as counterparty_name,
+                  co.name as company_name
+             from outcomes o
+             left join conversations c on c.id = o.conversation_id
+             left join graph_persons p on p.id = coalesce(o.subject_person_id, c.counterparty_person_id)
+             left join graph_companies co on co.id = coalesce(o.subject_company_id, c.counterparty_company_id)
+            where o.workspace_id = $1
+              and o.kind in ('bounce','unsubscribe','do_not_contact')
+            order by coalesce(o.recorded_at, o.occurred_at) desc
+            limit 5`,
+          [workspaceId],
+        )
+      ).rows,
     ),
-    pool.query<{
-      people: string;
-      email_handles: string;
-      verified_emails: string;
-      linkedin_profiles: string;
-      reachable: string;
-    }>(
-      `select count(*)::text as people,
-              count(*) filter (where cardinality(p.emails) > 0)::text as email_handles,
-              count(*) filter (
-                where exists (
-                  select 1
-                    from jsonb_each(coalesce(p.properties->'email_verification', '{}'::jsonb)) as ev(email, meta)
-                   where lower(coalesce(ev.meta->>'verified', '')) = 'true'
-                      or lower(coalesce(ev.meta->>'status', '')) in ('valid', 'deliverable')
-                )
-              )::text as verified_emails,
-              count(*) filter (where p.linkedin_url is not null)::text as linkedin_profiles,
-              count(*) filter (
-                where cardinality(p.emails) > 0
-                   or p.linkedin_url is not null
-              )::text as reachable
-         from graph_persons p
-        where p.workspace_id = $1`,
-      [workspaceId],
+    loadDashboardData(
+      "profile",
+      "contact quality",
+      emptyState.contactQuality,
+      async () => {
+        const { rows } = await pool.query<{
+          people: string;
+          email_handles: string;
+          verified_emails: string;
+          linkedin_profiles: string;
+          reachable: string;
+        }>(
+          `select count(*)::text as people,
+                  count(*) filter (where cardinality(p.emails) > 0)::text as email_handles,
+                  count(*) filter (
+                    where exists (
+                      select 1
+                        from jsonb_each(coalesce(p.properties->'email_verification', '{}'::jsonb)) as ev(email, meta)
+                       where lower(coalesce(ev.meta->>'verified', '')) = 'true'
+                          or lower(coalesce(ev.meta->>'status', '')) in ('valid', 'deliverable')
+                    )
+                  )::text as verified_emails,
+                  count(*) filter (where p.linkedin_url is not null)::text as linkedin_profiles,
+                  count(*) filter (
+                    where cardinality(p.emails) > 0
+                       or p.linkedin_url is not null
+                  )::text as reachable
+             from graph_persons p
+            where p.workspace_id = $1`,
+          [workspaceId],
+        );
+        const row = rows[0];
+        return {
+          people: Number(row?.people ?? 0),
+          emailHandles: Number(row?.email_handles ?? 0),
+          verifiedEmails: Number(row?.verified_emails ?? 0),
+          linkedInProfiles: Number(row?.linkedin_profiles ?? 0),
+          reachable: Number(row?.reachable ?? 0),
+        };
+      },
     ),
-    pool.query<{
-      active_sources: string;
-      watched_sources: string;
-      source_kinds: string[] | null;
-      qualified_signals_7d: string;
-    }>(
-      `select
-         (select count(*)::text
-            from workspace_source_configs wsc
-            join graph_sources gs
-              on gs.workspace_id = wsc.workspace_id
-             and gs.id = wsc.source_id
-           where wsc.workspace_id = $1
-             and wsc.enabled
-             and gs.enabled) as active_sources,
-         (select count(*)::text
-            from workspace_source_configs wsc
-            join graph_sources gs
-              on gs.workspace_id = wsc.workspace_id
-             and gs.id = wsc.source_id
-           where wsc.workspace_id = $1) as watched_sources,
-         array(
-           select distinct coalesce(
-                    nullif(gs.properties->>'signal_kind', ''),
-                    gs.kind::text
-                  )
-             from workspace_source_configs wsc
-             join graph_sources gs
-               on gs.workspace_id = wsc.workspace_id
-              and gs.id = wsc.source_id
-            where wsc.workspace_id = $1
-              and wsc.enabled
-              and gs.enabled
-            order by 1
-         ) as source_kinds,
-         (select count(*)::text
-            from signals s
-           where s.workspace_id = $1
-             and s.status in ('matched','in_play')
-             and coalesce(s.ingested_at, s.freshness_at) >= now() - interval '7 days') as qualified_signals_7d`,
-      [workspaceId],
+    loadDashboardData(
+      "profile",
+      "signal setup",
+      emptyState.signalSetup,
+      async () => {
+        const { rows } = await pool.query<{
+          active_sources: string;
+          watched_sources: string;
+          source_kinds: string[] | null;
+          qualified_signals_7d: string;
+        }>(
+          `select
+             (select count(*)::text
+                from workspace_source_configs wsc
+                join graph_sources gs
+                  on gs.workspace_id = wsc.workspace_id
+                 and gs.id = wsc.source_id
+               where wsc.workspace_id = $1
+                 and wsc.enabled
+                 and gs.enabled) as active_sources,
+             (select count(*)::text
+                from workspace_source_configs wsc
+                join graph_sources gs
+                  on gs.workspace_id = wsc.workspace_id
+                 and gs.id = wsc.source_id
+               where wsc.workspace_id = $1) as watched_sources,
+             array(
+               select distinct coalesce(
+                        nullif(gs.properties->>'signal_kind', ''),
+                        gs.kind::text
+                      )
+                 from workspace_source_configs wsc
+                 join graph_sources gs
+                   on gs.workspace_id = wsc.workspace_id
+                  and gs.id = wsc.source_id
+                where wsc.workspace_id = $1
+                  and wsc.enabled
+                  and gs.enabled
+                order by 1
+             ) as source_kinds,
+             (select count(*)::text
+                from signals s
+               where s.workspace_id = $1
+                 and s.status in ('matched','in_play')
+                 and coalesce(s.ingested_at, s.freshness_at) >= now() - interval '7 days') as qualified_signals_7d`,
+          [workspaceId],
+        );
+        const row = rows[0];
+        return {
+          activeSources: Number(row?.active_sources ?? 0),
+          watchedSources: Number(row?.watched_sources ?? 0),
+          sourceKinds: Array.isArray(row?.source_kinds)
+            ? row.source_kinds.filter(
+                (kind): kind is string => typeof kind === "string" && kind.trim().length > 0,
+              )
+            : [],
+          qualifiedSignals7d: Number(row?.qualified_signals_7d ?? 0),
+        };
+      },
     ),
-    loadProfileMcpTokens(pool, userId),
-    loadProfileMcpActivity(pool, workspaceId, userId),
-    pool.query<ProfileCrmAccount>(
-      `select id,
-              display_name,
-              status::text as status,
-              last_error,
-              properties,
-              credentials->>'webhook_url' as webhook_url,
-              updated_at
-         from channel_accounts
-        where workspace_id = $1
-          and kind = 'crm'
-        order by case when status = 'connected' then 0 else 1 end,
-                 updated_at desc,
-                 created_at desc
-        limit 1`,
-      [workspaceId],
+    loadDashboardData(
+      "profile",
+      "mcp tokens",
+      emptyState.mcpTokens,
+      () => loadProfileMcpTokens(pool, userId),
     ),
-    pool.query<ProfileVisitorIntentSource>(
-      `select gs.id::text as id,
-              gs.name,
-              gs.enabled,
-              coalesce(gs.config->>'provider', gs.properties->>'provider') as provider,
-              coalesce(gs.config->>'website_url', gs.properties->>'website_url') as website_url,
-              coalesce(gs.config->>'company_domain', gs.properties->>'company_domain') as company_domain,
-              gs.created_at
-         from graph_sources gs
-        where gs.workspace_id = $1
-          and gs.kind = 'web_monitor'
-          and coalesce(gs.config->>'provider', gs.properties->>'provider') in ('bombsell_script','rb2b','clearbit','factors','warmly','generic')
-          and (
-            gs.config->>'ingestion_contract' = 'bombsell_signal_v1'
-            or gs.properties->>'ingestion_contract' = 'bombsell_signal_v1'
-          )
-        order by case when coalesce(gs.config->>'provider', gs.properties->>'provider') = 'bombsell_script' then 0 else 1 end,
-                 gs.created_at desc
-        limit 1`,
-      [workspaceId],
+    loadDashboardData(
+      "profile",
+      "mcp activity",
+      emptyState.mcpActivity,
+      () => loadProfileMcpActivity(pool, workspaceId, userId),
+    ),
+    loadDashboardData(
+      "profile",
+      "crm account",
+      emptyState.crmAccount,
+      async () => {
+        const { rows } = await pool.query<ProfileCrmAccount>(
+          `select id,
+                  display_name,
+                  status::text as status,
+                  last_error,
+                  properties,
+                  credentials->>'webhook_url' as webhook_url,
+                  updated_at
+             from channel_accounts
+            where workspace_id = $1
+              and kind = 'crm'
+            order by case when status = 'connected' then 0 else 1 end,
+                     updated_at desc,
+                     created_at desc
+            limit 1`,
+          [workspaceId],
+        );
+        return rows[0] ?? null;
+      },
+    ),
+    loadDashboardData(
+      "profile",
+      "visitor intent source",
+      emptyState.visitorIntentSource,
+      async () => {
+        const { rows } = await pool.query<ProfileVisitorIntentSource>(
+          `select gs.id::text as id,
+                  gs.name,
+                  gs.enabled,
+                  coalesce(gs.config->>'provider', gs.properties->>'provider') as provider,
+                  coalesce(gs.config->>'website_url', gs.properties->>'website_url') as website_url,
+                  coalesce(gs.config->>'company_domain', gs.properties->>'company_domain') as company_domain,
+                  gs.created_at
+             from graph_sources gs
+            where gs.workspace_id = $1
+              and gs.kind = 'web_monitor'
+              and coalesce(gs.config->>'provider', gs.properties->>'provider') in ('bombsell_script','rb2b','clearbit','factors','warmly','generic')
+              and (
+                gs.config->>'ingestion_contract' = 'bombsell_signal_v1'
+                or gs.properties->>'ingestion_contract' = 'bombsell_signal_v1'
+              )
+            order by case when coalesce(gs.config->>'provider', gs.properties->>'provider') = 'bombsell_script' then 0 else 1 end,
+                     gs.created_at desc
+            limit 1`,
+          [workspaceId],
+        );
+        return rows[0] ?? null;
+      },
     ),
   ]);
-  const suppressions = suppressionStats.rows[0];
-  const contacts = contactQuality.rows[0];
   return {
-    settings: workspace.rows[0]?.settings ?? {},
-    outlookAccount: outlook.rows[0] ?? null,
-    linkedInAccount: linkedIn.rows[0] ?? null,
-    linkedInAccounts: linkedIn.rows,
-    crmAccount: crm.rows[0] ?? null,
-    rep: rep.rows[0] ?? null,
-    icp: icp.rows[0] ?? null,
-    approvals: policies.rows.flatMap((row) =>
-      approvalsFromAutonomy(row.autonomy),
-    ),
-    suppressionStats: {
-      total: Number(suppressions?.total ?? 0),
-      bounces: Number(suppressions?.bounces ?? 0),
-      unsubscribes: Number(suppressions?.unsubscribes ?? 0),
-      doNotContact: Number(suppressions?.do_not_contact ?? 0),
-    },
-    recentSuppressions: recentSuppressions.rows,
-    contactQuality: {
-      people: Number(contacts?.people ?? 0),
-      emailHandles: Number(contacts?.email_handles ?? 0),
-      verifiedEmails: Number(contacts?.verified_emails ?? 0),
-      linkedInProfiles: Number(contacts?.linkedin_profiles ?? 0),
-      reachable: Number(contacts?.reachable ?? 0),
-    },
-    signalSetup: {
-      activeSources: Number(signalSetup.rows[0]?.active_sources ?? 0),
-      watchedSources: Number(signalSetup.rows[0]?.watched_sources ?? 0),
-      sourceKinds: signalSetup.rows[0]?.source_kinds ?? [],
-      qualifiedSignals7d: Number(signalSetup.rows[0]?.qualified_signals_7d ?? 0),
-    },
+    settings,
+    outlookAccount,
+    linkedInAccount: linkedInAccounts[0] ?? null,
+    linkedInAccounts,
+    crmAccount,
+    rep,
+    icp,
+    approvals,
+    suppressionStats,
+    recentSuppressions,
+    contactQuality,
+    signalSetup,
     mcpTokens,
     mcpActivity,
-    visitorIntentSource: visitorIntent.rows[0] ?? null,
+    visitorIntentSource,
   };
 }
 
@@ -2510,7 +2671,7 @@ function VoiceActivationForm({
         label="Agent voice"
         rows={3}
         defaultValue={
-          rep?.persona.voice ??
+          rep?.persona?.voice ??
           "Direct, warm, specific, and allergic to generic sales fluff."
         }
       />
@@ -2520,7 +2681,7 @@ function VoiceActivationForm({
           label="AI outreach template"
           rows={4}
           defaultValue={
-            rep?.persona.story ??
+            rep?.persona?.story ??
             "Open with the qualified signal, name the verified contact or LinkedIn profile, tie it to one relevant business reason, and ask for one concrete next step."
           }
         />
@@ -3127,14 +3288,14 @@ function profileIcpDescription(icp: ProfileIcpRow | null): string {
 
 function profileRepVoice(rep: ProfileRepRow | null): string {
   return (
-    rep?.persona.voice ??
+    rep?.persona?.voice ??
     "Direct, warm, specific, and allergic to generic sales fluff."
   );
 }
 
 function profileRepStory(rep: ProfileRepRow | null): string {
   return (
-    rep?.persona.story ??
+    rep?.persona?.story ??
     "Open with the qualified signal, name the verified contact or LinkedIn profile, tie it to one relevant business reason, and ask for one concrete next step."
   );
 }

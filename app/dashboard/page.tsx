@@ -11,6 +11,7 @@ import {
   generateMeetingPrepAction,
   prepareQualifiedSignalsAction,
 } from "./actions";
+import { loadDashboardData } from "./server-data";
 
 export const metadata: Metadata = {
   title: "Brief | Bombsell",
@@ -931,7 +932,12 @@ export default async function BriefPage() {
     workspaceAgeSeconds,
   ] = await Promise.all([
     loadBriefState(session.workspace.id),
-    loadWorkspaceAgeSeconds(session.workspace.id),
+    loadDashboardData(
+      "brief",
+      "workspace age",
+      null,
+      () => loadWorkspaceAgeSeconds(session.workspace.id),
+    ),
   ]);
 
   const isFreshWorkspace =
@@ -965,20 +971,15 @@ export default async function BriefPage() {
 async function loadWorkspaceAgeSeconds(
   workspaceId: string,
 ): Promise<number | null> {
-  try {
-    const { rows } = await getPool().query<{ age_seconds: string }>(
-      `select extract(epoch from (now() - created_at))::text as age_seconds
-         from workspaces
-        where id = $1`,
-      [workspaceId],
-    );
-    if (!rows[0]) return null;
-    const value = Number(rows[0].age_seconds);
-    return Number.isFinite(value) ? value : null;
-  } catch (err) {
-    console.error("[dashboard/brief] failed to load workspace age", err);
-    return null;
-  }
+  const { rows } = await getPool().query<{ age_seconds: string }>(
+    `select extract(epoch from (now() - created_at))::text as age_seconds
+       from workspaces
+      where id = $1`,
+    [workspaceId],
+  );
+  if (!rows[0]) return null;
+  const value = Number(rows[0].age_seconds);
+  return Number.isFinite(value) ? value : null;
 }
 
 async function loadBriefState(
@@ -994,54 +995,83 @@ async function loadBriefState(
   outcomeInsights: BriefOutcomeInsight[];
   learning: BriefLearningInsight;
 }> {
-  try {
-    const [
-      actions,
-      signalKinds,
-      signalHealth,
-      contactReadiness,
-      channelReadiness,
-      capabilityReadiness,
-      hotContacts,
-      outcomeInsights,
-      learning,
-    ] =
-      await Promise.all([
-        loadBriefActionState(workspaceId),
-        loadSignalKindMetrics(workspaceId),
-        loadBriefSignalHealth(workspaceId),
-        loadBriefContactReadiness(workspaceId),
-        loadBriefChannelReadiness(workspaceId),
-        loadBriefCapabilityReadiness(workspaceId),
-        loadBriefHotContacts(workspaceId),
-        loadBriefOutcomeInsights(workspaceId),
-        loadBriefLearningInsight(workspaceId),
-      ]);
-    return {
-      actions,
-      signalKinds,
-      signalHealth,
-      contactReadiness,
-      channelReadiness,
-      capabilityReadiness,
-      hotContacts,
-      outcomeInsights,
-      learning,
-    };
-  } catch (err) {
-    console.error("[dashboard/brief] failed to load brief state", err);
-    return {
-      actions: EMPTY_ACTION_STATE,
-      signalKinds: [],
-      signalHealth: EMPTY_SIGNAL_HEALTH,
-      contactReadiness: EMPTY_CONTACT_READINESS,
-      channelReadiness: EMPTY_CHANNEL_READINESS,
-      capabilityReadiness: EMPTY_CAPABILITY_READINESS,
-      hotContacts: [],
-      outcomeInsights: [],
-      learning: EMPTY_LEARNING_INSIGHT,
-    };
-  }
+  const [
+    actions,
+    signalKinds,
+    signalHealth,
+    contactReadiness,
+    channelReadiness,
+    capabilityReadiness,
+    hotContacts,
+    outcomeInsights,
+    learning,
+  ] = await Promise.all([
+    loadDashboardData(
+      "brief",
+      "action state",
+      EMPTY_ACTION_STATE,
+      () => loadBriefActionState(workspaceId),
+    ),
+    loadDashboardData(
+      "brief",
+      "signal kind metrics",
+      [],
+      () => loadSignalKindMetrics(workspaceId),
+    ),
+    loadDashboardData(
+      "brief",
+      "signal health",
+      EMPTY_SIGNAL_HEALTH,
+      () => loadBriefSignalHealth(workspaceId),
+    ),
+    loadDashboardData(
+      "brief",
+      "contact readiness",
+      EMPTY_CONTACT_READINESS,
+      () => loadBriefContactReadiness(workspaceId),
+    ),
+    loadDashboardData(
+      "brief",
+      "channel readiness",
+      EMPTY_CHANNEL_READINESS,
+      () => loadBriefChannelReadiness(workspaceId),
+    ),
+    loadDashboardData(
+      "brief",
+      "capability readiness",
+      EMPTY_CAPABILITY_READINESS,
+      () => loadBriefCapabilityReadiness(workspaceId),
+    ),
+    loadDashboardData(
+      "brief",
+      "hot contacts",
+      [],
+      () => loadBriefHotContacts(workspaceId),
+    ),
+    loadDashboardData(
+      "brief",
+      "outcome insights",
+      [],
+      () => loadBriefOutcomeInsights(workspaceId),
+    ),
+    loadDashboardData(
+      "brief",
+      "learning insight",
+      EMPTY_LEARNING_INSIGHT,
+      () => loadBriefLearningInsight(workspaceId),
+    ),
+  ]);
+  return {
+    actions,
+    signalKinds,
+    signalHealth,
+    contactReadiness,
+    channelReadiness,
+    capabilityReadiness,
+    hotContacts,
+    outcomeInsights,
+    learning,
+  };
 }
 
 function BriefView({

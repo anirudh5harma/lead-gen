@@ -14,8 +14,10 @@ export * from "./types.ts";
 export {
   createPool,
   getPool,
+  isTransientConnectionError,
   resetPool,
   setPool,
   tryGetPool,
+  withTransientConnectionRetry,
 } from "./pool.ts";
 export { withWorkspace, WorkspaceMembershipError } from "./tenancy.ts";

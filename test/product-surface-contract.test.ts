@@ -1189,8 +1189,8 @@ test("Profile exposes profile, channels, advanced setup, and workspace autonomy 
   assert.match(settings, /return `\$\{ready\}\/2 ready`/);
   assert.match(settings, /Outlook inbox/);
   assert.match(settings, /LinkedIn accounts/);
-  assert.match(settings, /linkedInAccounts: linkedIn\.rows/);
-  assert.match(settings, /crmAccount: crm\.rows\[0\] \?\? null/);
+  assert.match(settings, /<LinkedInPanel accounts=\{state\.linkedInAccounts\}/);
+  assert.match(settings, /<CrmHandoffSetupPanel account=\{state\.crmAccount\}/);
   assert.match(settings, /Coming soon/);
   assert.match(settings, /Outlook is\s+live now/);
   assert.match(settings, /First account/);
@@ -1244,7 +1244,7 @@ test("Profile exposes profile, channels, advanced setup, and workspace autonomy 
   assert.match(actions, /website_url: websiteUrl \|\| undefined/);
   assert.match(actions, /company_domain: companyDomain \|\| undefined/);
   assert.match(settings, /visitorIntentSource: ProfileVisitorIntentSource \| null/);
-  assert.match(settings, /visitorIntentSource: visitorIntent\.rows\[0\] \?\? null/);
+  assert.match(settings, /source=\{state\.visitorIntentSource\}/);
   assert.match(settings, /in \('bombsell_script','rb2b','clearbit','factors','warmly','generic'\)/);
   assert.match(settings, /Source ready/);
   assert.match(settings, /Create visitor source/);

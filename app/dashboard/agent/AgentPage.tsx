@@ -37,6 +37,7 @@ import {
   resolveQualifiedSignalContactsAction,
   updateWorkspaceAutonomyAction,
 } from "../actions";
+import { loadDashboardData } from "../server-data";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +49,7 @@ interface RepRow {
   persona: {
     voice?: string;
     story?: string;
-  };
+  } | null;
   autonomy: {
     channels?: Record<string, RepChannelPolicy>;
   } | null;
@@ -366,7 +367,7 @@ interface RepsState {
 }
 
 async function loadRepsState(workspaceId: string): Promise<RepsState> {
-  const pool = getPool();
+  const emptyState = emptyRepsState(workspaceId);
   const [
     reps,
     channels,
@@ -382,94 +383,163 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
     learning,
     signalMix,
   ] = await Promise.all([
-    pool.query<RepRow>(
-      `select r.id,
-              r.name,
-              r.role::text as role,
-              r.status::text as status,
-              r.persona,
-              r.autonomy,
-              (select count(*)::text
-                 from conversations c
-                where c.workspace_id = $1
-                  and c.rep_id = r.id
-                  and c.status in ('open','awaiting_them','awaiting_us')) as open_conversations,
-              (select count(*)::text
-                 from messages m
-                 join conversations c on c.id = m.conversation_id
-                where m.workspace_id = $1
-                  and c.rep_id = r.id
-                  and m.direction = 'outbound'
-                  and m.created_at >= now() - interval '7 days') as sent_7d,
-              (select count(*)::text
-                 from outcomes o
-                where o.workspace_id = $1
-                  and o.attributed_rep_id = r.id
-                  and o.kind in ('positive_reply','meeting_booked','opportunity_created','deal_won')
-                  and coalesce(o.recorded_at, o.occurred_at) >= now() - interval '7 days') as outcomes_7d
-         from reps r
-        where r.workspace_id = $1
-          and r.status <> 'retired'
-        order by r.created_at asc`,
-      [workspaceId],
+    loadDashboardData(
+      "agent",
+      "reps",
+      emptyState.reps,
+      async () => (
+        await getPool().query<RepRow>(
+          `select r.id,
+                  r.name,
+                  r.role::text as role,
+                  r.status::text as status,
+                  r.persona,
+                  r.autonomy,
+                  (select count(*)::text
+                     from conversations c
+                    where c.workspace_id = $1
+                      and c.rep_id = r.id
+                      and c.status in ('open','awaiting_them','awaiting_us')) as open_conversations,
+                  (select count(*)::text
+                     from messages m
+                     join conversations c on c.id = m.conversation_id
+                    where m.workspace_id = $1
+                      and c.rep_id = r.id
+                      and m.direction = 'outbound'
+                      and m.created_at >= now() - interval '7 days') as sent_7d,
+                  (select count(*)::text
+                     from outcomes o
+                    where o.workspace_id = $1
+                      and o.attributed_rep_id = r.id
+                      and o.kind in ('positive_reply','meeting_booked','opportunity_created','deal_won')
+                      and coalesce(o.recorded_at, o.occurred_at) >= now() - interval '7 days') as outcomes_7d
+             from reps r
+            where r.workspace_id = $1
+              and r.status <> 'retired'
+            order by r.created_at asc`,
+          [workspaceId],
+        )
+      ).rows,
     ),
-    pool.query<ChannelRow>(
-      `with ranked_accounts as (
-         select id,
-                display_name,
-                kind::text as kind,
-                status::text as status,
-                daily_cap,
-                last_error,
-                updated_at,
-                created_at,
-                row_number() over (
-                  partition by case
-                    when kind = 'oauth_outlook' then 'outlook:' || coalesce(
-                      nullif(lower(properties ->> 'mailbox_email'), ''),
-                      nullif(lower(display_name), ''),
-                      id::text
-                    )
-                    when kind in ('linkedin_session','linkedin_oauth') then 'linkedin:' || coalesce(
-                      nullif(lower(display_name), ''),
-                      id::text
-                    )
-                    else id::text
-                  end
-                  order by case when status = 'connected' then 0 else 1 end,
-                           updated_at desc,
-                           created_at desc
-                ) as account_rank
-           from channel_accounts
-          where workspace_id = $1
-            and kind in ('oauth_outlook','linkedin_session','linkedin_oauth')
-       )
-       select id, display_name, kind, status, daily_cap, last_error
-         from ranked_accounts
-        where account_rank = 1
-        order by case
-                   when kind = 'oauth_outlook' then 0
-                   else 1
-                 end,
-                 display_name asc`,
-      [workspaceId],
+    loadDashboardData(
+      "agent",
+      "channels",
+      emptyState.channels,
+      async () => (
+        await getPool().query<ChannelRow>(
+          `with ranked_accounts as (
+             select id,
+                    display_name,
+                    kind::text as kind,
+                    status::text as status,
+                    daily_cap,
+                    last_error,
+                    updated_at,
+                    created_at,
+                    row_number() over (
+                      partition by case
+                        when kind = 'oauth_outlook' then 'outlook:' || coalesce(
+                          nullif(lower(properties ->> 'mailbox_email'), ''),
+                          nullif(lower(display_name), ''),
+                          id::text
+                        )
+                        when kind in ('linkedin_session','linkedin_oauth') then 'linkedin:' || coalesce(
+                          nullif(lower(display_name), ''),
+                          id::text
+                        )
+                        else id::text
+                      end
+                      order by case when status = 'connected' then 0 else 1 end,
+                               updated_at desc,
+                               created_at desc
+                    ) as account_rank
+               from channel_accounts
+              where workspace_id = $1
+                and kind in ('oauth_outlook','linkedin_session','linkedin_oauth')
+           )
+           select id, display_name, kind, status, daily_cap, last_error
+             from ranked_accounts
+            where account_rank = 1
+            order by case
+                       when kind = 'oauth_outlook' then 0
+                       else 1
+                     end,
+                     display_name asc`,
+          [workspaceId],
+        )
+      ).rows,
     ),
-    loadWorkspaceLaunchReadiness(pool, workspaceId, { required_channel: "any" }),
-    loadAgentActivity(workspaceId),
-    loadAgentSourceStrategy(workspaceId),
-    loadQualifiedSignalWorkbench(pool, workspaceId, { limit: 5 }),
-    loadAgentOutreachSummary(workspaceId),
-    loadAgentReplySummary(workspaceId),
-    loadAgentReviewSummary(workspaceId),
-    loadRejectedDrafts(workspaceId),
-    loadAgentContactSummary(workspaceId),
-    loadAgentLearningSummary(workspaceId),
-    loadAgentSignalMix(workspaceId),
+    loadDashboardData(
+      "agent",
+      "launch readiness",
+      emptyState.readiness,
+      () => loadWorkspaceLaunchReadiness(getPool(), workspaceId, { required_channel: "any" }),
+    ),
+    loadDashboardData(
+      "agent",
+      "activity",
+      emptyState.activity,
+      () => loadAgentActivity(workspaceId),
+    ),
+    loadDashboardData(
+      "agent",
+      "source strategy",
+      emptyState.strategy,
+      () => loadAgentSourceStrategy(workspaceId),
+    ),
+    loadDashboardData(
+      "agent",
+      "qualified signals",
+      emptyState.opportunities,
+      () => loadQualifiedSignalWorkbench(getPool(), workspaceId, { limit: 5 }),
+    ),
+    loadDashboardData(
+      "agent",
+      "outreach summary",
+      emptyState.outreach,
+      () => loadAgentOutreachSummary(workspaceId),
+    ),
+    loadDashboardData(
+      "agent",
+      "reply summary",
+      emptyState.replies,
+      () => loadAgentReplySummary(workspaceId),
+    ),
+    loadDashboardData(
+      "agent",
+      "review summary",
+      emptyState.reviews,
+      () => loadAgentReviewSummary(workspaceId),
+    ),
+    loadDashboardData(
+      "agent",
+      "rejected drafts",
+      emptyState.rejectedDrafts,
+      () => loadRejectedDrafts(workspaceId),
+    ),
+    loadDashboardData(
+      "agent",
+      "contact summary",
+      emptyState.contacts,
+      () => loadAgentContactSummary(workspaceId),
+    ),
+    loadDashboardData(
+      "agent",
+      "learning summary",
+      emptyState.learning,
+      () => loadAgentLearningSummary(workspaceId),
+    ),
+    loadDashboardData(
+      "agent",
+      "signal mix",
+      emptyState.signalMix,
+      () => loadAgentSignalMix(workspaceId),
+    ),
   ]);
-  const channelRows = channels.rows;
+  const channelRows = channels;
   const coverage = workspaceChannelCoverage(channelRows);
   return {
-    reps: reps.rows,
+    reps,
     channels: channelRows,
     readiness,
     activity,
@@ -656,8 +726,8 @@ async function loadAgentSourceStrategy(
       id: string;
       name: string;
       declaration: string;
-      compiled: Record<string, unknown>;
-      autonomy: Record<string, unknown>;
+      compiled: Record<string, unknown> | null;
+      autonomy: Record<string, unknown> | null;
       status: string;
       created_at: Date;
     }>(
@@ -7041,7 +7111,7 @@ function AgentSetupSummary({
               </span>
             </div>
             <p className="mt-2 text-sm leading-6 text-[var(--color-text-2)]">
-              {rep.persona.story ??
+              {rep.persona?.story ??
                 "Uses your Profile, connected accounts, and approval rules to turn qualified signals into email and LinkedIn outreach."}
             </p>
           </div>
@@ -7544,12 +7614,14 @@ function sequenceStepFromPlay(row: {
   id: string;
   name: string;
   declaration: string;
-  compiled: Record<string, unknown>;
-  autonomy: Record<string, unknown>;
+  compiled: Record<string, unknown> | null;
+  autonomy: Record<string, unknown> | null;
   status: string;
 }): AgentSequenceStep {
-  const channel = stringValue(row.compiled.channel) ?? "email";
-  const channelPolicy = policyFromAutonomy(row.autonomy, channel);
+  const compiled = recordValue(row.compiled) ?? {};
+  const autonomy = recordValue(row.autonomy);
+  const channel = stringValue(compiled.channel) ?? "email";
+  const channelPolicy = policyFromAutonomy(autonomy, channel);
   return {
     id: row.id,
     name: row.name,
@@ -7558,15 +7630,15 @@ function sequenceStepFromPlay(row: {
     status: row.status,
     daily_cap: numberValue(channelPolicy?.daily_cap),
     approval: stringValue(channelPolicy?.approval),
-    steps: stepsFromCompiled(row.compiled),
+    steps: stepsFromCompiled(compiled),
   };
 }
 
 function policyFromAutonomy(
-  autonomy: Record<string, unknown>,
+  autonomy: Record<string, unknown> | null,
   channel: string,
 ): Record<string, unknown> | null {
-  const channels = recordValue(autonomy.channels);
+  const channels = recordValue(autonomy?.channels);
   if (!channels) return null;
   return recordValue(channels[channel]);
 }
