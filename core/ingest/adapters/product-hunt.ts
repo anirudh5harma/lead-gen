@@ -4,6 +4,7 @@ import type {
   WorkspacePollResult,
 } from "./_workspace-types.ts";
 import type { RawCandidate } from "../types.ts";
+import { withinFreshnessWindow, maxAgeDaysFromConfig } from "./_freshness-window.ts";
 
 /**
  * ProductHunt GraphQL adapter. Workspace-driven (each workspace decides
@@ -83,6 +84,7 @@ export const productHuntAdapter: WorkspaceAdapter = {
       return { items: [], cursor: input.cursor };
     }
     const limit = (input.source.config as { limit?: number }).limit ?? 50;
+    const maxAgeDays = maxAgeDaysFromConfig(input.source.config, 7);
     const fetchImpl = input.fetchImpl ?? globalThis.fetch;
     const response = await fetchImpl(ENDPOINT, {
       method: "POST",
@@ -108,6 +110,8 @@ export const productHuntAdapter: WorkspaceAdapter = {
       const topics = (post.topics?.edges ?? [])
         .map((e) => e?.node?.name)
         .filter((n): n is string => Boolean(n));
+      const freshness_at = post.createdAt ?? new Date().toISOString();
+      if (!withinFreshnessWindow(freshness_at, maxAgeDays)) continue;
       items.push({
         external_id: post.id,
         title: post.tagline ? `${post.name} — ${post.tagline}` : post.name,
@@ -120,7 +124,7 @@ export const productHuntAdapter: WorkspaceAdapter = {
           votes: post.votesCount ?? null,
           topics,
         },
-        freshness_at: post.createdAt ?? new Date().toISOString(),
+        freshness_at,
         provenance: { adapter: "product_hunt", raw_id: post.id },
       });
     }

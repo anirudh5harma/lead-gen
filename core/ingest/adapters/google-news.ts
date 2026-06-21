@@ -46,7 +46,7 @@ export const googleNewsAdapter: WorkspaceAdapter = {
       ...input,
       source: {
         ...input.source,
-        config: { url, novelty_domain: undefined },
+        config: { ...input.source.config, url, novelty_domain: undefined },
       },
     });
   },

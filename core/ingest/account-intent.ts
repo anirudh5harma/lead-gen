@@ -87,6 +87,7 @@ export const SIGNAL_KIND_INTENT_CONFIG = {
 } as const satisfies Record<SignalKind, SignalIntentKindConfig>;
 
 export const LIVE_SIGNAL_STATUSES = ["ingested", "matched", "in_play"] as const;
+export const HEATING_UP_THRESHOLD = 0.4;
 
 export interface SignalIntentScoreInput {
   signal_id?: string;
@@ -441,6 +442,21 @@ export async function listAccountsByCompositeIntent(
   );
 
   return ranked.slice(0, limit);
+}
+
+export async function getHeatingUpAccountCount(
+  pool: Pool,
+  workspaceId: string,
+): Promise<number> {
+  const { rows } = await pool.query<{ heating_up_count: string | number }>(
+    `select count(*)::text as heating_up_count
+       from account_intent_scores
+      where workspace_id = $1
+        and live_signal_count >= 2
+        and composite_score >= $2`,
+    [workspaceId, HEATING_UP_THRESHOLD],
+  );
+  return parseNumeric(rows[0]?.heating_up_count) ?? 0;
 }
 
 export function sortSignalsByIntentScore<T extends SignalIntentScoreInput>(

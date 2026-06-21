@@ -257,7 +257,7 @@ test("rss adapter: poll fetches the config.url and applies novelty_domain", asyn
     return textResponse(`<?xml version="1.0"?>
     <rss version="2.0"><channel>
       <item><guid>g1</guid><title>x</title><link>https://example.com/x</link>
-        <pubDate>Sun, 25 May 2026 12:00:00 GMT</pubDate></item>
+        <pubDate>${new Date(Date.now() - 86_400_000).toUTCString()}</pubDate></item>
     </channel></rss>`);
   }) as unknown as typeof fetch;
   const result = await rssAdapter.poll({
@@ -269,6 +269,7 @@ test("rss adapter: poll fetches the config.url and applies novelty_domain", asyn
         url: "https://example.com/feed.xml",
         novelty_domain: "example.com",
         fetch_timeout_ms: 5000,
+        max_age_days: 365,
       },
     },
     cursor: {},
@@ -437,9 +438,9 @@ test("x_search adapter: missing provider token fails before fetch", async () => 
 test("hn_front adapter: pulls top stories and only fetches unseen items", async () => {
   const calls: string[] = [];
   const items: Record<number, unknown> = {
-    1: { id: 1, type: "story", title: "Story 1", url: "https://example.com/1", time: 1717000000 },
-    2: { id: 2, type: "story", title: "Story 2", url: "https://example.com/2", time: 1717000010 },
-    3: { id: 3, type: "story", title: "Story 3", url: "https://example.com/3", time: 1717000020 },
+    1: { id: 1, type: "story", title: "Story 1", url: "https://example.com/1", time: Math.floor(Date.now() / 1000) - 60 },
+    2: { id: 2, type: "story", title: "Story 2", url: "https://example.com/2", time: Math.floor(Date.now() / 1000) - 50 },
+    3: { id: 3, type: "story", title: "Story 3", url: "https://example.com/3", time: Math.floor(Date.now() / 1000) - 40 },
   };
   const fetchImpl = (async (url: string) => {
     calls.push(url);
@@ -451,7 +452,7 @@ test("hn_front adapter: pulls top stories and only fetches unseen items", async 
 
   const first = await hnFrontAdapter.poll({
     workspace_id: "ws",
-    source: { id: "s", name: "x", config: { limit: 3 } },
+    source: { id: "s", name: "x", config: { limit: 3, max_age_days: 365 } },
     cursor: {},
     fetchImpl,
   });
@@ -474,7 +475,7 @@ test("hn_front adapter: skips non-story items + missing titles", async () => {
     if (url.includes("item/1.json"))
       return jsonResponse({ id: 1, type: "job", title: "Jobs" });
     if (url.includes("item/2.json"))
-      return jsonResponse({ id: 2, type: "story", title: "Real story", time: 1717000000 });
+      return jsonResponse({ id: 2, type: "story", title: "Real story", time: Math.floor(Date.now() / 1000) - 60 });
     return new Response("", { status: 404 });
   }) as unknown as typeof fetch;
   const result = await hnFrontAdapter.poll({
@@ -670,7 +671,7 @@ test("product_hunt adapter: maps newest posts", async () => {
   }) as unknown as typeof fetch;
   const result = await productHuntAdapter.poll({
     workspace_id: "ws",
-    source: { id: "s", name: "ph", config: { token: "t-1" } },
+    source: { id: "s", name: "ph", config: { token: "t-1", max_age_days: 365 } },
     cursor: {},
     fetchImpl,
   });
@@ -759,12 +760,12 @@ test("google_news adapter: builds the search URL and delegates to RSS", async ()
     return textResponse(`<?xml version="1.0"?>
     <rss version="2.0"><channel>
       <item><guid>g1</guid><title>A funding round</title><link>https://example.com/a</link>
-        <pubDate>Sun, 25 May 2026 12:00:00 GMT</pubDate></item>
+        <pubDate>${new Date(Date.now() - 86_400_000).toUTCString()}</pubDate></item>
     </channel></rss>`);
   }) as unknown as typeof fetch;
   const result = await googleNewsAdapter.poll({
     workspace_id: "ws",
-    source: { id: "s", name: "gn", config: { query: "fintech funding" } },
+    source: { id: "s", name: "gn", config: { query: "fintech funding", max_age_days: 365 } },
     cursor: {},
     fetchImpl,
   });
@@ -788,4 +789,73 @@ test("google_news adapter: missing query → no-op", async () => {
   });
   assert.equal(calls, 0);
   assert.equal(result.items.length, 0);
+});
+
+// ─── Freshness window ──────────────────────────────────────────────────────
+
+test("hn_front adapter: drops items older than max_age_days", async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const oldTime = now - 30 * 24 * 3600;
+  const recentTime = now - 3600;
+  const fetchImpl = (async (url: string) => {
+    if (url.endsWith("topstories.json")) return jsonResponse([1, 2]);
+    if (url.includes("item/1.json"))
+      return jsonResponse({ id: 1, type: "story", title: "Old story", time: oldTime });
+    if (url.includes("item/2.json"))
+      return jsonResponse({ id: 2, type: "story", title: "Recent story", time: recentTime });
+    return new Response("", { status: 404 });
+  }) as unknown as typeof fetch;
+  const result = await hnFrontAdapter.poll({
+    workspace_id: "ws",
+    source: { id: "s", name: "x", config: { limit: 5, max_age_days: 14 } },
+    cursor: {},
+    fetchImpl,
+  });
+  assert.equal(result.items.length, 1);
+  assert.equal(result.items[0].title, "Recent story");
+});
+
+test("rss adapter: drops items older than max_age_days (default 14)", async () => {
+  const oldDate = new Date(Date.now() - 30 * 24 * 3600 * 1000).toUTCString();
+  const recentDate = new Date(Date.now() - 3600 * 1000).toUTCString();
+  const fetchImpl = (async () =>
+    textResponse(`<?xml version="1.0"?>
+    <rss version="2.0"><channel>
+      <item><guid>g-old</guid><title>Old</title><link>https://example.com/old</link>
+        <pubDate>${oldDate}</pubDate></item>
+      <item><guid>g-new</guid><title>Recent</title><link>https://example.com/new</link>
+        <pubDate>${recentDate}</pubDate></item>
+    </channel></rss>`)) as unknown as typeof fetch;
+  const result = await rssAdapter.poll({
+    workspace_id: "ws",
+    source: { id: "s", name: "x", config: { url: "https://example.com/feed.xml" } },
+    cursor: {},
+    fetchImpl,
+  });
+  assert.equal(result.items.length, 1);
+  assert.equal(result.items[0].external_id, "g-new");
+});
+
+test("product_hunt adapter: drops items older than max_age_days (default 7)", async () => {
+  const oldDate = new Date(Date.now() - 14 * 24 * 3600 * 1000).toISOString();
+  const recentDate = new Date(Date.now() - 3600 * 1000).toISOString();
+  const fetchImpl = (async () =>
+    jsonResponse({
+      data: {
+        posts: {
+          edges: [
+            { node: { id: "ph-old", name: "OldApp", createdAt: oldDate } },
+            { node: { id: "ph-new", name: "NewApp", createdAt: recentDate } },
+          ],
+        },
+      },
+    })) as unknown as typeof fetch;
+  const result = await productHuntAdapter.poll({
+    workspace_id: "ws",
+    source: { id: "s", name: "ph", config: { token: "t-1" } },
+    cursor: {},
+    fetchImpl,
+  });
+  assert.equal(result.items.length, 1);
+  assert.equal(result.items[0].external_id, "ph-new");
 });

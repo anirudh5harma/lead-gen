@@ -4,6 +4,7 @@ import type {
   WorkspacePollResult,
 } from "./_workspace-types.ts";
 import type { RawCandidate } from "../types.ts";
+import { withinFreshnessWindow, maxAgeDaysFromConfig } from "./_freshness-window.ts";
 
 /**
  * Hacker News front page adapter. Workspace-driven.
@@ -48,6 +49,7 @@ export const hnFrontAdapter: WorkspaceAdapter = {
   async poll(input: WorkspacePollInput): Promise<WorkspacePollResult> {
     const fetchImpl = input.fetchImpl ?? globalThis.fetch;
     const limit = (input.source.config as { limit?: number }).limit ?? 30;
+    const maxAgeDays = maxAgeDaysFromConfig(input.source.config, 14);
     const seen = new Set<number>(
       Array.isArray((input.cursor as { seen_ids?: number[] }).seen_ids)
         ? (input.cursor as { seen_ids: number[] }).seen_ids
@@ -73,6 +75,11 @@ export const hnFrontAdapter: WorkspaceAdapter = {
       if (!itemResp.ok) continue;
       const item = (await itemResp.json()) as HnItem | null;
       if (!item || item.type !== "story" || !item.title) continue;
+      const freshness_at =
+        typeof item.time === "number"
+          ? new Date(item.time * 1000).toISOString()
+          : new Date().toISOString();
+      if (!withinFreshnessWindow(freshness_at, maxAgeDays)) continue;
       items.push({
         external_id: String(item.id),
         title: item.title,
@@ -83,10 +90,7 @@ export const hnFrontAdapter: WorkspaceAdapter = {
           comments: item.descendants ?? null,
           by: item.by ?? null,
         },
-        freshness_at:
-          typeof item.time === "number"
-            ? new Date(item.time * 1000).toISOString()
-            : new Date().toISOString(),
+        freshness_at,
         provenance: { adapter: "hn_front", hn_id: item.id },
       });
     }

@@ -9,6 +9,10 @@ import {
 } from "../ingest/catalog.ts";
 import { discoverCompanyOwnedSignalSources } from "../ingest/source-autodiscovery.ts";
 import {
+  DEFAULT_GOOGLE_NEWS_QUERIES,
+  DEFAULT_RSS_FEEDS,
+} from "../ingest/default-news-queries.ts";
+import {
   createIcp,
   updateIcp,
   type IcpPredicateRule,
@@ -5386,6 +5390,26 @@ export async function configureDefaultSignalAggregator(
       source_authority: 0.66,
       source_reason: "free_news_recall",
     },
+    ...DEFAULT_GOOGLE_NEWS_QUERIES.map((q): ConfigureWorkspaceSignalSourceInput => ({
+      adapter: "google_news",
+      name: q.name,
+      query: q.query,
+      signal_kind: q.signal_kind,
+      poll_interval_minutes: q.poll_interval_minutes,
+      source_tier: q.source_tier,
+      source_authority: q.source_authority,
+      source_reason: q.source_reason,
+    })),
+    ...DEFAULT_RSS_FEEDS.map((f): ConfigureWorkspaceSignalSourceInput => ({
+      adapter: "rss",
+      name: f.name,
+      url: f.url,
+      signal_kind: f.signal_kind,
+      poll_interval_minutes: f.poll_interval_minutes,
+      source_tier: f.source_tier,
+      source_authority: f.source_authority,
+      source_reason: f.source_reason,
+    })),
     {
       adapter: "hn_front",
       name: "Hacker News launch signals",
@@ -9091,6 +9115,7 @@ function sourceConfigForAdapter(
       return {
         ...base,
         query: input.query?.trim() || input.name.trim() || "B2B SaaS hiring",
+        max_items_per_poll: 10,
       };
     case "reddit":
       return {
@@ -9141,10 +9166,11 @@ function sourceConfigForAdapter(
       return {
         ...base,
         limit: 25,
+        max_items_per_poll: 10,
       };
     case "hn_front":
     case "hn_whos_hiring":
-      return base;
+      return { ...base, max_items_per_poll: 10 };
     case "rss":
       return {
         ...base,
@@ -9152,6 +9178,7 @@ function sourceConfigForAdapter(
         company_name: input.company_name?.trim(),
         company_domain: input.company_domain?.trim(),
         website_url: input.website_url?.trim(),
+        max_items_per_poll: 10,
       };
   }
 }

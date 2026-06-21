@@ -6,6 +6,7 @@ import type {
 } from "./_workspace-types.ts";
 import { stripHtml } from "./_hiring-heuristics.ts";
 import type { RawCandidate } from "../types.ts";
+import { withinFreshnessWindow, maxAgeDaysFromConfig } from "./_freshness-window.ts";
 
 /**
  * Generic RSS / Atom adapter. Workspace-driven — config.url points at the
@@ -168,6 +169,7 @@ export const rssAdapter: WorkspaceAdapter = {
     }
     const fetchImpl = input.fetchImpl ?? globalThis.fetch;
     const timeoutMs = rssFetchTimeoutMs(input.source.config);
+    const maxAgeDays = maxAgeDaysFromConfig(input.source.config, 14);
     const response = await fetchImpl(url, {
       headers: { Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml" },
       signal: AbortSignal.timeout(timeoutMs),
@@ -177,6 +179,7 @@ export const rssAdapter: WorkspaceAdapter = {
     }
     const xml = await response.text();
     let items = await parseFeed(xml);
+    items = items.filter((it) => withinFreshnessWindow(it.freshness_at, maxAgeDays));
     const noveltyDomain = (input.source.config as { novelty_domain?: string }).novelty_domain;
     if (noveltyDomain) {
       items = items.map((it) => ({ ...it, novelty_hint: { domain: noveltyDomain } }));

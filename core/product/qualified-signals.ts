@@ -52,6 +52,8 @@ export interface QualifiedSignalItem {
   url: string | null;
   match_score: number | null;
   match_reason: string | null;
+  account_intent_score?: number;
+  account_signal_count?: number;
   freshness_at: Date;
   ingested_at: Date;
   matched_at: Date | null;
@@ -110,6 +112,8 @@ interface QualifiedSignalRow {
   company_domain: string | null;
   company_industry: string | null;
   company_description: string | null;
+  account_intent_score: string | null;
+  account_signal_count: string | number | null;
   contact_candidates: unknown;
   graph_candidates: unknown;
   contact_channel: string | null;
@@ -238,10 +242,14 @@ export async function loadQualifiedSignalWorkbench(
     `with qualified_signals as (
        select s.*
          from signals s
+         left join account_intent_scores seed_account_intent
+           on seed_account_intent.workspace_id = s.workspace_id
+          and seed_account_intent.company_id = s.related_company_id
         where s.workspace_id = $1
           and s.status in ('matched', 'in_play')
           and s.related_company_id is not null
-        order by coalesce(s.match_score, 0) desc,
+        order by coalesce(seed_account_intent.composite_score, 0) desc,
+                 coalesce(s.match_score, 0) desc,
                  s.freshness_at desc,
                  s.ingested_at desc
         limit greatest($2::int * 5, 250)
@@ -262,6 +270,8 @@ export async function loadQualifiedSignalWorkbench(
             co.domain::text as company_domain,
             co.industry as company_industry,
             co.description as company_description,
+            coalesce(account_intent.composite_score, 0)::text as account_intent_score,
+            coalesce(account_intent.live_signal_count, 1) as account_signal_count,
             resolved.payload->'candidates' as contact_candidates,
             resolved.payload->>'channel' as contact_channel,
             deferred.payload->>'defer_reason' as contact_defer_reason,
@@ -288,6 +298,27 @@ export async function loadQualifiedSignalWorkbench(
        left join graph_companies co
          on co.id = s.related_company_id
         and co.workspace_id = s.workspace_id
+       left join lateral (
+         select ais.composite_score,
+                ais.live_signal_count
+           from account_intent_scores ais
+          where ais.workspace_id = s.workspace_id
+            and (
+              ais.company_id = s.related_company_id
+              or (
+                co.domain is not null
+                and ais.normalized_domain = co.domain
+              )
+            )
+          order by
+               case
+                 when ais.company_id = s.related_company_id then 0
+                 else 1
+               end,
+               ais.updated_at desc,
+               ais.company_id asc
+          limit 1
+       ) account_intent on true
        left join lateral (
          select e.occurred_at
            from events e
@@ -522,6 +553,7 @@ export async function loadQualifiedSignalWorkbench(
           limit 1
        ) draft on true
       order by
+               coalesce(account_intent.composite_score, 0) desc,
                case
                  when draft.message_id is not null
                    and (
@@ -587,7 +619,8 @@ function compareQualifiedSignalRows(
   right: QualifiedSignalRow,
   now: Date,
 ): number {
-  return qualifiedSignalBucket(left) - qualifiedSignalBucket(right) ||
+  return accountIntentScore(right) - accountIntentScore(left) ||
+    qualifiedSignalBucket(left) - qualifiedSignalBucket(right) ||
     signalIntentScore(right, now) - signalIntentScore(left, now) ||
     right.freshness_at.getTime() - left.freshness_at.getTime() ||
     right.ingested_at.getTime() - left.ingested_at.getTime() ||
@@ -611,6 +644,10 @@ function signalIntentScore(row: QualifiedSignalRow, now: Date): number {
     match_score: parseNumber(row.match_score),
     freshness_at: row.freshness_at,
   }, now).intent_score;
+}
+
+function accountIntentScore(row: QualifiedSignalRow): number {
+  return parseNumber(row.account_intent_score) ?? 0;
 }
 
 function mapQualifiedSignalRow(row: QualifiedSignalRow): QualifiedSignalItem {
@@ -648,6 +685,9 @@ function mapQualifiedSignalRow(row: QualifiedSignalRow): QualifiedSignalItem {
     url: normalizeNullableSignalDisplayText(row.url),
     match_score: parseNumber(row.match_score),
     match_reason: normalizeNullableSignalDisplayText(row.match_reason),
+    account_intent_score: accountIntentScore(row),
+    account_signal_count:
+      row.account_signal_count == null ? 1 : numericCount(row.account_signal_count),
     freshness_at: row.freshness_at,
     ingested_at: row.ingested_at,
     matched_at: row.matched_at,

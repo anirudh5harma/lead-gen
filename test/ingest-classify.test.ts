@@ -513,6 +513,82 @@ test("classify: non-JSON model output fails closed (dismissed, not crashed)", as
   }
 });
 
+test("classify: fenced JSON is tolerated on first attempt", async (t) => {
+  const fx = await setupPg("cls_fenced");
+  if (!fx) return t.skip("DATABASE_URL not set");
+  const bus = await createProjectingBus(fx.pool);
+  try {
+    const { workspace_id, icp_funding_id } = await seedWorkspace(fx.pool);
+    const signal_id = await insertSignal(fx.pool, workspace_id, { kind: null });
+    const llm = mockLlmContent(
+      "```json\n" +
+        JSON.stringify({
+          kind: "funding",
+          per_icp: [{ icp_id: icp_funding_id, score: 0.9, reason: "Fenced but valid." }],
+        }) +
+        "\n```",
+    );
+    const result = await classifySignal({ pool: fx.pool, bus, llm }, { signal_id });
+    assert.equal(result.status, "matched");
+    if (result.status === "matched") assert.equal(result.kind, "funding");
+  } finally {
+    await fx.close();
+  }
+});
+
+test("classify: prose-prefixed JSON is tolerated on first attempt", async (t) => {
+  const fx = await setupPg("cls_prose");
+  if (!fx) return t.skip("DATABASE_URL not set");
+  const bus = await createProjectingBus(fx.pool);
+  try {
+    const { workspace_id, icp_funding_id } = await seedWorkspace(fx.pool);
+    const signal_id = await insertSignal(fx.pool, workspace_id, { kind: null });
+    const llm = mockLlmContent(
+      "Here is the classification:\n" +
+        JSON.stringify({
+          kind: "funding",
+          per_icp: [{ icp_id: icp_funding_id, score: 0.88, reason: "Prose-prefixed." }],
+        }),
+    );
+    const result = await classifySignal({ pool: fx.pool, bus, llm }, { signal_id });
+    assert.equal(result.status, "matched");
+  } finally {
+    await fx.close();
+  }
+});
+
+test("classify: retry recovers a signal when first attempt is garbage", async (t) => {
+  const fx = await setupPg("cls_retry");
+  if (!fx) return t.skip("DATABASE_URL not set");
+  const bus = await createProjectingBus(fx.pool);
+  try {
+    const { workspace_id, icp_funding_id } = await seedWorkspace(fx.pool);
+    const signal_id = await insertSignal(fx.pool, workspace_id, { kind: null });
+    const goodJson = JSON.stringify({
+      kind: "funding",
+      per_icp: [{ icp_id: icp_funding_id, score: 0.91, reason: "Recovered on retry." }],
+    });
+    let callCount = 0;
+    const llm: LLMClient = {
+      async complete() {
+        callCount++;
+        return {
+          content: callCount === 1 ? "Sorry, I strayed into prose." : goodJson,
+          model: "deepseek-v4-pro",
+          finish_reason: "stop",
+          usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+        };
+      },
+    };
+    const result = await classifySignal({ pool: fx.pool, bus, llm }, { signal_id });
+    assert.equal(callCount, 2);
+    assert.equal(result.status, "matched");
+    if (result.status === "matched") assert.equal(result.kind, "funding");
+  } finally {
+    await fx.close();
+  }
+});
+
 // ─── startClassifyWorkflow: subscription wiring ───────────────────────────
 
 test("workflow: subscribes to signal.ingested and processes asynchronously", async (t) => {

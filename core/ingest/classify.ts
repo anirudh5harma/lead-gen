@@ -179,6 +179,70 @@ function buildUserPrompt(row: SignalRow, shortlist: HybridIcpCandidate[]): strin
   return lines.filter(Boolean).join("\n");
 }
 
+const RETRY_SYSTEM_PROMPT = `Your previous response was not valid JSON. Return ONLY the JSON object — no prose, no code fences, no explanation. Start with { and end with }.`;
+
+async function callClassifier(
+  deps: ClassifyDeps,
+  signal: SignalRow,
+  shortlist: HybridIcpCandidate[],
+): Promise<ClassifyOutput | null> {
+  const userPrompt = buildUserPrompt(signal, shortlist);
+  const baseRequest = {
+    model: deps.model,
+    temperature: deps.temperature ?? 0.1,
+    max_tokens: 1200,
+    response_format: { type: "json_object" as const },
+  };
+  const firstResponse = await deps.llm.complete({
+    ...baseRequest,
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: userPrompt },
+    ],
+  });
+  const firstParsed = parseClassifierJson(firstResponse.content);
+  if (firstParsed) return firstParsed;
+
+  const retryResponse = await deps.llm.complete({
+    ...baseRequest,
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: userPrompt },
+      { role: "assistant", content: firstResponse.content },
+      { role: "system", content: RETRY_SYSTEM_PROMPT },
+    ],
+  });
+  return parseClassifierJson(retryResponse.content);
+}
+
+function parseClassifierJson(content: string): ClassifyOutput | null {
+  const extracted = extractJsonObject(content);
+  if (!extracted) return null;
+  try {
+    return ClassifyOutput.parse(JSON.parse(extracted));
+  } catch {
+    return null;
+  }
+}
+
+function extractJsonObject(content: string): string | null {
+  const trimmed = content.trim();
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+    return trimmed;
+  }
+  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenceMatch?.[1]) {
+    const inner = fenceMatch[1].trim();
+    if (inner.startsWith("{") && inner.endsWith("}")) return inner;
+  }
+  const first = trimmed.indexOf("{");
+  const last = trimmed.lastIndexOf("}");
+  if (first !== -1 && last > first) {
+    return trimmed.slice(first, last + 1);
+  }
+  return null;
+}
+
 export async function classifySignal(
   deps: ClassifyDeps,
   input: ClassifyInput,
@@ -237,23 +301,8 @@ export async function classifySignal(
     return { status: "skipped", reason: "budget" };
   }
 
-  const response = await deps.llm.complete({
-    model: deps.model,
-    temperature: deps.temperature ?? 0.1,
-    max_tokens: 600,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: buildUserPrompt(signal, shortlistedCandidates) },
-    ],
-  });
-
-  let parsed: ClassifyOutput;
-  try {
-    parsed = ClassifyOutput.parse(JSON.parse(response.content));
-  } catch {
-    // Fail closed: mark dismissed and move on. Stage 2 is supposed to
-    // produce JSON; a stray paragraph is a model glitch.
+  const parsed = await callClassifier(deps, signal, shortlistedCandidates);
+  if (!parsed) {
     await emitClassification(deps, signal, {
       kind: signal.kind,
       disposition: "dismissed",

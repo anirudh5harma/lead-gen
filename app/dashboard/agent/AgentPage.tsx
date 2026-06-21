@@ -24,6 +24,7 @@ import {
   type QualifiedSignalWorkbench,
 } from "@/core/product/qualified-signals.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
+import { getHeatingUpAccountCount } from "@/core/ingest/account-intent.ts";
 import { getActiveWorkspaceSessionForDashboard } from "@/lib/workspace";
 import {
   checkAgentSourcesAction,
@@ -364,6 +365,7 @@ interface RepsState {
   learning: AgentLearningSummary;
   signalMix: AgentSignalMix;
   outputDestinations: OutputDestination[];
+  heatingUpAccounts: number;
 }
 
 async function loadRepsState(workspaceId: string): Promise<RepsState> {
@@ -382,6 +384,7 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
     contacts,
     learning,
     signalMix,
+    heatingUpAccounts,
   ] = await Promise.all([
     loadDashboardData(
       "agent",
@@ -535,6 +538,12 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
       emptyState.signalMix,
       () => loadAgentSignalMix(workspaceId),
     ),
+    loadDashboardData(
+      "agent",
+      "heating up accounts",
+      0,
+      () => getHeatingUpAccountCount(getPool(), workspaceId),
+    ),
   ]);
   const channelRows = channels;
   const coverage = workspaceChannelCoverage(channelRows);
@@ -560,6 +569,7 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
       ),
       launch_ready: readiness.launch_ready,
     }),
+    heatingUpAccounts,
   };
 }
 
@@ -1709,6 +1719,7 @@ export default async function RepsPage() {
         primaryAgent={primaryAgent}
         reps={visibleReps}
         outreach={state.outreach}
+        heatingUpAccounts={state.heatingUpAccounts}
       />
 
       <AgentConversationsPanel
@@ -1747,6 +1758,7 @@ function AgentTopStrip({
   primaryAgent,
   reps,
   outreach,
+  heatingUpAccounts,
 }: {
   readiness: WorkspaceLaunchReadiness;
   coverage: ChannelCoverage;
@@ -1754,6 +1766,7 @@ function AgentTopStrip({
   primaryAgent: RepRow | null;
   reps: RepRow[];
   outreach: AgentOutreachSummary;
+  heatingUpAccounts: number;
 }) {
   const channelConnected = coverage.email.connected || coverage.linkedIn.connected;
   const next = channelConnected
@@ -1794,6 +1807,16 @@ function AgentTopStrip({
               {learning.meetings_7d} meeting
               {learning.meetings_7d === 1 ? "" : "s"} booked this week
             </span>
+            {heatingUpAccounts > 0 ? (
+              <span
+                className="inline-flex items-center gap-1.5 rounded-[8px] bg-[var(--color-warn-bg)] px-2.5 py-1 text-xs font-medium text-[var(--color-warn)]"
+                title="Accounts with multiple recent buying signals"
+              >
+                <Icon name="radar" size={13} />
+                {heatingUpAccounts} account
+                {heatingUpAccounts === 1 ? "" : "s"} heating up
+              </span>
+            ) : null}
           </div>
           <h1
             className="mt-3 text-2xl font-semibold tracking-normal text-[var(--color-text-1)] md:text-3xl"
@@ -2869,6 +2892,7 @@ async function loadSafeRepsState(workspaceId: string): Promise<RepsState> {
 function emptyRepsState(workspaceId: string): RepsState {
   return {
     reps: [],
+    heatingUpAccounts: 0,
     channels: [],
     readiness: {
       workspace_id: workspaceId,
@@ -3952,6 +3976,15 @@ function AgentLeadRow({ signal }: { signal: QualifiedSignalItem }) {
         >
           {leadStatus.label}
         </span>
+        {(signal.account_signal_count ?? 1) >= 2 ? (
+          <span
+            className="inline-flex items-center gap-1 rounded-[8px] bg-[var(--color-warn-bg)] px-2.5 py-1 text-xs font-medium text-[var(--color-warn)]"
+            title="This account has multiple recent buying signals"
+          >
+            <Icon name="radar" size={12} />
+            Hot · {signal.account_signal_count} signals
+          </span>
+        ) : null}
         {score == null ? null : (
           <span className="rounded-[8px] bg-[var(--color-accent-bg)] px-2.5 py-1 text-xs text-[var(--color-accent)]">
             {score}% fit
