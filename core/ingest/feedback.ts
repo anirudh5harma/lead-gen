@@ -154,6 +154,7 @@ export async function projectSignalFeedbackFromOutcome(
     signal_kind: feedback.signal_kind,
     last_event_id: event.id,
   });
+  await reflectSourceFeedbackModifiers(pool, event.workspace_id, feedback.source);
 
   if (!workspaceStats.changed) return;
 
@@ -174,6 +175,17 @@ export async function projectSignalFeedbackFromOutcome(
       updated_at: workspaceStats.stats.updated_at,
     },
   });
+}
+
+async function reflectSourceFeedbackModifiers(
+  pool: Pool,
+  workspace_id: string,
+  source: string,
+): Promise<void> {
+  const workspaceModifier = await loadScopedSourceModifier(pool, workspace_id, source);
+  const globalModifier = await loadScopedSourceModifier(pool, null, source);
+  await persistWorkspaceSourceModifier(pool, workspace_id, source, workspaceModifier);
+  await persistGlobalSourceModifier(pool, source, globalModifier);
 }
 
 async function loadAttributedSignalFeedbackContext(
@@ -330,6 +342,58 @@ async function aggregateFeedbackStats(
     positive_outcomes: 0,
     signals_surfaced: 0,
   };
+}
+
+async function loadScopedSourceModifier(
+  pool: Pool,
+  workspace_id: string | null,
+  source: string,
+): Promise<number> {
+  const stats = await aggregateFeedbackStats(pool, {
+    workspace_id,
+    source,
+  });
+  return stats.row_count > 0
+    ? computeLearnedModifier(stats.positive_outcomes, stats.signals_surfaced)
+    : 1;
+}
+
+async function persistWorkspaceSourceModifier(
+  pool: Pool,
+  workspace_id: string,
+  source: string,
+  modifier: number,
+): Promise<void> {
+  await pool.query(
+    `update graph_sources
+        set properties = coalesce(properties, '{}'::jsonb) ||
+          jsonb_build_object(
+            'signal_feedback',
+            coalesce(properties->'signal_feedback', '{}'::jsonb) ||
+              jsonb_build_object('source_modifier', $3::double precision)
+          )
+      where workspace_id = $1
+        and name = $2`,
+    [workspace_id, source, modifier],
+  );
+}
+
+async function persistGlobalSourceModifier(
+  pool: Pool,
+  source: string,
+  modifier: number,
+): Promise<void> {
+  await pool.query(
+    `update graph_sources
+        set properties = coalesce(properties, '{}'::jsonb) ||
+          jsonb_build_object(
+            'signal_feedback',
+            coalesce(properties->'signal_feedback', '{}'::jsonb) ||
+              jsonb_build_object('global_source_modifier', $2::double precision)
+          )
+      where name = $1`,
+    [source, modifier],
+  );
 }
 
 async function loadSignalFeedbackStatsRow(

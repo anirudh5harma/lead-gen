@@ -5,6 +5,7 @@ import type {
   EventBus,
   PublishedEvent,
 } from "../substrate/events/index.ts";
+import { loadLearnedSignalKindModifier } from "./feedback.ts";
 
 export interface SignalIntentKindConfig {
   base_strength: number;
@@ -93,6 +94,7 @@ export interface SignalIntentScoreInput {
   freshness_at: string | Date;
   match_score?: number | null;
   audience_confidence?: number | null;
+  kind_modifier?: number | null;
 }
 
 export interface SignalIntentContribution {
@@ -101,6 +103,7 @@ export interface SignalIntentContribution {
   freshness_at: string;
   age_hours: number;
   icp_fit: number;
+  kind_modifier: number;
   base_strength: number;
   half_life_hours: number;
   decayed_strength: number;
@@ -205,6 +208,7 @@ export function scoreSignalIntent(
   now: Date = new Date(),
 ): SignalIntentContribution {
   const config = signalIntentConfigForKind(input.kind);
+  const kind_modifier = normalizeModifier(input.kind_modifier);
   const freshness_at = asDate(input.freshness_at);
   const age_hours = freshness_at
     ? Math.max(0, (now.getTime() - freshness_at.getTime()) / 3_600_000)
@@ -213,8 +217,9 @@ export function scoreSignalIntent(
     match_score: input.match_score ?? null,
     audience_confidence: input.audience_confidence ?? null,
   });
+  const base_strength = roundScore(config.base_strength * kind_modifier);
   const decayed_strength = decayedWeight(
-    config.base_strength,
+    base_strength,
     age_hours,
     config.half_life_hours,
   );
@@ -224,7 +229,8 @@ export function scoreSignalIntent(
     freshness_at: freshness_at?.toISOString() ?? new Date(0).toISOString(),
     age_hours: roundScore(age_hours),
     icp_fit,
-    base_strength: config.base_strength,
+    kind_modifier: roundScore(kind_modifier),
+    base_strength,
     half_life_hours: config.half_life_hours,
     decayed_strength: roundScore(decayed_strength),
     intent_score: roundScore(decayed_strength * icp_fit),
@@ -390,6 +396,11 @@ export async function listAccountsByCompositeIntent(
         and status = any($3::signal_status[])`,
     [workspace_id, companyIds, [...LIVE_SIGNAL_STATUSES]],
   );
+  const kindModifiers = await loadSignalKindModifiers(
+    pool,
+    workspace_id,
+    signals.map((signal) => signal.kind),
+  );
   const signalsByCompany = new Map<string, SignalIntentScoreInput[]>();
   for (const signal of signals) {
     const entries = signalsByCompany.get(signal.company_id) ?? [];
@@ -399,6 +410,7 @@ export async function listAccountsByCompositeIntent(
       match_score: parseNumeric(signal.match_score),
       audience_confidence: audienceConfidence(signal.audience_hint),
       freshness_at: signal.freshness_at,
+      kind_modifier: signal.kind ? kindModifiers.get(signal.kind) ?? 1 : 1,
     });
     signalsByCompany.set(signal.company_id, entries);
   }
@@ -458,6 +470,11 @@ async function recomputeAccountIntentReadModel(
     );
   }
   const signals = await loadLiveSignalsForCompany(pool, workspace_id, company_id);
+  const kindModifiers = await loadSignalKindModifiers(
+    pool,
+    workspace_id,
+    signals.map((signal) => signal.kind),
+  );
   const snapshot = computeAccountCompositeIntentScore(
     signals.map((signal) => ({
       signal_id: signal.signal_id,
@@ -465,6 +482,7 @@ async function recomputeAccountIntentReadModel(
       match_score: parseNumeric(signal.match_score),
       audience_confidence: audienceConfidence(signal.audience_hint),
       freshness_at: signal.freshness_at,
+      kind_modifier: signal.kind ? kindModifiers.get(signal.kind) ?? 1 : 1,
     })),
     opts.computedAt,
   );
@@ -638,6 +656,20 @@ function parseNumeric(value: string | number | null | undefined): number | null 
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+async function loadSignalKindModifiers(
+  pool: Pool,
+  workspace_id: string,
+  kinds: readonly (SignalKind | null)[],
+): Promise<Map<SignalKind, number>> {
+  const uniqueKinds = [...new Set(kinds.filter((kind): kind is SignalKind => kind !== null))];
+  const modifiers = await Promise.all(
+    uniqueKinds.map(async (kind) => {
+      return [kind, await loadLearnedSignalKindModifier(pool, workspace_id, kind)] as const;
+    }),
+  );
+  return new Map(modifiers);
+}
+
 function clampNonNegative(value: unknown): number | null {
   const parsed = typeof value === "number"
     ? value
@@ -645,6 +677,15 @@ function clampNonNegative(value: unknown): number | null {
       ? Number(value)
       : Number.NaN;
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function normalizeModifier(value: unknown): number {
+  const parsed = typeof value === "number"
+    ? value
+    : typeof value === "string" && value.trim()
+      ? Number(value)
+      : Number.NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
 }
 
 function roundScore(value: number): number {

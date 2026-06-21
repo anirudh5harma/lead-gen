@@ -14,6 +14,7 @@ export interface SignalQualityInput {
   source_name: string;
   source_config: Record<string, unknown>;
   source_properties?: Record<string, unknown> | null;
+  source_modifier?: number | null;
   item: RawCandidate;
   kind: SignalKind | null;
   now?: Date;
@@ -32,7 +33,9 @@ export function deriveSignalQualityMetadata(
   input: SignalQualityInput,
 ): SignalQualityMetadata {
   const tier = sourceTier(input);
-  const authority = sourceAuthority(tier, input);
+  const authority = clamp01(
+    sourceAuthority(tier, input) * learnedSourceModifier(input),
+  );
   const normalizedUrl = canonicalUrl(input.item.url);
   const originalUrl = stringValue(input.item.url);
   const credibilityReasons = credibilityReasonsFor(input, tier);
@@ -126,6 +129,29 @@ function sourceAuthority(
     case "unknown":
       return 0.45;
   }
+}
+
+function learnedSourceModifier(input: SignalQualityInput): number {
+  const configured = numberValue(input.source_modifier);
+  if (configured !== null && configured > 0) return configured;
+
+  const feedback = input.source_properties?.signal_feedback;
+  if (feedback && typeof feedback === "object") {
+    const workspaceModifier = numberValue(
+      (feedback as Record<string, unknown>).source_modifier,
+    );
+    if (workspaceModifier !== null && workspaceModifier > 0) {
+      return workspaceModifier;
+    }
+    const globalModifier = numberValue(
+      (feedback as Record<string, unknown>).global_source_modifier,
+    );
+    if (globalModifier !== null && globalModifier > 0) {
+      return globalModifier;
+    }
+  }
+
+  return 1;
 }
 
 function credibilityReasonsFor(

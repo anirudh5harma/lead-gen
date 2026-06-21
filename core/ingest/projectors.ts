@@ -9,6 +9,7 @@ import { connect } from "../graph/edges/index.ts";
 import { upsertCompany } from "../graph/nodes/companies.ts";
 import { vectorToPgLiteral } from "./embeddings.ts";
 import { projectAccountIntentFromEvent } from "./account-intent.ts";
+import { createSignalFeedbackProjection } from "./feedback.ts";
 
 type SignalProjectionType =
   | "signal.discovered"
@@ -19,7 +20,8 @@ type SignalProjectionType =
   | "signal.company.linked"
   | "signal.classification.completed"
   | "signal.dismissal.requested"
-  | "signal.expiry.requested";
+  | "signal.expiry.requested"
+  | "outcome.recorded";
 
 export interface SignalProjectorDeps {
   pool: Pool;
@@ -43,6 +45,7 @@ export async function registerSignalProjectors(
   deps: SignalProjectorDeps,
   subscriber: SignalProjectorSubscriber = defaultSubscriber(deps.bus),
 ): Promise<Subscription[]> {
+  const signalFeedbackProjection = createSignalFeedbackProjection(deps.pool, deps.bus);
   return Promise.all([
     subscriber.subscribe(
       "signal.discovered",
@@ -194,6 +197,11 @@ export async function registerSignalProjectors(
       "signal.matched",
       (event) => projectAccountIntentFromEvent(deps.pool, deps.bus, event),
       "account_intent_signal_matched_projector",
+    ),
+    subscriber.subscribe(
+      "outcome.recorded",
+      (event) => signalFeedbackProjection.apply(event),
+      signalFeedbackProjection.name,
     ),
   ]);
 }
