@@ -694,7 +694,7 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /<div id="thumb" className="scroll-mt-28">/);
   assert.match(reps, /<span id="review-queue" className="sr-only"/);
   assert.match(reps, /title="Needs your thumb"/);
-  assert.match(reps, /These drafts are ready for email or LinkedIn/);
+  assert.match(reps, /<AgentReviewRowCard key=\{approval\.id\} approval=\{approval\}/);
   assert.match(reps, /AgentOutreachLink message=\{item\.message\}/);
   assert.match(reps, /title="Conversations"/);
   assert.match(reps, /Email and LinkedIn threads/);

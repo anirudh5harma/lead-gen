@@ -5736,36 +5736,16 @@ function AgentReviewQueuePanel({
             }}
           />
         ) : (
-          <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
-            <aside className="grid h-fit gap-3 rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
-              <span className="grid size-9 place-items-center rounded-[8px] bg-[var(--color-warn-bg)] text-[var(--color-warn)]">
-                <Icon name="rate_review" size={17} />
-              </span>
-              <div>
-                <p className="text-sm font-semibold text-[var(--color-text-1)]">
-                  Approve or reject
-                </p>
-                <p className="mt-2 text-xs leading-5 text-[var(--color-text-3)]">
-                  These drafts are ready for email or LinkedIn. Your thumb
-                  decides whether the next message leaves.
-                </p>
-              </div>
-              <span className="rounded-[10px] bg-[var(--color-warn-bg)] px-3 py-2 text-sm font-semibold tabular-nums text-[var(--color-warn)]">
-                {reviews.pending_count} waiting
-              </span>
-            </aside>
-
-            <div className="grid gap-2">
-              {reviews.recent.map((approval) => (
-                <AgentReviewRowCard key={approval.id} approval={approval} />
-              ))}
-              {reviews.pending_count > visibleCount ? (
-                <p className="rounded-[8px] bg-[var(--color-ink-2)] px-3 py-2 text-xs text-[var(--color-text-3)]">
-                  +{reviews.pending_count - visibleCount} more waiting behind
-                  the same approval step.
-                </p>
-              ) : null}
-            </div>
+          <div className="grid gap-2">
+            {reviews.recent.map((approval) => (
+              <AgentReviewRowCard key={approval.id} approval={approval} />
+            ))}
+            {reviews.pending_count > visibleCount ? (
+              <p className="rounded-[8px] bg-[var(--color-ink-2)] px-3 py-2 text-xs text-[var(--color-text-3)]">
+                +{reviews.pending_count - visibleCount} more waiting behind the
+                same approval step.
+              </p>
+            ) : null}
           </div>
         )}
       </SurfaceSection>

@@ -685,9 +685,29 @@ export default async function ProfilePage() {
     user_id: active.user_id,
   });
   const [profile, state, readiness] = await Promise.all([
-    getProductCompanyProfile(pool, productSession),
+    loadDashboardData<ProductCompanyProfile | null>(
+      "profile",
+      "company profile",
+      null,
+      () => getProductCompanyProfile(pool, productSession),
+    ),
     loadProfileState(active.workspace.id, active.user_id),
-    getProductLaunchReadiness({ required_channel: "any" }, productSession),
+    loadDashboardData<ProductLaunchReadinessResult>(
+      "profile",
+      "launch readiness",
+      {
+        workspace_id: active.workspace.id,
+        checked_at: new Date().toISOString(),
+        required_channel: "any",
+        status: "blocked",
+        launch_ready: false,
+        next_action: "configure_profile",
+        checks: [],
+        blockers: [],
+        warnings: [],
+      },
+      () => getProductLaunchReadiness({ required_channel: "any" }, productSession),
+    ),
   ]);
   const identity = await getRequestAuthIdentity();
   const mode = profileMode(state.settings, state.approvals);
