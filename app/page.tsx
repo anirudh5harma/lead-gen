@@ -58,15 +58,6 @@ const FEATURES = [
   },
 ]
 
-const STACK = [
-  { icon: 'edit', title: 'Copywriting', desc: 'Personalized at scale', tone: 'pink' },
-  { icon: 'account_tree', title: 'Sequencing', desc: 'Adaptive multi-step plays', tone: 'blue' },
-  { icon: 'sensors', title: 'Signals', desc: '15+ buying signals tracked', tone: 'yellow' },
-  { icon: 'travel_explore', title: 'Finder', desc: 'TAM graph + lookalikes', tone: 'green' },
-  { icon: 'verified', title: 'Verification', desc: 'Email + LinkedIn proof', tone: 'blue' },
-  { icon: 'auto_graph', title: 'Learning', desc: 'Win patterns by week', tone: 'pink' },
-]
-
 const STEPS = [
   {
     number: '01',
@@ -106,26 +97,12 @@ const TONE_DOT: Record<string, string> = {
   blue: 'bg-[var(--color-brand-blue)]',
 }
 
-// Solid brand fill used for the "six tools" hover-sweep + feature aurora.
+// Solid brand fill used for the feature-card aurora.
 const TONE_SWEEP: Record<string, string> = {
   pink: 'bg-[var(--color-brand-pink)]',
   yellow: 'bg-[var(--color-brand-yellow)]',
   green: 'bg-[var(--color-brand-green)]',
   blue: 'bg-[var(--color-brand-blue)]',
-}
-
-// Ink-on-brand text once a card is swept with its brand color.
-const TONE_HOVER_TITLE: Record<string, string> = {
-  pink: 'group-hover:text-[#9a0103]',
-  yellow: 'group-hover:text-[#441f16]',
-  green: 'group-hover:text-[#273416]',
-  blue: 'group-hover:text-[#0a0d27]',
-}
-const TONE_HOVER_BODY: Record<string, string> = {
-  pink: 'group-hover:text-[#9a0103cc]',
-  yellow: 'group-hover:text-[#441f16cc]',
-  green: 'group-hover:text-[#273416cc]',
-  blue: 'group-hover:text-[#0a0d27cc]',
 }
 
 export default function Home() {
@@ -296,48 +273,6 @@ export default function Home() {
                     </p>
                   </div>
                 </article>
-              </ScrollReveal>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* STACK GRID */}
-      <section id="signals" className="relative scroll-mt-24 border-t border-[var(--color-line-1)]">
-        <div className="mx-auto w-full max-w-[1280px] px-4 py-20 md:px-8 md:py-28 lg:px-12">
-          <ScrollReveal>
-            <div className="mb-12 max-w-[640px]">
-              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-text-3)]">
-                Replaces six tools
-              </p>
-              <h2
-                className="mt-4 text-[clamp(1.75rem,3.6vw,2.75rem)] font-bold leading-[1.08] tracking-[-0.02em] text-[var(--color-text-1)]"
-                style={{ fontFamily: 'var(--font-display)' }}
-              >
-                One agent. One bill. One source of truth.
-              </h2>
-            </div>
-          </ScrollReveal>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-            {STACK.map((card, i) => (
-              <ScrollReveal key={card.title} delay={i * 0.05}>
-                <div className="group relative h-full overflow-hidden rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-5 transition-[transform,border-color] duration-300 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] hover:-translate-y-1 hover:border-transparent hover:shadow-[0_18px_40px_-24px_rgba(0,0,0,0.22)]">
-                  <div
-                    aria-hidden
-                    className={`pointer-events-none absolute inset-0 translate-y-full transition-transform duration-[450ms] ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:translate-y-0 ${TONE_SWEEP[card.tone]}`}
-                  />
-                  <div className="relative">
-                    <div className={`mb-4 inline-flex size-10 items-center justify-center rounded-[10px] transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover:scale-110 group-hover:-rotate-6 group-hover:bg-[var(--color-ink-0)] ${TONE_BG[card.tone]}`}>
-                      <Icon name={card.icon} size={18} />
-                    </div>
-                    <p className={`text-[15px] font-semibold tracking-[-0.01em] text-[var(--color-text-1)] transition-colors duration-300 ${TONE_HOVER_TITLE[card.tone]}`}>
-                      {card.title}
-                    </p>
-                    <p className={`mt-1 text-[12.5px] leading-[1.5] tracking-[-0.01em] text-[var(--color-text-3)] transition-colors duration-300 ${TONE_HOVER_BODY[card.tone]}`}>
-                      {card.desc}
-                    </p>
-                  </div>
-                </div>
               </ScrollReveal>
             ))}
           </div>

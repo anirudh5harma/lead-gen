@@ -10,7 +10,6 @@ export const CONTACT_EMAIL = 'team@bombsell.com'
 
 const NAV_LINKS: { label: string; href: string }[] = [
   { label: 'Product', href: '/#features' },
-  { label: 'Signals', href: '/#signals' },
   { label: 'How it works', href: '/#how' },
   { label: 'Pricing', href: '/pricing' },
 ]
@@ -18,7 +17,7 @@ const NAV_LINKS: { label: string; href: string }[] = [
 const FOOTER_LINKS: Record<string, { label: string; href: string; external?: boolean }[]> = {
   Product: [
     { label: 'Features', href: '/#features' },
-    { label: 'Signals', href: '/#signals' },
+    { label: 'How it works', href: '/#how' },
     { label: 'Pricing', href: '/pricing' },
   ],
   Company: [
