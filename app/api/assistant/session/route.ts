@@ -14,6 +14,8 @@ import {
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+// Realtime handshake + retries can exceed the platform default; give it room.
+export const maxDuration = 60;
 
 export async function POST(request: Request): Promise<Response> {
   return handleAssistantSessionRequest(request);
