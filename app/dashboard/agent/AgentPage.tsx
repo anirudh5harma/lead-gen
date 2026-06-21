@@ -3830,7 +3830,7 @@ function AgentLeadRow({ signal }: { signal: QualifiedSignalItem }) {
   const deferAction = contactDeferAction(signal.contact_defer_reason);
   const leadStatus = leadStatusLabel(signal);
   return (
-    <article className="grid gap-3 rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+    <article className="rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]">
       <Link
         href={href}
         prefetch
@@ -3864,7 +3864,7 @@ function AgentLeadRow({ signal }: { signal: QualifiedSignalItem }) {
         </span>
       </Link>
 
-      <div className="flex flex-wrap items-center gap-2 md:justify-end">
+      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--color-line-1)] pt-3">
         <span
           className={
             "rounded-[8px] px-2.5 py-1 text-xs font-medium " +
