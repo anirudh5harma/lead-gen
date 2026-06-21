@@ -19,67 +19,67 @@ export interface SignalIntentKindConfig {
  */
 export const SIGNAL_KIND_INTENT_CONFIG = {
   funding: {
-    base_strength: 1.25,
+    base_strength: 1,
     half_life_hours: 21 * 24,
     description: "Fresh funding usually signals budget, hiring, and stack change.",
   },
   hiring: {
-    base_strength: 1.1,
+    base_strength: 0.92,
     half_life_hours: 10 * 24,
     description: "A surge of GTM hiring is a strong workflow-change trigger.",
   },
   leadership_change: {
-    base_strength: 1.05,
+    base_strength: 0.88,
     half_life_hours: 14 * 24,
     description: "New executive ownership often resets tooling and process.",
   },
   product_launch: {
-    base_strength: 0.9,
+    base_strength: 0.74,
     half_life_hours: 7 * 24,
     description: "Launches matter, but urgency fades faster than financing or org change.",
   },
   acquisition: {
-    base_strength: 1,
+    base_strength: 0.84,
     half_life_hours: 21 * 24,
     description: "Acquisition and integration work can create real evaluation windows.",
   },
   churn_risk: {
-    base_strength: 1.2,
+    base_strength: 0.96,
     half_life_hours: 5 * 24,
     description: "Active dissatisfaction is urgent and commercially strong, but short-lived.",
   },
   competitor_move: {
-    base_strength: 1.1,
+    base_strength: 0.9,
     half_life_hours: 7 * 24,
     description: "Competitor-switching motion is valuable while the evaluation is active.",
   },
   podcast_mention: {
-    base_strength: 0.45,
+    base_strength: 0.32,
     half_life_hours: 5 * 24,
     description: "A single podcast mention is useful context, not strong standalone intent.",
   },
   press_mention: {
-    base_strength: 0.35,
+    base_strength: 0.22,
     half_life_hours: 4 * 24,
     description: "Broad press awareness is weak unless stacked with stronger signals.",
   },
   regulation: {
-    base_strength: 0.85,
+    base_strength: 0.7,
     half_life_hours: 14 * 24,
     description: "Compliance deadlines can create meaningful but slower-moving demand.",
   },
   expansion: {
-    base_strength: 1,
+    base_strength: 0.82,
     half_life_hours: 14 * 24,
     description: "New markets, offices, or geo moves often precede GTM system changes.",
   },
   layoff: {
-    base_strength: 0.8,
+    base_strength: 0.58,
     half_life_hours: 10 * 24,
     description: "Layoffs can change priorities, but urgency is more situational.",
   },
   other: {
-    base_strength: 0.5,
+    base_strength: 0.4,
     half_life_hours: 7 * 24,
     description: "Catch-all signals should never outrank the explicit GTM triggers above.",
   },
@@ -639,9 +639,12 @@ function parseNumeric(value: string | number | null | undefined): number | null 
 }
 
 function clampNonNegative(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0
+  const parsed = typeof value === "number"
     ? value
-    : null;
+    : typeof value === "string" && value.trim()
+      ? Number(value)
+      : Number.NaN;
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
 function roundScore(value: number): number {

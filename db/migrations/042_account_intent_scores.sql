@@ -18,7 +18,7 @@ create table account_intent_scores (
 );
 
 create index account_intent_scores_workspace_score_idx
-  on account_intent_scores (workspace_id, composite_score desc, latest_signal_freshness_at desc);
+  on account_intent_scores (workspace_id, composite_score desc);
 
 create index account_intent_scores_domain_idx
   on account_intent_scores (workspace_id, normalized_domain)

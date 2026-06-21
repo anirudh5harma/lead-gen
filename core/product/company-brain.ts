@@ -574,10 +574,29 @@ function memoryStoreConnectorStatus(
 }
 
 function compareCards(a: CompanyBrainCard, b: CompanyBrainCard): number {
+  const priority = cardKindPriority(b.kind) - cardKindPriority(a.kind);
+  if (priority !== 0) return priority;
   const confidence = (b.confidence ?? 0) - (a.confidence ?? 0);
   if (confidence !== 0) return confidence;
   return Date.parse(b.freshness_at ?? "1970-01-01T00:00:00.000Z") -
     Date.parse(a.freshness_at ?? "1970-01-01T00:00:00.000Z");
+}
+
+function cardKindPriority(kind: CompanyBrainCardKind): number {
+  switch (kind) {
+    case "signal":
+      return 6;
+    case "outcome":
+      return 5;
+    case "meeting_prep":
+      return 4;
+    case "profile":
+      return 3;
+    case "playbook":
+      return 2;
+    case "semantic_fact":
+      return 1;
+  }
 }
 
 function numericOrNull(value: unknown): number | null {

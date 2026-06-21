@@ -4,8 +4,12 @@ import type { EventBus, EventPayload } from "../substrate/events/index.ts";
 import type { LLMClient } from "../agents/llm/types.ts";
 import type { SignalKind } from "../primitives/signal.ts";
 import { listIcps, type IcpRow } from "./icps.ts";
-import { allMatchingIcps } from "./icp-filter.ts";
 import { ensureBudgetRow, reserveClassify } from "./budget.ts";
+import {
+  buildHybridIcpShortlist,
+  HYBRID_RANKER_CONFIG,
+  type HybridIcpCandidate,
+} from "./hybrid-ranker.ts";
 
 /**
  * Stage 2 classifier — the LLM-bearing step that turns an ingested signal
@@ -14,10 +18,10 @@ import { ensureBudgetRow, reserveClassify } from "./budget.ts";
  *
  *   1. Load the workspace's enabled ICPs.
  *   2. Reserve a classify slot against the workspace's daily budget.
- *   3. Run the structured must_haves pre-filter against every ICP —
- *      no LLM if zero ICPs would even potentially match.
- *   4. Build a prompt with the signal + ICP descriptions, ask DeepSeek
- *      for a JSON object:
+ *   3. Run hybrid retrieval: must_haves gate + vector + graph + intent
+ *      ranking, then keep only the top-N shortlist.
+ *   4. Build a prompt with the signal + shortlist, ask DeepSeek for a
+ *      JSON object that CONFIRMS the shortlist rather than finding ICPs:
  *        { kind, per_icp: [{ icp_id, score, reason }], dismissal_reason? }
  *   5. Emit `signal.classification.completed`; the Signal projector owns
  *      row mutation and emits `signal.matched`/`signal.dismissed`.
@@ -56,7 +60,7 @@ const ClassifyOutput = z.object({
 });
 type ClassifyOutput = z.infer<typeof ClassifyOutput>;
 
-const SYSTEM_PROMPT = `You classify outbound-GTM signals against a workspace's ICP segments.
+const SYSTEM_PROMPT = `You confirm a deterministic hybrid-ranked shortlist of outbound-GTM ICP matches.
 
 For a given signal (a job posting, a funding round, a leadership change, a press mention, etc.) you do TWO things:
 
@@ -65,11 +69,16 @@ For a given signal (a job posting, a funding round, a leadership change, a press
        acquisition · churn_risk · competitor_move · podcast_mention ·
        press_mention · regulation · expansion · layoff · other
 
-  2. Score the signal against EACH ICP segment provided. Score is 0..1.
+  2. Score the signal against EACH ICP segment provided in the shortlist. Score is 0..1.
      - 0.0     unrelated; the ICP doesn't care.
      - 0.5     plausibly relevant; not a clear fit.
      - 0.8+    strong fit; worth reaching out about.
      Provide a one-sentence reason per ICP.
+
+Rules:
+  - Only score the shortlist candidates provided.
+  - Do not invent, add, or rename ICP ids.
+  - Treat the hybrid scores as priors to confirm or down-rank, not as text to copy.
 
 Respond with a single JSON object and nothing else:
 
@@ -91,6 +100,7 @@ interface SignalRow {
   properties: Record<string, unknown> | null;
   structured: Record<string, unknown> | null;
   freshness_at: Date;
+  related_company_id: string | null;
 }
 
 export interface ClassifyDeps {
@@ -107,6 +117,10 @@ export interface ClassifyDeps {
   model?: string;
   /** Optional override of the temperature. Default 0.1. */
   temperature?: number;
+  /** Optional override of the hybrid shortlist bound. Default 5. */
+  hybrid_shortlist_limit?: number;
+  /** Optional override of the bounded hybrid history window. */
+  hybrid_history_signal_limit?: number;
 }
 
 export interface ClassifyInput {
@@ -125,7 +139,7 @@ export type ClassifyOutcome =
   | { status: "dismissed"; reason: string }
   | { status: "skipped"; reason: "no_icps" | "budget" | "not_found" | "non_json" | "filtered" };
 
-function buildUserPrompt(row: SignalRow, icps: IcpRow[]): string {
+function buildUserPrompt(row: SignalRow, shortlist: HybridIcpCandidate[]): string {
   const quality = signalQualityContext(row);
   const lines: string[] = [
     `Signal:`,
@@ -138,16 +152,27 @@ function buildUserPrompt(row: SignalRow, icps: IcpRow[]): string {
     row.structured ? `  structured: ${JSON.stringify(row.structured).slice(0, 600)}` : "",
     quality ? `  quality: ${JSON.stringify(quality).slice(0, 900)}` : "",
     "",
-    `ICP segments to score:`,
+    `Hybrid-ranked ICP shortlist to confirm:`,
   ];
-  for (const icp of icps) {
-    lines.push(`  - icp_id: ${icp.id}`);
+  for (const [index, candidate] of shortlist.entries()) {
+    const { icp, scores } = candidate;
+    lines.push(`  - rank: ${index + 1}`);
+    lines.push(`    icp_id: ${icp.id}`);
     lines.push(`    name: ${icp.name}`);
     lines.push(`    description: ${icp.description.slice(0, 600)}`);
     if (icp.nice_to_haves.length > 0) {
       lines.push(`    nice_to_haves: ${icp.nice_to_haves.slice(0, 10).join(", ")}`);
     }
     lines.push(`    threshold: ${icp.match_threshold}`);
+    lines.push(
+      `    hybrid_scores: ${JSON.stringify({
+        vec_sim: scores.vec_sim,
+        graph_prox: scores.graph_prox,
+        intent_prior: scores.intent_prior,
+        hybrid_score: scores.hybrid_score,
+        passed_must_haves: scores.passed_must_haves,
+      })}`,
+    );
   }
   lines.push("");
   lines.push("Return ONLY the JSON object.");
@@ -160,7 +185,8 @@ export async function classifySignal(
 ): Promise<ClassifyOutcome> {
   const { rows } = await deps.pool.query<SignalRow>(
     `select id, workspace_id, kind::text as kind, title, content, url,
-            properties, properties->'structured' as structured, freshness_at
+            properties, properties->'structured' as structured, freshness_at,
+            related_company_id::text as related_company_id
        from signals where id = $1`,
     [input.signal_id],
   );
@@ -183,19 +209,14 @@ export async function classifySignal(
     return { status: "skipped", reason: "no_icps" };
   }
 
-  // Cheap pre-filter: at least one ICP's must_haves must pass.
-  const filterCtx = {
-    candidate: {
-      kind: signal.kind,
-      title: signal.title,
-      url: signal.url,
-      ...(signalQualityContext(signal) ?? {}),
-      structured: signal.structured ?? {},
-      freshness_at: signal.freshness_at.toISOString(),
-    },
-  };
-  const candidateIcps = allMatchingIcps(icps, filterCtx);
-  if (candidateIcps.length === 0) {
+  const hybridShortlist = await buildHybridIcpShortlist(deps.pool, {
+    signal,
+    icps,
+    shortlist_limit: deps.hybrid_shortlist_limit ?? HYBRID_RANKER_CONFIG.shortlist_limit,
+    history_signal_limit:
+      deps.hybrid_history_signal_limit ?? HYBRID_RANKER_CONFIG.history_signal_limit,
+  });
+  if (hybridShortlist.ranked_candidates.length === 0) {
     await emitClassification(deps, signal, {
       kind: signal.kind,
       disposition: "dismissed",
@@ -206,6 +227,8 @@ export async function classifySignal(
     });
     return { status: "skipped", reason: "filtered" };
   }
+  const shortlistedCandidates = hybridShortlist.shortlist;
+  const shortlistedIcps = shortlistedCandidates.map((candidate) => candidate.icp);
 
   // Reserve an LLM-bearing call against the daily classify cap.
   await ensureBudgetRow(deps.pool, signal.workspace_id);
@@ -221,7 +244,7 @@ export async function classifySignal(
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: buildUserPrompt(signal, candidateIcps) },
+      { role: "user", content: buildUserPrompt(signal, shortlistedCandidates) },
     ],
   });
 
@@ -244,7 +267,7 @@ export async function classifySignal(
 
   // Decide matched ICPs: per-ICP score >= that ICP's threshold.
   const matched: Array<{ icp: IcpRow; score: number; reason: string }> = [];
-  const icpById = new Map(candidateIcps.map((i) => [i.id, i]));
+  const icpById = new Map(shortlistedIcps.map((icp) => [icp.id, icp]));
   for (const entry of parsed.per_icp) {
     const icp = icpById.get(entry.icp_id);
     if (!icp) continue;

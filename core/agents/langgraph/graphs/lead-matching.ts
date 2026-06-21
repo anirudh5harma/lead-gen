@@ -46,6 +46,23 @@ export interface LeadMatchingMatch {
   reason: string;
 }
 
+export interface LeadMatchingHybridShortlistCandidate {
+  icp_segment: string;
+  scores: {
+    vec_sim: number;
+    graph_prox: number;
+    intent_prior: number;
+    hybrid_score: number;
+    passed_must_haves: boolean;
+  };
+}
+
+export interface LeadMatchingHybridShortlist {
+  workspace_id: string;
+  signal_id: string;
+  candidates: LeadMatchingHybridShortlistCandidate[];
+}
+
 export interface LeadMatchingToolResult {
   workspace_id: string;
   signal_id: string;
@@ -79,6 +96,10 @@ export interface LeadMatchingGraphOptions {
   tools?: Partial<{
     signalMatch: string;
   }>;
+  hybridShortlistProvider?: (input: {
+    workspace_id: string;
+    signal_id: string;
+  }) => Promise<LeadMatchingHybridShortlist | null>;
   toolOptions?: LangGraphToolOptions;
 }
 
@@ -110,6 +131,34 @@ export function createLeadMatchingGraph(opts: LeadMatchingGraphOptions = {}) {
       }),
     )
     .addNode(
+      "shortlist",
+      traceLangGraphNode({
+        graph_name: LEAD_MATCHING_GRAPH_NAME,
+        node_name: "shortlist",
+        bus: opts.bus,
+        handler: async (state: BombsellLangGraphState) => {
+          const signal_id = signalIdFromState(state);
+          const workspace_id = state.workspace_id;
+          if (!workspace_id) {
+            throw new Error("lead matching graph requires workspace_id before shortlist");
+          }
+          const shortlist = opts.hybridShortlistProvider
+            ? await opts.hybridShortlistProvider({ workspace_id, signal_id })
+            : null;
+          return {
+            attributes: mergeAttributes(state, {
+              lead_matching_shortlist: shortlist,
+            }),
+            tool_results: shortlist
+              ? {
+                  lead_matching_shortlist: shortlist,
+                }
+              : {},
+          };
+        },
+      }),
+    )
+    .addNode(
       "match",
       traceLangGraphNode({
         graph_name: LEAD_MATCHING_GRAPH_NAME,
@@ -117,6 +166,10 @@ export function createLeadMatchingGraph(opts: LeadMatchingGraphOptions = {}) {
         bus: opts.bus,
         handler: async (state: BombsellLangGraphState) => {
           const signal_id = signalIdFromState(state);
+          // TODO(architecture): core/product/app.ts currently exposes
+          // `product.signal.match` with input { signal_id } only. Once that
+          // internal tool boundary is widened, pass the graph-computed hybrid
+          // shortlist through here instead of recomputing it inside classifySignal.
           const result = await invokeLangGraphTool<LeadMatchingToolResult>(
             tools.signalMatch,
             { signal_id },
@@ -159,7 +212,8 @@ export function createLeadMatchingGraph(opts: LeadMatchingGraphOptions = {}) {
       }),
     )
     .addEdge(START, "request")
-    .addEdge("request", "match")
+    .addEdge("request", "shortlist")
+    .addEdge("shortlist", "match")
     .addEdge("match", "rank")
     .addEdge("rank", END)
     .compile({ checkpointer: createLangGraphMemoryCheckpoint() });

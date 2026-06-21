@@ -509,6 +509,29 @@ const AccountIntentUpdated = z.object({
   updated_at: z.string().datetime(),
 });
 
+const SignalFeedbackUpdated = z.object({
+  source: z.string().min(1),
+  signal_kind: z.enum([
+    "funding",
+    "hiring",
+    "leadership_change",
+    "product_launch",
+    "acquisition",
+    "churn_risk",
+    "competitor_move",
+    "podcast_mention",
+    "press_mention",
+    "regulation",
+    "expansion",
+    "layoff",
+    "other",
+  ]),
+  positive_outcomes: z.number().int().nonnegative(),
+  signals_surfaced: z.number().int().nonnegative(),
+  learned_modifier: z.number().min(0.5).max(1.5),
+  updated_at: z.string().datetime(),
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Play / workflow lifecycle
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1700,6 +1723,7 @@ export const eventRegistry = {
   "signal.expired": SignalExpired,
   "signal.expiry.requested": SignalExpiryRequested,
   "account.intent.updated": AccountIntentUpdated,
+  "signal.feedback.updated": SignalFeedbackUpdated,
 
   "play.configured": PlayConfigured,
   "play.run.started": PlayRunStarted,
