@@ -15,13 +15,19 @@ import {
   type ConversationTrustReplyProof,
   type ConversationTrustTrace,
 } from "@/core/product/conversation-trust";
-import { getActiveWorkspace } from "@/lib/workspace";
+import { getActiveWorkspaceSessionForDashboard } from "@/lib/workspace";
 import {
   decideApprovalWithDraftAction,
   generateMeetingPrepAction,
 } from "@/app/dashboard/actions";
+import { loadDashboardData } from "../../../server-data";
 
 export const dynamic = "force-dynamic";
+
+type ConversationTrustTraceLoadResult =
+  | { status: "found"; trace: ConversationTrustTrace }
+  | { status: "missing" }
+  | { status: "unavailable" };
 
 function preview(body: string | null, max = 600): string {
   if (!body) return "(empty)";
@@ -629,7 +635,8 @@ export default async function AgentOutreachDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const workspace = await getActiveWorkspace();
+  const active = await getActiveWorkspaceSessionForDashboard("agent/outreach");
+  const workspace = active?.workspace ?? null;
   if (!workspace) {
     return (
       <section className="section-canvas p-6">
@@ -640,11 +647,22 @@ export default async function AgentOutreachDetailPage({
       </section>
     );
   }
-  const trace = await getConversationTrustTrace({
-    workspace_id: workspace.id,
-    conversation_id: id,
-  });
-  if (!trace) return notFound();
+  const loaded = await loadDashboardData<ConversationTrustTraceLoadResult>(
+    "agent/outreach",
+    "conversation trust trace",
+    { status: "unavailable" },
+    async () => {
+      const trace = await getConversationTrustTrace({
+        workspace_id: workspace.id,
+        conversation_id: id,
+      });
+      return trace ? { status: "found", trace } : { status: "missing" };
+    },
+  );
+  if (loaded.status === "missing") return notFound();
+  if (loaded.status === "unavailable") return <UnavailableOutreachDetail />;
+
+  const trace = loaded.trace;
   const {
     conversation: conv,
     messages,
@@ -839,6 +857,26 @@ export default async function AgentOutreachDetailPage({
           </p>
         </aside>
       </div>
+    </div>
+  );
+}
+
+function UnavailableOutreachDetail() {
+  return (
+    <div className="space-y-6">
+      <section className="section-canvas p-6">
+        <p className="brief-kicker">Agent</p>
+        <h1 className="mt-4 text-[34px] font-semibold leading-tight text-[var(--color-text-1)]">
+          Outreach temporarily unavailable.
+        </h1>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--color-text-2)]">
+          We could not load this conversation trace just now.
+        </p>
+      </section>
+      <EmptyState
+        title="Try again in a moment."
+        hint="Messages, approvals, channel evidence, and meeting prep will return after the workspace reconnects."
+      />
     </div>
   );
 }

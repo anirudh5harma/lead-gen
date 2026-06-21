@@ -6,8 +6,12 @@ import { getRequestAuthIdentity } from "@/lib/auth";
 import {
   normalizeCompanyWebsiteUrl,
 } from "@/core/product/company-profile";
-import { findCompletedOnboardingForAuthIdentity } from "@/lib/auth/onboarding";
+import {
+  findCompletedOnboardingForAuthIdentity,
+  type CompletedOnboarding,
+} from "@/lib/auth/onboarding";
 import { googleAuthPath, PRODUCT_HOME_PATH } from "@/lib/auth/next";
+import { loadDashboardData } from "../dashboard/server-data";
 import OnboardingForm from "./OnboardingForm";
 
 export const metadata: Metadata = {
@@ -35,7 +39,12 @@ export default async function OnboardingPage({
         : "/onboarding";
     redirect(googleAuthPath(next));
   }
-  const completed = await findCompletedOnboardingForAuthIdentity(identity);
+  const completed = await loadDashboardData<CompletedOnboarding | null>(
+    "onboarding",
+    "completed onboarding",
+    null,
+    () => findCompletedOnboardingForAuthIdentity(identity),
+  );
   if (completed) redirect(PRODUCT_HOME_PATH);
 
   return (

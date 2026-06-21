@@ -3,7 +3,10 @@ import { EmptyState } from "@/components/dashboard/Shell";
 import Icon from "@/components/Icon";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
 import { getPool } from "@/core/substrate/storage/index.ts";
-import { canUseWorkspaceOps, getActiveWorkspaceSession } from "@/lib/workspace";
+import {
+  canUseWorkspaceOps,
+  getActiveWorkspaceSessionForDashboard,
+} from "@/lib/workspace";
 import { listDeadLetteredDispatches } from "@/core/substrate/events/index.ts";
 import {
   checkProductReadinessCached,
@@ -15,6 +18,7 @@ import {
   type AgentObservabilitySummary,
   type AgentTraceSummary,
 } from "@/core/product/agent-observability";
+import { loadDashboardData } from "../server-data";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +26,57 @@ interface DispatchCounts {
   pending: number;
   delivered_24h: number;
   dead_lettered: number;
+}
+
+function emptyDispatchCounts(): DispatchCounts {
+  return {
+    pending: 0,
+    delivered_24h: 0,
+    dead_lettered: 0,
+  };
+}
+
+function unavailableReadiness(): ProductReadiness {
+  return {
+    service: "bombsell-product",
+    status: "degraded",
+    ready: false,
+    checked_at: new Date().toISOString(),
+    checks: [
+      {
+        name: "runtime health",
+        status: "degraded",
+        detail: "Runtime health is temporarily unavailable.",
+      },
+    ],
+  };
+}
+
+function emptyAgentObservabilitySummary(
+  workspaceId: string,
+): AgentObservabilitySummary {
+  return {
+    workspace_id: workspaceId,
+    generated_at: new Date().toISOString(),
+    lookback_hours: 24,
+    trace_id: null,
+    trace_count: 0,
+    span_count: 0,
+    error_span_count: 0,
+    blocked_span_count: 0,
+    deferred_span_count: 0,
+    eval_failure_count: 0,
+    total_prompt_tokens: 0,
+    total_completion_tokens: 0,
+    estimated_cost_usd: 0,
+    redaction: {
+      pii_redacted_trace_count: 0,
+      external_export_count: 0,
+      raw_export_blocked: false,
+    },
+    traces: [],
+    eval_failures: [],
+  };
 }
 
 async function loadDispatchCounts(workspaceId: string): Promise<DispatchCounts> {
@@ -41,10 +96,11 @@ async function loadDispatchCounts(workspaceId: string): Promise<DispatchCounts> 
          where workspace_id = $1 and status = 'dead_lettered') as dead_lettered`,
     [workspaceId],
   );
+  const row = rows[0] ?? null;
   return {
-    pending: Number(rows[0].pending),
-    delivered_24h: Number(rows[0].delivered_24h),
-    dead_lettered: Number(rows[0].dead_lettered),
+    pending: Number(row?.pending ?? 0),
+    delivered_24h: Number(row?.delivered_24h ?? 0),
+    dead_lettered: Number(row?.dead_lettered ?? 0),
   };
 }
 
@@ -60,7 +116,7 @@ function timeAgo(d: string | Date | null): string {
 }
 
 export default async function HealthPage() {
-  const session = await getActiveWorkspaceSession();
+  const session = await getActiveWorkspaceSessionForDashboard("health");
   if (!session) {
     return (
       <section className="section-canvas p-6">
@@ -75,13 +131,34 @@ export default async function HealthPage() {
 
   const pool = getPool();
   const [counts, dead, readiness, observability] = await Promise.all([
-    loadDispatchCounts(session.workspace.id),
-    listDeadLetteredDispatches(pool, session.workspace.id, 100),
-    checkProductReadinessCached({ pool, liveProbes: true }),
-    getWorkspaceAgentObservabilitySummary(
-      { lookback_hours: 24, limit: 6, span_limit: 4 },
-      { workspace_id: session.workspace.id, user_id: session.user_id },
-      pool,
+    loadDashboardData(
+      "health",
+      "dispatch counts",
+      emptyDispatchCounts(),
+      () => loadDispatchCounts(session.workspace.id),
+    ),
+    loadDashboardData(
+      "health",
+      "dead-lettered dispatches",
+      [],
+      () => listDeadLetteredDispatches(pool, session.workspace.id, 100),
+    ),
+    loadDashboardData(
+      "health",
+      "runtime health",
+      unavailableReadiness(),
+      () => checkProductReadinessCached({ pool, liveProbes: true }),
+    ),
+    loadDashboardData(
+      "health",
+      "agent observability",
+      emptyAgentObservabilitySummary(session.workspace.id),
+      () =>
+        getWorkspaceAgentObservabilitySummary(
+          { lookback_hours: 24, limit: 6, span_limit: 4 },
+          { workspace_id: session.workspace.id, user_id: session.user_id },
+          pool,
+        ),
     ),
   ]);
 
@@ -235,7 +312,9 @@ function AgentObservabilityPanel({
 }
 
 function AgentTraceItem({ trace }: { trace: AgentTraceSummary }) {
-  const label = trace.graph_names[0] ?? trace.spans[0]?.name ?? "agent trace";
+  const primaryGraphName = trace.graph_names[0] ?? null;
+  const primarySpan = trace.spans[0] ?? null;
+  const label = primaryGraphName ?? primarySpan?.name ?? "agent trace";
   return (
     <li className="rounded-[12px] bg-[var(--color-ink-0)] px-4 py-3">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">

@@ -9,9 +9,10 @@ import {
 } from "@/components/dashboard/SurfaceHero";
 import Icon from "@/components/Icon";
 import { getPool } from "@/core/substrate/storage/index.ts";
-import { getActiveWorkspace } from "@/lib/workspace";
+import { getActiveWorkspaceSessionForDashboard } from "@/lib/workspace";
 import FitFeedbackButton from "@/components/dashboard/FitFeedbackButton";
 import { recordPersonFitFeedbackAction } from "../../../actions";
+import { loadDashboardData } from "../../../server-data";
 
 export const dynamic = "force-dynamic";
 
@@ -91,6 +92,11 @@ interface ContactProfileState {
   channelState: ContactChannelState;
 }
 
+type ContactProfileLoadResult =
+  | { status: "found"; state: ContactProfileState }
+  | { status: "missing" }
+  | { status: "unavailable" };
+
 async function loadContactProfile(
   workspaceId: string,
   contactId: string,
@@ -121,7 +127,7 @@ async function loadContactProfile(
       limit 1`,
     [workspaceId, contactId],
   );
-  const contact = contactResult.rows[0];
+  const contact = contactResult.rows[0] ?? null;
   if (!contact) return null;
 
   const [signals, conversations, outcomes, channels] = await Promise.all([
@@ -222,8 +228,8 @@ async function loadContactProfile(
     conversations: conversations.rows,
     outcomes: outcomes.rows,
     channelState: {
-      connected_outlook: Number(channels.rows[0]?.connected_outlook ?? 0),
-      connected_linkedin: Number(channels.rows[0]?.connected_linkedin ?? 0),
+      connected_outlook: Number((channels.rows[0] ?? null)?.connected_outlook ?? 0),
+      connected_linkedin: Number((channels.rows[0] ?? null)?.connected_linkedin ?? 0),
     },
   };
 }
@@ -234,7 +240,8 @@ export default async function ContactProfilePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const workspace = await getActiveWorkspace();
+  const active = await getActiveWorkspaceSessionForDashboard("agent/contacts");
+  const workspace = active?.workspace ?? null;
   if (!workspace) {
     return (
       <SurfaceHero
@@ -245,15 +252,25 @@ export default async function ContactProfilePage({
     );
   }
 
-  const state = await loadContactProfile(workspace.id, id);
-  if (!state) return notFound();
+  const loaded = await loadDashboardData<ContactProfileLoadResult>(
+    "agent/contacts",
+    "contact profile",
+    { status: "unavailable" },
+    async () => {
+      const state = await loadContactProfile(workspace.id, id);
+      return state ? { status: "found", state } : { status: "missing" };
+    },
+  );
+  if (loaded.status === "missing") return notFound();
+  if (loaded.status === "unavailable") return <UnavailableContactProfile />;
 
-  const { contact, signals, conversations, outcomes, channelState } = state;
+  const { contact, signals, conversations, outcomes, channelState } = loaded.state;
   const company = contact.company_name ?? contact.company_domain ?? "Unknown company";
   const reachable =
     contact.emails.length > 0 ||
     Boolean(contact.linkedin_url) ||
     contact.phones.length > 0;
+  const latestSignal = signals[0] ?? null;
 
   return (
     <div className="space-y-10">
@@ -327,9 +344,9 @@ export default async function ContactProfilePage({
         <ReadinessTile
           icon="sensors"
           label="Timing"
-          value={signals[0] ? freshWhen(signals[0].freshness_at) : "Quiet"}
-          ready={signals.length > 0}
-          detail={signals[0]?.kind.replace(/_/g, " ") ?? "No fresh Signal"}
+          value={latestSignal ? freshWhen(latestSignal.freshness_at) : "Quiet"}
+          ready={latestSignal !== null}
+          detail={latestSignal?.kind.replace(/_/g, " ") ?? "No fresh Signal"}
         />
       </section>
 
@@ -386,6 +403,22 @@ export default async function ContactProfilePage({
           <ReplyInsightPanel outcomes={outcomes} />
         </aside>
       </section>
+    </div>
+  );
+}
+
+function UnavailableContactProfile() {
+  return (
+    <div className="space-y-6">
+      <SurfaceHero
+        kicker="Verified contact"
+        title="Contact temporarily unavailable."
+        description="We could not load this graph-backed contact profile just now."
+      />
+      <EmptyState
+        title="Try again in a moment."
+        hint="Signals, conversations, channel readiness, and outcomes will reappear after the workspace reconnects."
+      />
     </div>
   );
 }
