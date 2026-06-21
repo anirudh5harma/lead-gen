@@ -18,6 +18,11 @@
 
 export type { RawCandidate, EmbeddingInput } from "./types.ts";
 export {
+  contactDiscoveryDomain,
+  normalizeCompanyDomain,
+} from "./company-domain.ts";
+
+export {
   createOpenAIEmbeddingClient,
   createMockEmbeddingClient,
   vectorToPgLiteral,
@@ -201,6 +206,28 @@ export type {
   ClassifyWorkflowOptions,
   ClassifyWorkflow,
 } from "./classify-workflow.ts";
+export {
+  SIGNAL_KIND_INTENT_CONFIG,
+  LIVE_SIGNAL_STATUSES,
+  decayedWeight,
+  signalIntentConfigForKind,
+  signalIcpFit,
+  scoreSignalIntent,
+  computeAccountCompositeIntentScore,
+  compareSignalIntentContributions,
+  sortSignalsByIntentScore,
+  projectAccountIntentFromEvent,
+  createAccountIntentProjection,
+  listAccountsByCompositeIntent,
+} from "./account-intent.ts";
+export type {
+  SignalIntentKindConfig,
+  SignalIntentScoreInput,
+  SignalIntentContribution,
+  AccountCompositeIntentScore,
+  RankedAccountIntent,
+} from "./account-intent.ts";
+
 export {
   projectSignalDiscovered,
   projectSignalCompanyLinked,

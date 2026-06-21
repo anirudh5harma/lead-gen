@@ -499,6 +499,16 @@ const SignalExpiryRequested = z.object({
   reason: z.string(),
 });
 
+const AccountIntentUpdated = z.object({
+  company_id: z.string().uuid(),
+  normalized_domain: z.string().nullable(),
+  composite_score: z.number().nonnegative(),
+  live_signal_count: z.number().int().nonnegative(),
+  strongest_signal_score: z.number().nonnegative(),
+  latest_signal_freshness_at: z.string().datetime().nullable(),
+  updated_at: z.string().datetime(),
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Play / workflow lifecycle
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1689,6 +1699,7 @@ export const eventRegistry = {
   "signal.classification.completed": SignalClassificationCompleted,
   "signal.expired": SignalExpired,
   "signal.expiry.requested": SignalExpiryRequested,
+  "account.intent.updated": AccountIntentUpdated,
 
   "play.configured": PlayConfigured,
   "play.run.started": PlayRunStarted,

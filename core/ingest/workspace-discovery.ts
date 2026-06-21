@@ -14,6 +14,7 @@ import {
 import { allMatchingIcps } from "./icp-filter.ts";
 import { listIcps } from "./icps.ts";
 import { deriveSignalQualityMetadata } from "./source-quality.ts";
+import { normalizeCompanyDomain } from "./company-domain.ts";
 
 export interface WorkspaceSignalSourceRow {
   id: string;
@@ -635,58 +636,8 @@ function firstDomainInText(...values: unknown[]): string | null {
   return null;
 }
 
-function normalizeCompanyDomain(value: unknown): string | null {
-  const raw = stringValue(value)?.toLowerCase();
-  if (!raw || raw.includes("@")) return null;
-  const withProtocol = /^[a-z]+:\/\//i.test(raw) ? raw : `https://${raw}`;
-  try {
-    const hostname = new URL(withProtocol).hostname
-      .replace(/\.$/, "")
-      .replace(/^www\./, "")
-      .toLowerCase();
-    if (!hostname.includes(".")) return null;
-    if (isBlockedCompanyDomain(hostname)) return null;
-    return hostname;
-  } catch {
-    return null;
-  }
-}
-
 function domainFromUrl(value: unknown): string | null {
   return normalizeCompanyDomain(value);
-}
-
-const BLOCKED_COMPANY_DOMAINS = new Set([
-  "businesswire.com",
-  "facebook.com",
-  "forbes.com",
-  "github.com",
-  "globenewswire.com",
-  "linkedin.com",
-  "medium.com",
-  "news.google.com",
-  "news.ycombinator.com",
-  "old.reddit.com",
-  "prnewswire.com",
-  "producthunt.com",
-  "reddit.com",
-  "substack.com",
-  "techcrunch.com",
-  "theverge.com",
-  "twitter.com",
-  "x.com",
-  "ycombinator.com",
-  "youtu.be",
-  "youtube.com",
-]);
-
-function isBlockedCompanyDomain(domain: string): boolean {
-  for (const blocked of BLOCKED_COMPANY_DOMAINS) {
-    if (domain === blocked || domain.endsWith(`.${blocked}`)) {
-      return true;
-    }
-  }
-  return false;
 }
 
 function nameFromDomain(domain: string): string {

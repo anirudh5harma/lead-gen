@@ -18,6 +18,7 @@ test("ingestion schema: tables exist with RLS enabled", async (t) => {
          join pg_namespace n on n.oid = c.relnamespace
         where n.nspname = $1
           and c.relname in (
+            'account_intent_scores',
             'workspace_icps',
             'tracked_companies',
             'workspace_tracked_companies',
@@ -28,7 +29,7 @@ test("ingestion schema: tables exist with RLS enabled", async (t) => {
         order by c.relname`,
       [fx.schema],
     );
-    assert.equal(rows.length, 6);
+    assert.equal(rows.length, 7);
     for (const r of rows) {
       assert.equal(r.rls, true, `RLS not enabled on ${r.table_name}`);
     }

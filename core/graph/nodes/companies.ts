@@ -1,6 +1,7 @@
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 import type { CompanyUpsert, GraphCompany } from "../types.ts";
 import { formatVector } from "../_vector.ts";
+import { normalizeCompanyDomain } from "../../ingest/company-domain.ts";
 
 /**
  * Company node operations. `upsertCompany` is the canonical entry point:
@@ -49,35 +50,50 @@ export async function upsertCompany(
   workspace_id: string,
   input: CompanyUpsert,
 ): Promise<GraphCompany> {
+  const normalizedDomain = normalizeCompanyDomain(input.domain ?? null) ?? null;
   const embedding = formatVector(input.embedding);
+  const client = await pool.connect();
 
-  if (input.domain) {
-    // Domain-keyed upsert via the unique index.
-    const { rows } = await pool.query<CompanyRow>(
+  try {
+    await client.query("begin");
+
+    if (normalizedDomain) {
+      const canonical = await upsertCompanyWithDomain(client, workspace_id, {
+        ...input,
+        domain: normalizedDomain,
+      }, embedding);
+      await client.query("commit");
+      return canonical;
+    }
+
+    const existing = await client.query<CompanyRow>(
+      `select * from graph_companies
+        where workspace_id = $1 and lower(name) = lower($2)
+        order by created_at asc
+        limit 1`,
+      [workspace_id, input.name],
+    );
+    if (existing.rows[0]) {
+      const updated = await updateCompanyRow(client, existing.rows[0].id, {
+        ...input,
+        domain: undefined,
+      }, embedding);
+      await client.query("commit");
+      return updated;
+    }
+
+    const { rows } = await client.query<CompanyRow>(
       `insert into graph_companies (
-         workspace_id, name, domain, industry, size_bucket, description,
+         workspace_id, name, industry, size_bucket, description,
          properties, provenance, embedding, embedded_at, updated_at
        ) values (
-         $1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb,
-         $9::vector, case when $9::vector is null then null else now() end,
+         $1, $2, $3, $4, $5, $6::jsonb, $7::jsonb,
+         $8::vector, case when $8::vector is null then null else now() end,
          now()
-       )
-       on conflict (workspace_id, domain) where domain is not null
-       do update set
-         name        = excluded.name,
-         industry    = coalesce(excluded.industry, graph_companies.industry),
-         size_bucket = coalesce(excluded.size_bucket, graph_companies.size_bucket),
-         description = coalesce(excluded.description, graph_companies.description),
-         properties  = graph_companies.properties || excluded.properties,
-         provenance  = excluded.provenance,
-         embedding   = coalesce(excluded.embedding, graph_companies.embedding),
-         embedded_at = case when excluded.embedding is not null then now() else graph_companies.embedded_at end,
-         updated_at  = now()
-       returning *`,
+       ) returning *`,
       [
         workspace_id,
         input.name,
-        input.domain,
         input.industry ?? null,
         input.size_bucket ?? null,
         input.description ?? null,
@@ -86,67 +102,14 @@ export async function upsertCompany(
         embedding,
       ],
     );
+    await client.query("commit");
     return rowToCompany(rows[0]!);
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
   }
-
-  // No domain: name-based fallback. Single SELECT-then-UPSERT round-trip.
-  const existing = await pool.query<CompanyRow>(
-    `select * from graph_companies
-      where workspace_id = $1 and lower(name) = lower($2)
-      order by created_at asc
-      limit 1`,
-    [workspace_id, input.name],
-  );
-  if (existing.rows[0]) {
-    const id = existing.rows[0].id;
-    const { rows } = await pool.query<CompanyRow>(
-      `update graph_companies set
-         name        = $2,
-         industry    = coalesce($3, industry),
-         size_bucket = coalesce($4, size_bucket),
-         description = coalesce($5, description),
-         properties  = properties || $6::jsonb,
-         provenance  = $7::jsonb,
-         embedding   = coalesce($8::vector, embedding),
-         embedded_at = case when $8::vector is not null then now() else embedded_at end,
-         updated_at  = now()
-       where id = $1
-       returning *`,
-      [
-        id,
-        input.name,
-        input.industry ?? null,
-        input.size_bucket ?? null,
-        input.description ?? null,
-        JSON.stringify(input.properties ?? {}),
-        JSON.stringify(input.provenance ?? {}),
-        embedding,
-      ],
-    );
-    return rowToCompany(rows[0]!);
-  }
-
-  const { rows } = await pool.query<CompanyRow>(
-    `insert into graph_companies (
-       workspace_id, name, industry, size_bucket, description,
-       properties, provenance, embedding, embedded_at, updated_at
-     ) values (
-       $1, $2, $3, $4, $5, $6::jsonb, $7::jsonb,
-       $8::vector, case when $8::vector is null then null else now() end,
-       now()
-     ) returning *`,
-    [
-      workspace_id,
-      input.name,
-      input.industry ?? null,
-      input.size_bucket ?? null,
-      input.description ?? null,
-      JSON.stringify(input.properties ?? {}),
-      JSON.stringify(input.provenance ?? {}),
-      embedding,
-    ],
-  );
-  return rowToCompany(rows[0]!);
 }
 
 export async function getCompany(
@@ -166,9 +129,11 @@ export async function findCompanyByDomain(
   workspace_id: string,
   domain: string,
 ): Promise<GraphCompany | null> {
+  const normalizedDomain = normalizeCompanyDomain(domain);
+  if (!normalizedDomain) return null;
   const { rows } = await pool.query<CompanyRow>(
     `select * from graph_companies where workspace_id = $1 and domain = $2`,
-    [workspace_id, domain],
+    [workspace_id, normalizedDomain],
   );
   return rows[0] ? rowToCompany(rows[0]) : null;
 }
@@ -218,4 +183,271 @@ export async function deleteCompany(
   } finally {
     client.release();
   }
+}
+
+type DbClient = Pool | PoolClient;
+
+async function upsertCompanyWithDomain(
+  client: DbClient,
+  workspace_id: string,
+  input: CompanyUpsert & { domain: string },
+  embedding: string | null,
+): Promise<GraphCompany> {
+  const existingByDomain = await client.query<CompanyRow>(
+    `select * from graph_companies
+      where workspace_id = $1
+        and domain = $2
+      order by created_at asc
+      limit 1`,
+    [workspace_id, input.domain],
+  );
+  if (existingByDomain.rows[0]) {
+    const updated = await updateCompanyRow(client, existingByDomain.rows[0].id, input, embedding);
+    await collapseCompanyDuplicates(client, workspace_id, updated, input.name);
+    return reloadCompany(client, workspace_id, updated.id);
+  }
+
+  const aliasMatch = await client.query<CompanyRow>(
+    `select * from graph_companies
+      where workspace_id = $1
+        and (
+          lower(name) = lower($2)
+          or (
+            domain is not null
+            and domain::text like '%.' || $3
+          )
+        )
+      order by
+        case when domain is null then 1 else 0 end,
+        created_at asc
+      limit 1`,
+    [workspace_id, input.name, input.domain],
+  );
+  if (aliasMatch.rows[0]) {
+    const updated = await updateCompanyRow(client, aliasMatch.rows[0].id, input, embedding);
+    await collapseCompanyDuplicates(client, workspace_id, updated, input.name);
+    return reloadCompany(client, workspace_id, updated.id);
+  }
+
+  const { rows } = await client.query<CompanyRow>(
+    `insert into graph_companies (
+       workspace_id, name, domain, industry, size_bucket, description,
+       properties, provenance, embedding, embedded_at, updated_at
+     ) values (
+       $1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb,
+       $9::vector, case when $9::vector is null then null else now() end,
+       now()
+     )
+     on conflict (workspace_id, domain) where domain is not null
+     do update set
+       name        = excluded.name,
+       industry    = coalesce(excluded.industry, graph_companies.industry),
+       size_bucket = coalesce(excluded.size_bucket, graph_companies.size_bucket),
+       description = coalesce(excluded.description, graph_companies.description),
+       properties  = graph_companies.properties || excluded.properties,
+       provenance  = excluded.provenance,
+       embedding   = coalesce(excluded.embedding, graph_companies.embedding),
+       embedded_at = case when excluded.embedding is not null then now() else graph_companies.embedded_at end,
+       updated_at  = now()
+     returning *`,
+    [
+      workspace_id,
+      input.name,
+      input.domain,
+      input.industry ?? null,
+      input.size_bucket ?? null,
+      input.description ?? null,
+      JSON.stringify(input.properties ?? {}),
+      JSON.stringify(input.provenance ?? {}),
+      embedding,
+    ],
+  );
+  return rowToCompany(rows[0]!);
+}
+
+async function updateCompanyRow(
+  client: DbClient,
+  id: string,
+  input: CompanyUpsert,
+  embedding: string | null,
+): Promise<GraphCompany> {
+  const { rows } = await client.query<CompanyRow>(
+    `update graph_companies set
+       name        = $2,
+       domain      = coalesce($3::citext, domain),
+       industry    = coalesce($4, industry),
+       size_bucket = coalesce($5, size_bucket),
+       description = coalesce($6, description),
+       properties  = properties || $7::jsonb,
+       provenance  = provenance || $8::jsonb,
+       embedding   = coalesce($9::vector, embedding),
+       embedded_at = case when $9::vector is not null then now() else embedded_at end,
+       updated_at  = now()
+     where id = $1
+     returning *`,
+    [
+      id,
+      input.name,
+      input.domain ?? null,
+      input.industry ?? null,
+      input.size_bucket ?? null,
+      input.description ?? null,
+      JSON.stringify(input.properties ?? {}),
+      JSON.stringify(input.provenance ?? {}),
+      embedding,
+    ],
+  );
+  return rowToCompany(rows[0]!);
+}
+
+async function collapseCompanyDuplicates(
+  client: DbClient,
+  workspace_id: string,
+  canonical: GraphCompany,
+  requestedName: string,
+): Promise<void> {
+  if (!canonical.domain) return;
+  const { rows: duplicates } = await client.query<CompanyRow>(
+    `select * from graph_companies
+      where workspace_id = $1
+        and id <> $2
+        and (
+          lower(name) = lower($3)
+          or (
+            domain is not null
+            and (
+              domain = $4
+              or domain::text like '%.' || $4
+            )
+          )
+        )
+      order by created_at asc`,
+    [workspace_id, canonical.id, requestedName, canonical.domain],
+  );
+  if (duplicates.length === 0) return;
+
+  const duplicateIds = duplicates.map((row) => row.id);
+  for (const duplicate of duplicates) {
+    await client.query(
+      `update graph_companies
+          set properties = properties || $2::jsonb,
+              provenance = provenance || $3::jsonb,
+              description = coalesce(description, $4),
+              industry = coalesce(industry, $5),
+              size_bucket = coalesce(size_bucket, $6),
+              updated_at = now()
+        where workspace_id = $1
+          and id = $7`,
+      [
+        workspace_id,
+        JSON.stringify(duplicate.properties ?? {}),
+        JSON.stringify(duplicate.provenance ?? {}),
+        duplicate.description,
+        duplicate.industry,
+        duplicate.size_bucket,
+        canonical.id,
+      ],
+    );
+  }
+
+  await client.query(
+    `update signals
+        set related_company_id = $2
+      where workspace_id = $1
+        and related_company_id = any($3::uuid[])`,
+    [workspace_id, canonical.id, duplicateIds],
+  );
+  await client.query(
+    `update graph_persons
+        set company_id = $2
+      where workspace_id = $1
+        and company_id = any($3::uuid[])`,
+    [workspace_id, canonical.id, duplicateIds],
+  );
+  await client.query(
+    `update conversations
+        set counterparty_company_id = $2
+      where workspace_id = $1
+        and counterparty_company_id = any($3::uuid[])`,
+    [workspace_id, canonical.id, duplicateIds],
+  );
+  await client.query(
+    `update outcomes
+        set subject_company_id = $2
+      where workspace_id = $1
+        and subject_company_id = any($3::uuid[])`,
+    [workspace_id, canonical.id, duplicateIds],
+  );
+  await client.query(
+    `insert into graph_edges (
+       workspace_id,
+       from_node_type,
+       from_node_id,
+       to_node_type,
+       to_node_id,
+       edge_type,
+       properties,
+       provenance
+     )
+     select workspace_id,
+            from_node_type,
+            case
+              when from_node_type = 'company' and from_node_id = any($3::uuid[]) then $2::uuid
+              else from_node_id
+            end,
+            to_node_type,
+            case
+              when to_node_type = 'company' and to_node_id = any($3::uuid[]) then $2::uuid
+              else to_node_id
+            end,
+            edge_type,
+            properties,
+            provenance
+       from graph_edges
+      where workspace_id = $1
+        and (
+          (from_node_type = 'company' and from_node_id = any($3::uuid[]))
+          or (to_node_type = 'company' and to_node_id = any($3::uuid[]))
+        )
+     on conflict (
+       workspace_id,
+       from_node_type,
+       from_node_id,
+       edge_type,
+       to_node_type,
+       to_node_id
+     ) do update set
+       properties = graph_edges.properties || excluded.properties,
+       provenance = graph_edges.provenance || excluded.provenance`,
+    [workspace_id, canonical.id, duplicateIds],
+  );
+  await client.query(
+    `delete from graph_edges
+      where workspace_id = $1
+        and (
+          (from_node_type = 'company' and from_node_id = any($2::uuid[]))
+          or (to_node_type = 'company' and to_node_id = any($2::uuid[]))
+        )`,
+    [workspace_id, duplicateIds],
+  );
+  await client.query(
+    `delete from graph_companies
+      where workspace_id = $1
+        and id = any($2::uuid[])`,
+    [workspace_id, duplicateIds],
+  );
+}
+
+async function reloadCompany(
+  client: DbClient,
+  workspace_id: string,
+  id: string,
+): Promise<GraphCompany> {
+  const { rows } = await client.query<CompanyRow>(
+    `select * from graph_companies
+      where workspace_id = $1
+        and id = $2`,
+    [workspace_id, id],
+  );
+  return rowToCompany(rows[0]!);
 }

@@ -78,6 +78,28 @@ test("catalog: findTrackedByDomain + getTrackedCompany", async (t) => {
   }
 });
 
+test("catalog: normalized domains collapse subdomains for tracked companies", async (t) => {
+  const fx = await setupPg("cat_norm");
+  if (!fx) return t.skip("DATABASE_URL not set");
+  try {
+    const first = await upsertTrackedCompany(fx.pool, {
+      name: "Acme",
+      domain: "https://careers.acme.co.uk/jobs/revops",
+    });
+    const second = await upsertTrackedCompany(fx.pool, {
+      name: "Acme Inc",
+      domain: "blog.acme.co.uk",
+    });
+    const byDomain = await findTrackedByDomain(fx.pool, "www.acme.co.uk");
+
+    assert.equal(first.id, second.id);
+    assert.equal(second.domain, "acme.co.uk");
+    assert.equal(byDomain?.id, first.id);
+  } finally {
+    await fx.close();
+  }
+});
+
 test("catalog: listCatalogForAdapter filters to companies with that ATS id", async (t) => {
   const fx = await setupPg("cat_for_adapter");
   if (!fx) return t.skip("DATABASE_URL not set");

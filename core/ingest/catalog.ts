@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import { normalizeCompanyDomain } from "./company-domain.ts";
 
 /**
  * Tracked-companies catalog management. The catalog itself is workspace-
@@ -69,7 +70,51 @@ export async function upsertTrackedCompany(
   pool: Pool,
   input: UpsertTrackedCompanyInput,
 ): Promise<TrackedCompany> {
-  if (input.domain) {
+  const normalizedDomain = normalizeCompanyDomain(input.domain ?? null) ?? null;
+
+  if (normalizedDomain) {
+    const existingByName = await pool.query<TrackedCompanyRow>(
+      `select * from tracked_companies
+        where lower(name) = lower($1)
+        order by added_at asc
+        limit 1`,
+      [input.name],
+    );
+    if (existingByName.rows[0] && !existingByName.rows[0].domain) {
+      const { rows } = await pool.query<TrackedCompanyRow>(
+        `update tracked_companies
+            set name           = $2,
+                domain         = $3,
+                industry       = coalesce($4, industry),
+                size_bucket    = coalesce($5, size_bucket),
+                greenhouse_id  = coalesce($6, greenhouse_id),
+                lever_id       = coalesce($7, lever_id),
+                ashby_id       = coalesce($8, ashby_id),
+                workable_id    = coalesce($9, workable_id),
+                career_rss_url = coalesce($10, career_rss_url),
+                sec_cik        = coalesce($11, sec_cik),
+                properties     = properties || $12::jsonb,
+                refreshed_at   = now()
+          where id = $1
+          returning *`,
+        [
+          existingByName.rows[0].id,
+          input.name,
+          normalizedDomain,
+          input.industry ?? null,
+          input.size_bucket ?? null,
+          input.greenhouse_id ?? null,
+          input.lever_id ?? null,
+          input.ashby_id ?? null,
+          input.workable_id ?? null,
+          input.career_rss_url ?? null,
+          input.sec_cik ?? null,
+          JSON.stringify(input.properties ?? {}),
+        ],
+      );
+      return rowToCompany(rows[0]!);
+    }
+
     const { rows } = await pool.query<TrackedCompanyRow>(
       `insert into tracked_companies (
          name, domain, industry, size_bucket,
@@ -91,7 +136,7 @@ export async function upsertTrackedCompany(
        returning *`,
       [
         input.name,
-        input.domain,
+        normalizedDomain,
         input.industry ?? null,
         input.size_bucket ?? null,
         input.greenhouse_id ?? null,
@@ -149,9 +194,11 @@ export async function findTrackedByDomain(
   pool: Pool,
   domain: string,
 ): Promise<TrackedCompany | null> {
+  const normalizedDomain = normalizeCompanyDomain(domain);
+  if (!normalizedDomain) return null;
   const { rows } = await pool.query<TrackedCompanyRow>(
     `select * from tracked_companies where domain = $1`,
-    [domain],
+    [normalizedDomain],
   );
   return rows[0] ? rowToCompany(rows[0]) : null;
 }

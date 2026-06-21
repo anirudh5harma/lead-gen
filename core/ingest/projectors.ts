@@ -8,9 +8,14 @@ import type {
 import { connect } from "../graph/edges/index.ts";
 import { upsertCompany } from "../graph/nodes/companies.ts";
 import { vectorToPgLiteral } from "./embeddings.ts";
+import { projectAccountIntentFromEvent } from "./account-intent.ts";
 
 type SignalProjectionType =
   | "signal.discovered"
+  | "signal.ingested"
+  | "signal.matched"
+  | "signal.dismissed"
+  | "signal.expired"
   | "signal.company.linked"
   | "signal.classification.completed"
   | "signal.dismissal.requested"
@@ -74,6 +79,11 @@ export async function registerSignalProjectors(
       "signal_company_linked_projector",
     ),
     subscriber.subscribe(
+      "signal.company.linked",
+      (event) => projectAccountIntentFromEvent(deps.pool, deps.bus, event),
+      "account_intent_signal_company_linked_projector",
+    ),
+    subscriber.subscribe(
       "signal.expiry.requested",
       async (event) => {
         const flipped = await projectSignalExpiry(
@@ -101,6 +111,11 @@ export async function registerSignalProjectors(
       "signal_expiry_projector",
     ),
     subscriber.subscribe(
+      "signal.expired",
+      (event) => projectAccountIntentFromEvent(deps.pool, deps.bus, event),
+      "account_intent_signal_expired_projector",
+    ),
+    subscriber.subscribe(
       "signal.dismissal.requested",
       async (event) => {
         const flipped = await projectSignalDismissal(
@@ -124,6 +139,11 @@ export async function registerSignalProjectors(
         });
       },
       "signal_dismissal_projector",
+    ),
+    subscriber.subscribe(
+      "signal.dismissed",
+      (event) => projectAccountIntentFromEvent(deps.pool, deps.bus, event),
+      "account_intent_signal_dismissed_projector",
     ),
     subscriber.subscribe(
       "signal.classification.completed",
@@ -164,6 +184,16 @@ export async function registerSignalProjectors(
         }
       },
       "signal_classification_projector",
+    ),
+    subscriber.subscribe(
+      "signal.ingested",
+      (event) => projectAccountIntentFromEvent(deps.pool, deps.bus, event),
+      "account_intent_signal_ingested_projector",
+    ),
+    subscriber.subscribe(
+      "signal.matched",
+      (event) => projectAccountIntentFromEvent(deps.pool, deps.bus, event),
+      "account_intent_signal_matched_projector",
     ),
   ]);
 }

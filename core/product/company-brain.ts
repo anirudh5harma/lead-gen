@@ -1,4 +1,6 @@
 import type { Pool } from "pg";
+import { scoreSignalIntent } from "../ingest/account-intent.ts";
+import type { SignalKind } from "../primitives/signal.ts";
 import { getPool } from "../substrate/storage/index.ts";
 import {
   assertProductWorkspaceAccess,
@@ -242,8 +244,8 @@ export async function getWorkspaceCompanyBrain(
               url
          from signals
         where workspace_id = $1
-        order by coalesce(match_score, 0) desc, freshness_at desc
-        limit 8`,
+        order by freshness_at desc, coalesce(match_score, 0) desc
+        limit 32`,
       [session.workspace_id],
     ),
     pool.query<CompanyBrainOutcomeRow>(
@@ -323,10 +325,12 @@ export async function getWorkspaceCompanyBrain(
     ),
   ]);
 
+  const generated_at = new Date().toISOString();
   return buildCompanyBrainBrief({
     workspace_id: session.workspace_id,
+    generated_at,
     profile: profile.rows[0] ?? null,
-    signals: signals.rows,
+    signals: sortCompanyBrainSignals(signals.rows, new Date(generated_at)).slice(0, 8),
     outcomes: outcomes.rows,
     playbooks: playbooks.rows,
     semantic: semantic.rows,
@@ -340,7 +344,7 @@ export function buildCompanyBrainBrief(
   const generated_at = input.generated_at ?? new Date().toISOString();
   const cards = [
     input.profile ? profileCard(input.profile) : null,
-    ...(input.signals ?? []).map(signalCard),
+    ...(input.signals ?? []).map((signal) => signalCard(signal, generated_at)),
     ...(input.outcomes ?? []).map(outcomeCard),
     ...(input.playbooks ?? []).map(playbookCard),
     ...(input.semantic ?? []).map(semanticCard),
@@ -398,13 +402,20 @@ function profileCard(profile: CompanyBrainProfileInput): CompanyBrainCard {
   };
 }
 
-function signalCard(signal: CompanyBrainSignalInput): CompanyBrainCard {
+function signalCard(
+  signal: CompanyBrainSignalInput,
+  generated_at: string,
+): CompanyBrainCard {
   return {
     id: `signal:${signal.id}`,
     kind: "signal",
     title: signal.title,
     summary: signal.match_reason || `${signal.status} ${signal.kind ?? "signal"}`,
-    confidence: numericOrNull(signal.match_score),
+    confidence: scoreSignalIntent({
+      kind: signalKindOrNull(signal.kind),
+      match_score: numericOrNull(signal.match_score),
+      freshness_at: signal.freshness_at,
+    }, new Date(generated_at)).intent_score,
     freshness_at: isoOrNull(signal.freshness_at),
     tags: ["signal", signal.status, signal.kind ?? "unknown"].filter(Boolean),
     primitive_refs: { signal_id: signal.id },
@@ -575,6 +586,26 @@ function numericOrNull(value: unknown): number | null {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
+function sortCompanyBrainSignals(
+  signals: readonly CompanyBrainSignalInput[],
+  now: Date,
+): CompanyBrainSignalInput[] {
+  return [...signals].sort((left, right) =>
+    scoreSignalIntent({
+      kind: signalKindOrNull(right.kind),
+      match_score: numericOrNull(right.match_score),
+      freshness_at: right.freshness_at,
+    }, now).intent_score -
+      scoreSignalIntent({
+        kind: signalKindOrNull(left.kind),
+        match_score: numericOrNull(left.match_score),
+        freshness_at: left.freshness_at,
+      }, now).intent_score ||
+    Date.parse(isoOrNull(right.freshness_at) ?? new Date(0).toISOString()) -
+      Date.parse(isoOrNull(left.freshness_at) ?? new Date(0).toISOString())
+  );
+}
+
 function isoOrNull(value: unknown): string | null {
   if (!value) return null;
   if (value instanceof Date) return value.toISOString();
@@ -598,4 +629,22 @@ function shortValue(value: unknown): string {
 function line(value: unknown): string {
   if (typeof value !== "string") return "-";
   return value.replace(/\s+/g, " ").trim() || "-";
+}
+
+function signalKindOrNull(value: string | null): SignalKind | null {
+  return value === "funding" ||
+      value === "hiring" ||
+      value === "leadership_change" ||
+      value === "product_launch" ||
+      value === "acquisition" ||
+      value === "churn_risk" ||
+      value === "competitor_move" ||
+      value === "podcast_mention" ||
+      value === "press_mention" ||
+      value === "regulation" ||
+      value === "expansion" ||
+      value === "layoff" ||
+      value === "other"
+    ? value
+    : null;
 }

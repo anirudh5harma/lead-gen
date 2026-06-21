@@ -1,4 +1,6 @@
 import type { Pool } from "pg";
+import { scoreSignalIntent } from "../ingest/account-intent.ts";
+import type { SignalKind } from "../primitives/signal.ts";
 
 export interface QualifiedSignalContact {
   rank: number;
@@ -534,11 +536,15 @@ export async function loadQualifiedSignalWorkbench(
                coalesce(s.match_score, 0) desc,
                s.freshness_at desc,
                s.ingested_at desc
-      limit $2`,
+      limit greatest($2::int * 5, 250)`,
     [workspaceId, limit],
   );
 
-  const signals = rows.map(mapQualifiedSignalRow);
+  const now = new Date();
+  const signals = rows
+    .sort((left, right) => compareQualifiedSignalRows(left, right, now))
+    .slice(0, limit)
+    .map(mapQualifiedSignalRow);
   return {
     signals,
     stats: {
@@ -574,6 +580,37 @@ function isOutreachDraftReadyForReview(
 function numericCount(value: string | number | null | undefined): number {
   const parsed = typeof value === "number" ? value : Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function compareQualifiedSignalRows(
+  left: QualifiedSignalRow,
+  right: QualifiedSignalRow,
+  now: Date,
+): number {
+  return qualifiedSignalBucket(left) - qualifiedSignalBucket(right) ||
+    signalIntentScore(right, now) - signalIntentScore(left, now) ||
+    right.freshness_at.getTime() - left.freshness_at.getTime() ||
+    right.ingested_at.getTime() - left.ingested_at.getTime() ||
+    left.id.localeCompare(right.id);
+}
+
+function qualifiedSignalBucket(row: QualifiedSignalRow): number {
+  const hasDraft = Boolean(row.draft_message_id);
+  const hasContacts =
+    parseJsonArray(row.contact_candidates).length > 0 ||
+    parseJsonArray(row.graph_candidates).length > 0;
+  if (hasDraft && hasContacts) return 0;
+  if (hasDraft) return 1;
+  if (hasContacts) return 2;
+  return 3;
+}
+
+function signalIntentScore(row: QualifiedSignalRow, now: Date): number {
+  return scoreSignalIntent({
+    kind: signalKindOrNull(row.kind),
+    match_score: parseNumber(row.match_score),
+    freshness_at: row.freshness_at,
+  }, now).intent_score;
 }
 
 function mapQualifiedSignalRow(row: QualifiedSignalRow): QualifiedSignalItem {
@@ -749,6 +786,24 @@ function parseNumber(value: string | null): number | null {
   if (!value) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function signalKindOrNull(value: string): SignalKind | null {
+  return value === "funding" ||
+      value === "hiring" ||
+      value === "leadership_change" ||
+      value === "product_launch" ||
+      value === "acquisition" ||
+      value === "churn_risk" ||
+      value === "competitor_move" ||
+      value === "podcast_mention" ||
+      value === "press_mention" ||
+      value === "regulation" ||
+      value === "expansion" ||
+      value === "layoff" ||
+      value === "other"
+    ? value
+    : null;
 }
 
 function booleanValue(value: unknown): boolean | null {

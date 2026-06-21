@@ -69,6 +69,29 @@ test("companies: name-based upsert falls back when no domain", async (t) => {
   }
 });
 
+test("companies: normalized domains collapse subdomains and upgrade name-only rows", async (t) => {
+  const fx = await setupPg("g_co_norm");
+  if (!fx) return t.skip("DATABASE_URL not set");
+  try {
+    const ws = await seedWorkspace(fx.pool);
+    const nameOnly = await upsertCompany(fx.pool, ws, { name: "Anthropic" });
+    const normalized = await upsertCompany(fx.pool, ws, {
+      name: "Anthropic",
+      domain: "https://www-cdn.anthropic.com/careers",
+    });
+    const repeat = await upsertCompany(fx.pool, ws, {
+      name: "Anthropic AI",
+      domain: "anthropic.com",
+    });
+
+    assert.equal(nameOnly.id, normalized.id);
+    assert.equal(normalized.id, repeat.id);
+    assert.equal(repeat.domain, "anthropic.com");
+  } finally {
+    await fx.close();
+  }
+});
+
 test("companies: find by domain + list by name", async (t) => {
   const fx = await setupPg("g_co_find");
   if (!fx) return t.skip("DATABASE_URL not set");

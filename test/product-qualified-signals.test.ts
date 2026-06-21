@@ -394,7 +394,7 @@ test("qualified signals query only surfaces actionable company-backed verified-c
   assert.match(sql, /e\.event_type = 'draft\.judged'/);
   assert.match(sql, /e\.event_type = 'draft\.rejected'/);
   assert.match(sql, /coalesce\(m\.eval_score, \(judged\.payload->>'eval_score'\)::numeric\)/);
-  assert.match(sql, /limit \$2/);
+  assert.match(sql, /limit greatest\(\$2::int \* 5, 250\)/);
 });
 
 test("qualified signal email readiness coalesces duplicate Outlook rows by mailbox", async () => {

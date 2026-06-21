@@ -130,6 +130,7 @@ import {
   RSS_SIGNAL_INGESTION_WORKFLOW,
 } from "../signals/index.ts";
 import {
+  createAccountIntentProjection,
   classifySignal,
   createMockEmbeddingClient,
   createOpenAIEmbeddingClient,
@@ -8424,6 +8425,7 @@ function createProductEventProjections(
       },
     },
     createSignalCompanyLinkedProjection(engine),
+    createAccountIntentProjection(engine.pool, engine.bus),
     {
       name: "signal.dismissal.projector.v1",
       eventTypes: ["signal.dismissal.requested"],
