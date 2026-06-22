@@ -2,9 +2,9 @@
 /**
  * Operator gate for recurring production blockers.
  *
- * Strict verifiers intentionally fail on recent ECS health events. The
- * optional legacy SES check only runs when AWS_SES_REQUIRED=1 because customer-
- * connected Outlook mailboxes are the launch-critical outbound path.
+ * Fly is the canonical worker host. Legacy AWS verifiers only run when
+ * explicitly enabled because customer-connected Outlook mailboxes and the Fly
+ * worker are the launch-critical production path.
  */
 
 import { pathToFileURL } from "node:url";
@@ -16,6 +16,11 @@ import {
   runRestateEcsHealthProbe,
   type RestateEcsHealthResult,
 } from "./verify-restate-ecs-health.ts";
+import {
+  resolveFlyWorkerHostProbeOptions,
+  runFlyWorkerHostProbe,
+  type FlyWorkerHostProbeResult,
+} from "./fly-worker-host.ts";
 import {
   runOutlookReadinessProbe,
   type OutlookReadinessResult,
@@ -38,6 +43,27 @@ export interface ProductionGateResult {
   ok: boolean;
   launchReady: boolean;
   decisions: ProductionGateDecision[];
+}
+
+export function classifyFlyWorkerHostGate(
+  result: FlyWorkerHostProbeResult,
+): ProductionGateDecision {
+  const failed = result.checks.filter((check) => check.status === "fail");
+  if (failed.length === 0) {
+    return {
+      name: "Fly worker host",
+      status: "ok",
+      detail: `${result.publicUrl} passed Fly config, machine, and /health checks.`,
+      next: "Safe to continue monitoring with npm run verify:fly-cutover.",
+    };
+  }
+
+  return {
+    name: "Fly worker host",
+    status: "fail",
+    detail: failed.map((check) => `${check.name}: ${check.detail}`).join(" | "),
+    next: "Investigate the failing Fly config, machine, or health check before raising production volume.",
+  };
 }
 
 export function classifyRestateEcsGate(
@@ -72,6 +98,22 @@ export function classifyRestateEcsGate(
     status: "fail",
     detail: failed.map((check) => `${check.name}: ${check.detail}`).join(" | "),
     next: "Investigate the failing current-state ECS/ALB/log check before raising ingestion volume.",
+  };
+}
+
+export function classifyWorkerHostGate(input: {
+  fly: FlyWorkerHostProbeResult;
+  legacyEcs?: RestateEcsHealthResult | null;
+}): ProductionGateDecision {
+  const canonical = classifyFlyWorkerHostGate(input.fly);
+  const legacy = input.legacyEcs ? classifyRestateEcsGate(input.legacyEcs) : null;
+  if (!legacy || legacy.status === "ok") return canonical;
+  if (canonical.status === "fail") return canonical;
+  return {
+    name: canonical.name,
+    status: legacy.status,
+    detail: `${canonical.detail} Legacy AWS/ECS verifier: ${legacy.detail}`,
+    next: legacy.next,
   };
 }
 
@@ -124,13 +166,17 @@ export function classifyAwsSesGate(
 }
 
 export function summarizeProductionGate(input: {
-  restate: RestateEcsHealthResult;
+  workerHost: FlyWorkerHostProbeResult;
+  legacyEcs?: RestateEcsHealthResult | null;
   outlook: OutlookReadinessResult;
   ses: AwsSesReadinessResult;
   sharedX: SharedXReadinessResult;
 }): ProductionGateResult {
   const decisions = [
-    classifyRestateEcsGate(input.restate),
+    classifyWorkerHostGate({
+      fly: input.workerHost,
+      legacyEcs: input.legacyEcs,
+    }),
     classifyOutlookGate(input.outlook),
     classifySharedXGate(input.sharedX),
     classifyAwsSesGate(input.ses),
@@ -144,7 +190,10 @@ export function summarizeProductionGate(input: {
 
 async function main(): Promise<void> {
   const result = summarizeProductionGate({
-    restate: await runRestateEcsHealthProbe(),
+    workerHost: await runFlyWorkerHostProbe(resolveFlyWorkerHostProbeOptions(process.env)),
+    legacyEcs: shouldRunAwsEcsLegacyGate(process.env)
+      ? await runRestateEcsHealthProbe()
+      : null,
     outlook: await runOutlookReadinessProbe(),
     sharedX: await runSharedXReadinessProbe(),
     ses: shouldRunAwsSesGate(process.env)
@@ -275,6 +324,12 @@ function shouldRunAwsSesGate(
   env: Record<string, string | undefined>,
 ): boolean {
   return env.AWS_SES_REQUIRED?.trim() === "1";
+}
+
+function shouldRunAwsEcsLegacyGate(
+  env: Record<string, string | undefined>,
+): boolean {
+  return env.AWS_ECS_LEGACY?.trim() === "1";
 }
 
 function skippedAwsSesReadiness(): AwsSesReadinessResult {

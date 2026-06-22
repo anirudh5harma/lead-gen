@@ -189,9 +189,15 @@ npm run verify:worker-release
 It verifies the Restate-capable worker entrypoints register every workflow
 service that production readiness and `npm run verify:restate` require.
 
-Deploy these worker processes on a long-running container runtime. On AWS, use
-ECS Express Mode for new deployments and migrations from App Runner-style
-services. For managed services that need an HTTP health check, run
+Deploy the production worker on Fly with the checked-in [`fly.toml`](./fly.toml)
+and `npm run deploy:fly-worker`. That is the default and recommended worker
+deployment path, and it runs the consolidated `WORKER_COMMAND=worker:production`
+process by default. After deploy, register `https://bombsell-production-worker.fly.dev`
+with Restate if needed and run `npm run verify:fly-cutover`.
+
+**Legacy / migrating off AWS:** the AWS/ECS path is retired as the canonical
+host. Keep it only while draining legacy infrastructure. If a managed platform
+still needs an HTTP health wrapper during that migration, run
 `npm run worker:managed` with `WORKER_TARGET_COMMAND` set to the target worker,
 including `worker:production` or `worker:restate-workflows` for the Restate
 handler host. Restate-capable managed workers use `WORKER_HEALTH_PORT=9081` by
@@ -337,7 +343,16 @@ Required migrations (latest two added by this batch):
 
 #### 3. Long-running workers
 
-Each runs as its own process; all three are required for production:
+The production default is the consolidated worker process that Fly runs:
+
+```bash
+npm run worker:production
+```
+
+Use the split worker layout only as an advanced scale-out option when a
+self-managed runtime needs dedicated process isolation. The same image can be
+split into these durable consumers, but they are not required for the default
+production deployment:
 
 ```bash
 npm run worker:email-projectors       # SES/Outlook ingress → channel projectors
@@ -367,8 +382,8 @@ DATABASE_URL=... npm run verify:recovery   # dispatch DLQ schema + redrive flip
 DATABASE_URL=... NATS_URL=... npm run verify:nats   # publish + delivery round-trip
 RESTATE_INGRESS_URL=... RESTATE_BEARER_TOKEN=... npm run verify:restate # registered workflows
 RESTATE_INGRESS_URL=... RESTATE_BEARER_TOKEN=... npm run verify:restate-runtime # durable checkpoint canary
-npm run verify:restate-ecs-health # ECS service, target health, and recent Restate log scan
-npm run verify:production-gate # ECS + Outlook readiness + optional managed-domain decision gate
+npm run verify:fly-cutover # Fly host, Restate registration, and AWS teardown gate
+npm run verify:production-gate # Fly worker host + Outlook readiness + optional managed-domain decision gate
 npm run verify:outlook # read-only aggregate Outlook account + reply-subscription readiness
 npm run verify:worker-release # static worker/release contract
 APP_ORIGIN=https://app.example.com npm run verify:production-app # public health + auth redirects
@@ -376,16 +391,20 @@ APP_ORIGIN=https://app.example.com npm run verify:production-app # public health
 # browser session to verify Brief, onboarding bypass, Health, and MCP readiness.
 DATABASE_URL=... npm run verify:ses        # bounce → message → outcome pipeline
 AWS_REGION=... AWS_SNS_TOPIC_ARNS=... npm run verify:aws-ses # SES account + SNS config
+# Legacy AWS migration only:
+AWS_ECS_LEGACY=1 npm run verify:production-gate # include the retired ECS verifier on demand
+AWS_ECS_LEGACY=1 npm run verify:restate-ecs-health # direct ECS service, target health, and log scan
 ```
 
 Use `npm run verify:production-gate` for release check-ins before deep-diving
-ECS/SES again. It still fails on current ECS/ALB/log failures, broken Outlook
-reply-sync state, or broken SES/SNS wiring when the optional SES path is
-configured, but it classifies recurring non-engineering states: recent ECS
-replacement events in the verifier lookback (`wait`), missing customer-connected
-Outlook setup (`external`), and AWS SES production-access review/sandbox state
-(`external`). Set `AWS_SES_REQUIRED=1` to force SES checks, and
-`PRODUCTION_GATE_STRICT=1` when CI should fail on known wait/external states too.
+Fly, Outlook, or SES. It fails on current Fly worker host failures, broken
+Outlook reply-sync state, or broken SES/SNS wiring when the optional SES path
+is configured. When `AWS_ECS_LEGACY=1`, it also classifies recurring legacy ECS
+states such as recent replacement events in the verifier lookback (`wait`).
+Missing customer-connected Outlook setup remains `external`, and AWS SES
+production-access review/sandbox state remains `external`. Set
+`AWS_SES_REQUIRED=1` to force SES checks, and `PRODUCTION_GATE_STRICT=1` when CI
+should fail on known wait/external states too.
 
 #### 6. Owner surfaces to bookmark
 
@@ -399,14 +418,13 @@ Outlook setup (`external`), and AWS SES production-access review/sandbox state
 
 #### Known follow-ups (do not block launch)
 
-- Keep `npm run verify:restate-ecs-health` green for the Restate handler.
-  Live Restate registration and runtime canary pass; after observed long-poll
-  health churn, the target group now uses a 15-second timeout and 5 unhealthy
-  checks before replacement. If target/log failures recur, move to a
-  protocol-correct host/path or a dedicated health target group; custom-port
-  health checks on generated ECS Express target groups did not stabilize. Use
-  `npm run verify:production-gate` first so stale service-history noise is
-  classified before another ECS debug loop starts.
+- Keep `npm run verify:fly-cutover` green for the canonical worker host. It
+  verifies the Fly worker shape, `/health`, Restate registration, and that no
+  required workflow deployment still points at a legacy AWS/ECS host.
+- Legacy / migrating off AWS: only keep `npm run verify:restate-ecs-health`
+  and `AWS_ECS_LEGACY=1 npm run verify:production-gate` in the loop while the
+  retired AWS worker path still exists. Remove that verifier from routine
+  release check-ins once the legacy host is fully drained.
 - Connect and verify at least one production Outlook mailbox before broad
   outbound. `npm run verify:outlook` must show a connected account with an
   active Graph subscription, then run a controlled durable Play send/reply test.

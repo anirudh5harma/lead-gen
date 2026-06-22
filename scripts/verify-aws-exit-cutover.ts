@@ -437,6 +437,19 @@ export function requiredWorkflowDeploymentUriIssues(
     );
 }
 
+export function legacyAwsWorkflowDeploymentIssues(
+  summary: RestateDeploymentSummary,
+  requiredServices: readonly string[] = REQUIRED_RESTATE_SERVICES,
+): string[] {
+  const requiredServiceSet = new Set(requiredServices);
+  return summary.deployments
+    .filter((deployment) => deployment.services.some((service) => requiredServiceSet.has(service)))
+    .filter((deployment) => isLegacyAwsDeploymentUri(deployment.uri))
+    .map((deployment) =>
+      `${deployment.id ?? "unknown"}@${deployment.uri ?? "unknown"} still points at a legacy AWS/ECS host`
+    );
+}
+
 export function normalizeOrigin(value: string): string | null {
   try {
     return new URL(value).origin.toLowerCase();
@@ -543,6 +556,21 @@ function trimOutput(output: string): string {
 
 function detailFromError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isLegacyAwsDeploymentUri(value: string | null | undefined): boolean {
+  if (!value) return false;
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    return (
+      hostname === "amazonaws.com" ||
+      hostname.endsWith(".amazonaws.com") ||
+      hostname.endsWith(".aws") ||
+      hostname.includes("ecs")
+    );
+  } catch {
+    return /amazonaws\.com|\.aws\b|\becs\b/i.test(value);
+  }
 }
 
 function hasFailures(): boolean {

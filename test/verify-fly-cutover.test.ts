@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { legacyAwsWorkflowDeploymentIssues } from "../scripts/verify-aws-exit-cutover.ts";
 import {
   flyWorkerIssues,
   normalizeOrigin,
@@ -161,6 +162,30 @@ test("fly cutover requires workflow deployments to point at Fly", () => {
     ),
     [
       "dp_ecs@https://bo-ecs.example.aws/ still points outside https://bombsell-production-worker.fly.dev",
+    ],
+  );
+});
+
+test("fly cutover fails when a legacy AWS/ECS deployment is still registered", () => {
+  const summary = summarizeRestateDeployments({
+    deployments: [
+      {
+        id: "dp_fly",
+        uri: "https://bombsell-production-worker.fly.dev/",
+        services: [{ name: "series_a_cold_open" }, { name: "play.signal_to_email.v1" }],
+      },
+      {
+        id: "dp_aws",
+        uri: "https://worker.us-east-1.amazonaws.com/",
+        services: [{ name: "workspace.signal.ingestion" }],
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    legacyAwsWorkflowDeploymentIssues(summary),
+    [
+      "dp_aws@https://worker.us-east-1.amazonaws.com/ still points at a legacy AWS/ECS host",
     ],
   );
 });

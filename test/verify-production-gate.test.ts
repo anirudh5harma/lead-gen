@@ -2,15 +2,53 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   classifyAwsSesGate,
+  classifyFlyWorkerHostGate,
   classifyOutlookGate,
-  classifyRestateEcsGate,
   classifySharedXGate,
+  classifyWorkerHostGate,
   summarizeProductionGate,
 } from "../scripts/verify-production-gate.ts";
 import type { AwsSesReadinessResult } from "../scripts/verify-aws-ses.ts";
+import type { FlyWorkerHostProbeResult } from "../scripts/fly-worker-host.ts";
 import type { OutlookReadinessResult } from "../scripts/verify-outlook-readiness.ts";
 import type { RestateEcsHealthResult } from "../scripts/verify-restate-ecs-health.ts";
 import type { SharedXReadinessResult } from "../scripts/verify-shared-x-readiness.ts";
+
+function healthyFlyWorkerHost(): FlyWorkerHostProbeResult {
+  return {
+    ok: true,
+    appName: "bombsell-production-worker",
+    publicUrl: "https://bombsell-production-worker.fly.dev",
+    machine: {
+      id: "9080",
+      name: "bombsell-production-worker",
+      state: "started",
+      region: "iad",
+      cpuKind: "shared",
+      cpus: 2,
+      memoryMb: 1024,
+      restartPolicy: "on-failure",
+      restartRetries: 10,
+      internalPort: 8080,
+      autoStart: true,
+      autoStop: "off",
+      minMachinesRunning: 1,
+      env: {
+        APP_ORIGIN: "https://www.bombsell.com",
+        MANAGED_OWNED_DOMAIN_EMAIL_ENABLED: "0",
+        RESTATE_WORKFLOW_HTTP1: "1",
+        RESTATE_WORKFLOW_PORT: "8080",
+        WORKER_COMMAND: "worker:production",
+      },
+    },
+    checks: [
+      { name: "fly.config", status: "ok", detail: "fly.toml validates for Fly" },
+      { name: "fly.worker.machine_count", status: "ok", detail: "1 active Fly Machine running for bombsell-production-worker" },
+      { name: "fly.worker.machine", status: "ok", detail: "9080 iad shared 2 CPU / 1024 MB" },
+      { name: "fly.worker.health", status: "ok", detail: "HTTP 200 from https://bombsell-production-worker.fly.dev/health" },
+    ],
+  };
+}
 
 function healthyRestate(): RestateEcsHealthResult {
   return {
@@ -77,7 +115,33 @@ function healthySharedX(): SharedXReadinessResult {
   };
 }
 
-test("production gate classifies stale ECS replacement history as wait", () => {
+test("production gate classifies a healthy Fly worker host as ok", () => {
+  const decision = classifyFlyWorkerHostGate(healthyFlyWorkerHost());
+
+  assert.equal(decision.status, "ok");
+  assert.match(decision.next, /verify:fly-cutover/);
+});
+
+test("production gate fails when the canonical Fly worker host fails", () => {
+  const workerHost = healthyFlyWorkerHost();
+  workerHost.ok = false;
+  workerHost.checks = workerHost.checks.map((check) =>
+    check.name === "fly.worker.health"
+      ? {
+          ...check,
+          status: "fail",
+          detail: "HTTP 503 from https://bombsell-production-worker.fly.dev/health",
+        }
+      : check,
+  );
+
+  const decision = classifyFlyWorkerHostGate(workerHost);
+
+  assert.equal(decision.status, "fail");
+  assert.match(decision.detail, /fly\.worker\.health/);
+});
+
+test("production gate only consults legacy ECS when explicitly requested", () => {
   const restate = healthyRestate();
   restate.ok = false;
   restate.checks = restate.checks.map((check) =>
@@ -90,26 +154,13 @@ test("production gate classifies stale ECS replacement history as wait", () => {
       : check,
   );
 
-  const decision = classifyRestateEcsGate(restate);
+  const decision = classifyWorkerHostGate({
+    fly: healthyFlyWorkerHost(),
+    legacyEcs: restate,
+  });
 
   assert.equal(decision.status, "wait");
-  assert.match(decision.next, /Do not re-debug ECS/);
-});
-
-test("production gate classifies current ECS target failure as fail", () => {
-  const restate = healthyRestate();
-  restate.ok = false;
-  restate.checks = restate.checks.map((check) =>
-    check.name === "elb.target_health"
-      ? {
-          ...check,
-          status: "fail",
-          detail: "healthy=0/1 states=unhealthy",
-        }
-      : check,
-  );
-
-  assert.equal(classifyRestateEcsGate(restate).status, "fail");
+  assert.match(decision.detail, /Legacy AWS\/ECS verifier/);
 });
 
 test("production gate classifies SES sandbox review as external", () => {
@@ -263,7 +314,8 @@ test("production gate is operator-ok but not launch-ready for known blockers", (
   );
 
   const result = summarizeProductionGate({
-    restate,
+    workerHost: healthyFlyWorkerHost(),
+    legacyEcs: restate,
     outlook: healthyOutlook(),
     sharedX: healthySharedX(),
     ses,
