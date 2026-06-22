@@ -2840,14 +2840,16 @@ function LinkedInAccountSlot({
           ) : null}
         </div>
       </div>
-      <Link
-        href="/api/auth/linkedin?return_to=%2Fdashboard%2Fprofile%23linkedin"
-        prefetch={false}
-        className={account ? "btn-quiet-sm w-fit" : "btn-solid-sm w-fit"}
+      <button
+        type="button"
+        disabled
+        aria-disabled="true"
+        title="LinkedIn connection is coming soon"
+        className="btn-quiet-sm w-fit cursor-not-allowed opacity-60"
       >
         <BrandIcon name="linkedin" size={14} />
-        {account ? "Reconnect account" : "Connect account"}
-      </Link>
+        Coming soon
+      </button>
     </article>
   );
 }

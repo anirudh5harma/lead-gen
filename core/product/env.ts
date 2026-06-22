@@ -172,7 +172,7 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     name: "DEEPSEEK_API_KEY",
     requirement: "production",
     category: "llm",
-    description: "Default LLM key for drafting, hot-path judges, classification, and dedup.",
+    description: "Default DeepSeek key for the assistant reasoning brain, drafting, hot-path judges, classification, and dedup.",
     example: "sk-...",
   },
   {
@@ -186,7 +186,7 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     name: "OPENAI_API_KEY",
     requirement: "production",
     category: "llm",
-    description: "Embedding model key for signal ingestion and candidate dedup.",
+    description: "OpenAI Realtime key for voice transcription transport.",
     example: "sk-...",
   },
   {

@@ -118,7 +118,7 @@ export default function Home() {
             <ScrollReveal delay={0.05}>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-cta-bg)] px-2.5 py-1 text-[12px] font-semibold leading-[1.4286] tracking-[-0.01em] text-[var(--color-brand-pink)]">
                 <span className="size-1.5 rounded-full bg-[var(--color-brand-pink)]" />
-                New · Agent v2 ships this week
+                Live buying signals
               </span>
             </ScrollReveal>
             <ScrollReveal delay={0.15}>
@@ -133,7 +133,7 @@ export default function Home() {
             </ScrollReveal>
             <ScrollReveal delay={0.25}>
               <p className="mt-6 max-w-[520px] text-[18px] leading-[1.5] tracking-[-0.015em] text-[var(--color-text-2)]">
-                Quality signals, verified contacts, and email or LinkedIn outreach in one agent that watches, drafts, judges, and sends.
+                Grow your sales with high-intent outreach.
               </p>
             </ScrollReveal>
             <ScrollReveal delay={0.35}>

@@ -110,8 +110,9 @@ test("dashboard shell mounts the global voice assistant drawer", () => {
   assert.match(drawer, /Talk to Bombsell/);
   assert.match(drawer, /Push to talk|Hold to talk/);
   assert.match(drawer, /\/api\/assistant\/tool/);
+  assert.match(drawer, /\/api\/assistant\/chat/);
   assert.match(transport, /\/api\/assistant\/session/);
-  assert.match(transport, /response\.create/);
+  assert.match(transport, /input_audio_transcription/);
 });
 
 test("Agent is the canonical dashboard surface route", () => {
@@ -391,7 +392,7 @@ test("Dashboard routes setup work through Profile and current surfaces", () => {
   assert.match(source("app/dashboard/brief/page.tsx"), /dynamic = "force-dynamic"/);
   assert.match(source("app/dashboard/brief/page.tsx"), /from "\.\.\/page"/);
   assert.match(source("app/brief/page.tsx"), /redirect\("\/dashboard\/brief"\)/);
-  assert.match(appLayout, /Profile, quality signals, verified contacts/);
+  assert.match(appLayout, /Grow your sales with high-intent outreach/);
   assert.doesNotMatch(appLayout, /Prospecting, signal ingestion/);
   assert.match(urlStart, /draft your profile, audience, and voice/);
   assert.doesNotMatch(urlStart, /prospecting profile/);
@@ -439,7 +440,7 @@ test("Profile presents merged Outlook and LinkedIn connection gates", () => {
   assert.match(settings, /First account/);
   assert.match(settings, /Second account/);
   assert.match(settings, /Account and limits/);
-  assert.match(settings, /Connect account/);
+  assert.match(settings, /LinkedIn connection is coming soon/);
   assert.match(settings, /Advanced setup/);
   assert.match(settings, /Watchlists, quality gates, protection, long-tail profile\s+fields, source IDs, webhooks, MCP, CRM, and workspace account\s+details/);
   assert.match(topLevelProfile, /<SurfaceSection title="Company & ICP">/);
@@ -594,7 +595,7 @@ test("Verified contacts open graph-backed profile pages with channel readiness",
   assert.match(profile, /First seen/);
   assert.match(profile, /Last updated/);
   assert.match(profile, /Contact provenance comes from the graph, signals, and outreach threads/);
-  assert.match(profile, /Connect LinkedIn/);
+  assert.match(profile, /Coming soon/);
   assert.match(profile, /Connect Outlook/);
   assert.doesNotMatch(profile, /Prospect profile/);
   assert.doesNotMatch(profile, /Open Plays/);
@@ -1367,7 +1368,9 @@ test("Profile exposes profile, channels, advanced setup, and workspace autonomy 
     settings,
     /href="\/api\/auth\/outlook\?return_to=%2Fdashboard%2Fprofile%23email"/,
   );
-  assert.match(
+  // LinkedIn connection is coming soon — the connect action is intentionally
+  // disabled, so the OAuth start link must not be rendered.
+  assert.doesNotMatch(
     settings,
     /href="\/api\/auth\/linkedin\?return_to=%2Fdashboard%2Fprofile%23linkedin"/,
   );
@@ -1457,7 +1460,8 @@ test("LinkedIn OAuth returns to current product hubs instead of legacy prospecti
   assert.match(linkedInRoute, /safeReturnTo\(req\.nextUrl\.searchParams\.get\("return_to"\)\)/);
   assert.match(linkedInCallback, /state\.return_to \?\? "\/dashboard\/profile#linkedin"/);
   assert.match(linkedInCallback, /dest\.searchParams\.set\("status", "linkedin_connecting"\)/);
-  assert.match(settings, /href="\/api\/auth\/linkedin\?return_to=%2Fdashboard%2Fprofile%23linkedin"/);
+  // LinkedIn connection is coming soon — UI no longer renders the OAuth start link.
+  assert.doesNotMatch(settings, /href="\/api\/auth\/linkedin\?return_to=%2Fdashboard%2Fprofile%23linkedin"/);
   assert.match(settings, /id="channels"/);
   assert.match(settings, /scroll-mt-28/);
   assert.match(linkedInWebhook, /payload\.event === "connection_accepted"/);
@@ -1511,7 +1515,8 @@ test("account connection entry points carry explicit product return targets", ()
   assert.doesNotMatch(surfaces, /href="\/api\/auth\/outlook"/);
   assert.doesNotMatch(surfaces, /href="\/api\/auth\/linkedin"/);
   assert.match(surfaces, /\/api\/auth\/outlook\?return_to=/);
-  assert.match(surfaces, /\/api\/auth\/linkedin\?return_to=/);
+  // LinkedIn connection is coming soon — no LinkedIn OAuth entry point in the UI.
+  assert.doesNotMatch(surfaces, /\/api\/auth\/linkedin\?return_to=/);
   assert.doesNotMatch(surfaces, /\/dashboard\/integrations/);
   assert.doesNotMatch(surfaces, /\/api\/auth\/outlook\?return_to=\/dashboard\/deliverability/);
 });
@@ -1777,8 +1782,8 @@ test("visual system uses the clean light operating surface", () => {
   assert.match(globals, /:root \{ color-scheme: light; \}/);
   assert.match(layout, /colorScheme: "light"/);
   assert.match(home, /Autonomous outbound/);
-  assert.match(home, /Quality signals, verified contacts/);
-  assert.match(home, /email or LinkedIn outreach/);
+  assert.match(home, /Grow your sales with high-intent outreach/);
+  assert.match(home, /across email and LinkedIn/);
   assert.match(home, /Your buyer profile builds itself/);
   assert.doesNotMatch(home, /Signal-led prospecting/);
   assert.doesNotMatch(home, /Multi-channel plays/);

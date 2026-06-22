@@ -34,9 +34,8 @@ function toolRequest(body: AssistantToolRequest | Record<string, unknown>): Requ
 
 test("assistant tool route requires authentication", async () => {
   const response = await handleAssistantToolRequest(toolRequest({
-    action: "invoke",
-    tool_name: "get_brief",
-    arguments: {},
+    action: "confirm",
+    confirmation_token: "token",
   }), {
     getSession: async () => null,
   });
@@ -47,8 +46,7 @@ test("assistant tool route requires authentication", async () => {
 
 test("assistant tool route validates the request body", async () => {
   const response = await handleAssistantToolRequest(toolRequest({
-    action: "invoke",
-    arguments: {},
+    action: "confirm",
   }), {
     getSession: async () => activeSession(),
   });
@@ -57,27 +55,20 @@ test("assistant tool route validates the request body", async () => {
   assert.match(await response.text(), /Valid assistant tool request required/);
 });
 
-test("assistant tool route rejects assistant arguments outside the drawer contract", async () => {
-  let called = false;
+test("assistant tool route rejects direct invoke requests", async () => {
   const response = await handleAssistantToolRequest(toolRequest({
     action: "invoke",
     tool_name: "dispatch_outreach",
     arguments: { limit: 26 },
   }), {
     getSession: async () => activeSession(),
-    assertToolAllowed: async () => {},
-    runToolRequest: async () => {
-      called = true;
-      throw new Error("should not run");
-    },
   });
 
   assert.equal(response.status, 400);
-  assert.match(await response.text(), /Invalid arguments for dispatch_outreach/i);
-  assert.equal(called, false);
+  assert.match(await response.text(), /not supported on this route/i);
 });
 
-test("assistant tool route returns completed tool results and telemetry", async () => {
+test("assistant tool route returns completed confirmation results and telemetry", async () => {
   let seenTelemetry:
     | {
         workspaceId: string;
@@ -92,11 +83,8 @@ test("assistant tool route returns completed tool results and telemetry", async 
     | null = null;
 
   const response = await handleAssistantToolRequest(toolRequest({
-    action: "invoke",
-    tool_name: "get_brief",
-    call_id: "call_123",
-    request_id: "req_123",
-    arguments: {},
+    action: "confirm",
+    confirmation_token: "token_123",
   }), {
     getSession: async () => activeSession(),
     assertToolAllowed: async () => {},
@@ -130,41 +118,11 @@ test("assistant tool route returns completed tool results and telemetry", async 
   assert.equal(seenTelemetry.workspaceId, WORKSPACE_ID);
   assert.equal(seenTelemetry.userId, USER_ID);
   assert.equal(seenTelemetry.toolName, "get_brief");
-  assert.equal(seenTelemetry.callId, "call_123");
-  assert.equal(seenTelemetry.requestId, "req_123");
+  assert.equal(seenTelemetry.callId, undefined);
+  assert.equal(seenTelemetry.requestId, undefined);
   assert.equal(seenTelemetry.status, "completed");
   assert.equal(seenTelemetry.requiresConfirmation, false);
   assert.equal(typeof seenTelemetry.latencyMs, "number");
-});
-
-test("assistant tool route returns 202 for confirmation boundaries", async () => {
-  const response = await handleAssistantToolRequest(toolRequest({
-    action: "invoke",
-    tool_name: "dispatch_outreach",
-    arguments: { limit: 3 },
-  }), {
-    getSession: async () => activeSession(),
-    assertToolAllowed: async () => {},
-    publishToolCalled: async () => {},
-    runToolRequest: async () => ({
-      status: "requires_confirmation",
-      tool_name: "dispatch_outreach",
-      cards: [],
-      confirmation: {
-        token: "token",
-        title: "Dispatch outreach workflows?",
-        body: "Needs confirmation.",
-        confirm_label: "Dispatch outreach",
-        cancel_label: "Cancel",
-      },
-    }),
-  });
-
-  assert.equal(response.status, 202);
-  assert.equal(
-    (await response.json() as { status: string }).status,
-    "requires_confirmation",
-  );
 });
 
 test("assistant tool route returns handled confirmation failures as 422", async () => {
@@ -197,15 +155,14 @@ test("assistant tool route reports unexpected failures as 500 and emits telemetr
 
   try {
     const response = await handleAssistantToolRequest(toolRequest({
-    action: "invoke",
-    tool_name: "get_brief",
-    arguments: {},
-  }), {
-    getSession: async () => activeSession(),
-    assertToolAllowed: async () => {},
-    runToolRequest: async () => {
-      throw new Error("tool exploded");
-    },
+      action: "confirm",
+      confirmation_token: "token",
+    }), {
+      getSession: async () => activeSession(),
+      assertToolAllowed: async () => {},
+      runToolRequest: async () => {
+        throw new Error("tool exploded");
+      },
       publishToolCalled: async (input) => {
         seenStatus = input.status;
       },
@@ -221,9 +178,8 @@ test("assistant tool route reports unexpected failures as 500 and emits telemetr
 
 test("assistant tool route enforces the workspace tool-call cap", async () => {
   const response = await handleAssistantToolRequest(toolRequest({
-    action: "invoke",
-    tool_name: "get_brief",
-    arguments: {},
+    action: "confirm",
+    confirmation_token: "token",
   }), {
     getSession: async () => activeSession(),
     assertToolAllowed: async () => {

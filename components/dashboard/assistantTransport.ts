@@ -1,31 +1,27 @@
 "use client";
 
-import type {
-  AssistantSessionMode,
-  AssistantSessionResponse,
-} from "../../core/product/assistant/types.ts";
+import type { AssistantSessionResponse } from "../../core/product/assistant/types.ts";
 
-export interface AssistantReplayMessage {
-  id: string;
-  role: "user" | "assistant";
-  text: string;
-}
+/**
+ * Voice capture transport. OpenAI Realtime is used here ONLY as a streaming
+ * transcription service: the mic audio goes up over WebRTC and we consume the
+ * input-audio transcription events. There is no model reasoning, no audio
+ * output, and no function calling on this channel — DeepSeek (the brain) runs
+ * server-side behind /api/assistant/chat and replies as text in the drawer.
+ */
 
-export interface AssistantRealtimeEvent {
-  type: string;
-  [key: string]: unknown;
-}
-
-export interface AssistantRealtimeConnection {
+export interface AssistantTranscriptionConnection {
   callId: string | null;
-  mode: AssistantSessionMode;
   close(): void;
-  interrupt(): void;
-  replayHistory(history: AssistantReplayMessage[]): void;
-  requestResponse(options?: { textOnly?: boolean }): void;
-  sendFunctionOutput(callId: string, output: unknown): void;
-  sendText(input: { itemId: string; text: string }): void;
   setMicrophoneEnabled(enabled: boolean): void;
+}
+
+interface RealtimeEvent {
+  type?: string;
+  transcript?: string;
+  delta?: string;
+  error?: { message?: string };
+  [key: string]: unknown;
 }
 
 function assistantErrorMessage(detail: unknown): string {
@@ -40,37 +36,24 @@ function assistantErrorMessage(detail: unknown): string {
   return "Assistant connection failed.";
 }
 
-function parseRealtimeEvent(raw: string): AssistantRealtimeEvent | null {
+function parseRealtimeEvent(raw: string): RealtimeEvent | null {
   try {
-    return JSON.parse(raw) as AssistantRealtimeEvent;
+    return JSON.parse(raw) as RealtimeEvent;
   } catch {
     return null;
   }
 }
 
-function replayContentType(role: "user" | "assistant") {
-  return role === "assistant" ? "output_text" : "input_text";
-}
-
-function safeSend(channel: RTCDataChannel, event: Record<string, unknown>) {
-  if (channel.readyState !== "open") {
-    throw new Error("Assistant channel is not ready yet.");
-  }
-  channel.send(JSON.stringify(event));
-}
-
-export async function connectAssistantRealtime(input: {
-  mode: AssistantSessionMode;
+export async function connectAssistantTranscription(input: {
+  /** Fired with the final transcript of each completed user utterance. */
+  onTranscript: (text: string) => void;
+  /** Optional interim transcript while the user is still speaking. */
+  onPartial?: (text: string) => void;
+  onError?: (message: string) => void;
   onClose?: () => void;
-  onEvent: (event: AssistantRealtimeEvent) => void;
-}): Promise<AssistantRealtimeConnection> {
+}): Promise<AssistantTranscriptionConnection> {
   const peer = new RTCPeerConnection();
   const dataChannel = peer.createDataChannel("oai-events");
-  const audio = document.createElement("audio");
-  audio.autoplay = true;
-  audio.setAttribute("playsinline", "true");
-  audio.style.display = "none";
-  document.body.appendChild(audio);
 
   let localStream: MediaStream | null = null;
   let closed = false;
@@ -81,44 +64,48 @@ export async function connectAssistantRealtime(input: {
     dataChannel.close();
     peer.close();
     if (localStream) {
-      for (const track of localStream.getTracks()) {
-        track.stop();
-      }
+      for (const track of localStream.getTracks()) track.stop();
     }
-    audio.pause();
-    audio.srcObject = null;
-    audio.remove();
     input.onClose?.();
   };
 
   dataChannel.addEventListener("message", (event) => {
     const parsed = parseRealtimeEvent(String(event.data ?? ""));
-    if (parsed) input.onEvent(parsed);
-  });
-  dataChannel.addEventListener("close", () => {
-    cleanup();
-  });
+    if (!parsed) return;
 
-  peer.addEventListener("track", (event) => {
-    const [stream] = event.streams;
-    audio.srcObject = stream ?? new MediaStream([event.track]);
-    void audio.play().catch(() => {});
-  });
-
-  if (input.mode === "voice") {
-    localStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-    });
-    for (const track of localStream.getAudioTracks()) {
-      track.enabled = false;
-      peer.addTrack(track, localStream);
+    if (
+      parsed.type ===
+        "conversation.item.input_audio_transcription.completed" &&
+      typeof parsed.transcript === "string" &&
+      parsed.transcript.trim().length > 0
+    ) {
+      input.onTranscript(parsed.transcript.trim());
+      return;
     }
-  } else {
-    peer.addTransceiver("audio", { direction: "recvonly" });
+    if (
+      parsed.type === "conversation.item.input_audio_transcription.delta" &&
+      typeof parsed.delta === "string"
+    ) {
+      input.onPartial?.(parsed.delta);
+      return;
+    }
+    if (parsed.type === "error") {
+      input.onError?.(parsed.error?.message ?? "Transcription error.");
+    }
+  });
+  dataChannel.addEventListener("close", cleanup);
+
+  // Mic is the only media; we never receive remote audio in transcription mode.
+  localStream = await navigator.mediaDevices.getUserMedia({
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    },
+  });
+  for (const track of localStream.getAudioTracks()) {
+    track.enabled = false; // hold-to-talk: enabled only while pressed
+    peer.addTrack(track, localStream);
   }
 
   const opened = new Promise<void>((resolve, reject) => {
@@ -137,10 +124,7 @@ export async function connectAssistantRealtime(input: {
     const response = await fetch("/api/assistant/session", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        mode: input.mode,
-        sdp: offer.sdp,
-      }),
+      body: JSON.stringify({ mode: "voice", sdp: offer.sdp }),
     });
 
     if (!response.ok) {
@@ -148,71 +132,13 @@ export async function connectAssistantRealtime(input: {
       throw new Error(assistantErrorMessage(detail));
     }
 
-    const session =
-      (await response.json()) as AssistantSessionResponse;
-
-    await peer.setRemoteDescription({
-      type: "answer",
-      sdp: session.sdp,
-    });
+    const session = (await response.json()) as AssistantSessionResponse;
+    await peer.setRemoteDescription({ type: "answer", sdp: session.sdp });
     await opened;
 
     return {
       callId: session.call_id,
-      mode: input.mode,
       close: cleanup,
-      interrupt() {
-        safeSend(dataChannel, { type: "response.cancel" });
-        safeSend(dataChannel, { type: "output_audio_buffer.clear" });
-      },
-      replayHistory(history) {
-        for (const message of history) {
-          safeSend(dataChannel, {
-            type: "conversation.item.create",
-            item: {
-              id: message.id,
-              type: "message",
-              role: message.role,
-              content: [
-                {
-                  type: replayContentType(message.role),
-                  text: message.text,
-                },
-              ],
-            },
-          });
-        }
-      },
-      requestResponse(options) {
-        safeSend(dataChannel, {
-          type: "response.create",
-          ...(options?.textOnly
-            ? { response: { output_modalities: ["text"] } }
-            : {}),
-        });
-      },
-      sendFunctionOutput(callId, output) {
-        safeSend(dataChannel, {
-          type: "conversation.item.create",
-          item: {
-            type: "function_call_output",
-            call_id: callId,
-            output:
-              typeof output === "string" ? output : JSON.stringify(output),
-          },
-        });
-      },
-      sendText({ itemId, text }) {
-        safeSend(dataChannel, {
-          type: "conversation.item.create",
-          item: {
-            id: itemId,
-            type: "message",
-            role: "user",
-            content: [{ type: "input_text", text }],
-          },
-        });
-      },
       setMicrophoneEnabled(enabled) {
         for (const track of localStream?.getAudioTracks() ?? []) {
           track.enabled = enabled;

@@ -3,7 +3,6 @@
 import Link from "next/link";
 import {
   useEffect,
-  useEffectEvent,
   useRef,
   useState,
   type FormEvent,
@@ -13,18 +12,17 @@ import Icon from "../Icon";
 import type {
   AssistantCard,
   AssistantConfirmationRequest,
-  AssistantToolName,
-  AssistantToolRequest,
   AssistantToolRouteResponse,
 } from "../../core/product/assistant/types.ts";
 import {
-  connectAssistantRealtime,
-  type AssistantRealtimeConnection,
-  type AssistantRealtimeEvent,
-  type AssistantReplayMessage,
+  connectAssistantTranscription,
+  type AssistantTranscriptionConnection,
 } from "./assistantTransport.ts";
+import {
+  streamAssistantChat,
+  type AssistantChatTurn,
+} from "./assistantChat.ts";
 
-type ConnectionState = "idle" | "connecting" | "connected";
 type MicState = "unknown" | "ready" | "blocked";
 
 interface MessageEntry {
@@ -34,7 +32,6 @@ interface MessageEntry {
   role: "assistant" | "user";
   source: "text" | "voice";
   text: string;
-  realtimeItemId?: string;
 }
 
 interface CardEntry {
@@ -46,34 +43,24 @@ interface CardEntry {
 interface ConfirmationEntry {
   kind: "confirmation";
   id: string;
-  callId: string;
   confirmation: AssistantConfirmationRequest;
   status: "pending" | "working" | "resolved";
-  textOnly: boolean;
   card: AssistantCard;
 }
 
 type TimelineEntry = MessageEntry | CardEntry | ConfirmationEntry;
 
 const STARTERS = [
-  "Show me the operating brief.",
-  "Why is launch blocked right now?",
+  "What's our reply rate this week?",
+  "Which companies have we targeted so far?",
+  "What's today's work?",
   "What are the top qualified signals?",
-  "Summarize the company brain.",
 ] as const;
+
+const HISTORY_LIMIT = 12;
 
 function createId(prefix: string): string {
   return `${prefix}-${crypto.randomUUID()}`;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object"
-    ? value as Record<string, unknown>
-    : null;
-}
-
-function asString(value: unknown): string | null {
-  return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
 
 function cardToneClasses(tone: AssistantCard["tone"]): string {
@@ -89,43 +76,6 @@ function cardToneClasses(tone: AssistantCard["tone"]): string {
   return "border-[var(--color-line-1)] bg-white/88 text-[var(--color-text-1)]";
 }
 
-function extractMessageText(item: Record<string, unknown>): string | null {
-  const content = Array.isArray(item.content) ? item.content : [];
-  const parts = content
-    .map((entry) => {
-      const part = asRecord(entry);
-      return asString(part?.transcript) ?? asString(part?.text) ?? null;
-    })
-    .filter(Boolean) as string[];
-  return parts.length > 0 ? parts.join(" ").trim() : null;
-}
-
-function messageSourceFromItem(
-  item: Record<string, unknown>,
-): "text" | "voice" {
-  const content = Array.isArray(item.content) ? item.content : [];
-  return content.some((entry) => {
-    const part = asRecord(entry);
-    return (
-      part?.type === "output_audio" ||
-      typeof part?.transcript === "string"
-    );
-  })
-    ? "voice"
-    : "text";
-}
-
-function replayableEntries(entries: TimelineEntry[]): AssistantReplayMessage[] {
-  return entries
-    .filter((entry): entry is MessageEntry => entry.kind === "message")
-    .filter((entry) => !entry.live && entry.text.trim().length > 0)
-    .map((entry) => ({
-      id: entry.realtimeItemId ?? entry.id,
-      role: entry.role,
-      text: entry.text,
-    }));
-}
-
 function assistantCardEntry(card: AssistantCard): CardEntry {
   return {
     kind: "card",
@@ -134,8 +84,15 @@ function assistantCardEntry(card: AssistantCard): CardEntry {
   };
 }
 
+function historyFromEntries(entries: TimelineEntry[]): AssistantChatTurn[] {
+  return entries
+    .filter((entry): entry is MessageEntry => entry.kind === "message")
+    .filter((entry) => !entry.live && entry.text.trim().length > 0)
+    .slice(-HISTORY_LIMIT)
+    .map((entry) => ({ role: entry.role, text: entry.text }));
+}
+
 export default function VoiceAssistantDrawer() {
-  const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
   const [draft, setDraft] = useState("");
   const [entries, setEntries] = useState<TimelineEntry[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -143,481 +100,151 @@ export default function VoiceAssistantDrawer() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [holdActive, setHoldActive] = useState(false);
   const [micState, setMicState] = useState<MicState>("unknown");
-  const [sessionMode, setSessionMode] = useState<"text" | "voice" | null>(null);
+  const [micConnecting, setMicConnecting] = useState(false);
 
-  const connectionRef = useRef<AssistantRealtimeConnection | null>(null);
+  const micRef = useRef<AssistantTranscriptionConnection | null>(null);
   const entriesRef = useRef<TimelineEntry[]>([]);
-  const itemEntryIdsRef = useRef<Map<string, string>>(new Map());
-  const responseTextOnlyRef = useRef<Map<string, boolean>>(new Map());
+  const abortRef = useRef<AbortController | null>(null);
   const holdRequestedRef = useRef(false);
-  const sessionModeRef = useRef<"text" | "voice" | null>(null);
-  const micStateRef = useRef<MicState>("unknown");
 
   useEffect(() => {
     entriesRef.current = entries;
   }, [entries]);
 
-  useEffect(() => {
-    sessionModeRef.current = sessionMode;
-  }, [sessionMode]);
+  function appendLocalStatus(
+    input: Pick<AssistantCard, "title" | "body" | "tone">,
+  ) {
+    setEntries((current) => [
+      ...current,
+      assistantCardEntry({
+        id: createId("status"),
+        kind: "status",
+        tone: input.tone,
+        title: input.title,
+        body: input.body,
+      }),
+    ]);
+  }
 
-  useEffect(() => {
-    micStateRef.current = micState;
-  }, [micState]);
+  /**
+   * Run one user turn end to end: record the user message, stream the
+   * DeepSeek response (text + cards + confirmations) from /api/assistant/chat,
+   * and finalize. Voice and text both land here — `source` only affects the
+   * label on the user bubble.
+   */
+  async function streamTurn(rawMessage: string, source: "text" | "voice") {
+    const message = rawMessage.trim();
+    if (!message || assistantBusy) return;
 
-  const appendLocalStatus = useEffectEvent(
-    (input: Pick<AssistantCard, "title" | "body" | "tone">) => {
-      setEntries((current) => [
-        ...current,
-        assistantCardEntry({
-          id: createId("status"),
-          kind: "status",
-          tone: input.tone,
-          title: input.title,
-          body: input.body,
-        }),
-      ]);
-    },
-  );
+    setErrorMessage(null);
+    setAssistantBusy(true);
 
-  const upsertMessage = useEffectEvent((input: {
-    itemId: string;
-    role: "assistant" | "user";
-    source: "text" | "voice";
-    text?: string;
-    append?: string;
-    live?: boolean;
-  }) => {
-    setEntries((current) => {
-      const entryId = itemEntryIdsRef.current.get(input.itemId);
-      const nextText = input.text ?? input.append ?? "";
+    // Cancel any in-flight stream before starting a new turn.
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
 
-      if (!entryId) {
-        const created: MessageEntry = {
-          kind: "message",
-          id: createId("message"),
-          realtimeItemId: input.itemId,
-          role: input.role,
-          source: input.source,
-          text: input.text ?? input.append ?? "",
-          live: input.live ?? false,
-        };
-        itemEntryIdsRef.current.set(input.itemId, created.id);
-        return [...current, created];
-      }
+    const history = historyFromEntries(entriesRef.current);
 
-      return current.map((entry) => {
-        if (entry.kind !== "message" || entry.id !== entryId) return entry;
-        return {
-          ...entry,
-          source: input.source,
-          live: input.live ?? entry.live,
-          text:
-            input.text !== undefined
-              ? input.text
-              : `${entry.text}${nextText}`,
-        };
-      });
-    });
-  });
-
-  const finalizeMessagesFromResponse = useEffectEvent((event: AssistantRealtimeEvent) => {
-    const response = asRecord(event.response);
-    const output = Array.isArray(response?.output) ? response.output : [];
-
-    for (const candidate of output) {
-      const item = asRecord(candidate);
-      if (!item || item.role !== "assistant") continue;
-      const itemId = asString(item.id);
-      const text = extractMessageText(item);
-      if (!itemId || !text) continue;
-      upsertMessage({
-        itemId,
-        role: "assistant",
-        source: messageSourceFromItem(item),
-        text,
+    const assistantId = createId("assistant");
+    setEntries((current) => [
+      ...current,
+      {
+        kind: "message",
+        id: createId("user"),
+        role: "user",
+        source,
+        text: message,
         live: false,
-      });
-    }
-  });
+      },
+      {
+        kind: "message",
+        id: assistantId,
+        role: "assistant",
+        source: "text",
+        text: "",
+        live: true,
+      },
+    ]);
 
-  const appendToolEntries = useEffectEvent((input: {
-    callId: string;
-    result: AssistantToolRouteResponse;
-    textOnly: boolean;
-  }) => {
-    setEntries((current) => {
-      const next = [...current];
-      if (input.result.status === "requires_confirmation" && input.result.confirmation) {
-        const confirmationCard =
-          input.result.cards[0] ??
-          ({
-            id: createId("confirmation"),
-            kind: "confirmation",
-            tone: "warning",
-            title: input.result.confirmation.title,
-            body: input.result.confirmation.body,
-          } satisfies AssistantCard);
+    const appendAssistantText = (delta: string) => {
+      setEntries((current) =>
+        current.map((entry) =>
+          entry.kind === "message" && entry.id === assistantId
+            ? { ...entry, text: entry.text + delta }
+            : entry,
+        ),
+      );
+    };
 
-        next.push({
-          kind: "confirmation",
-          id: createId("confirm"),
-          callId: input.callId,
-          confirmation: input.result.confirmation,
-          status: "pending",
-          textOnly: input.textOnly,
-          card: confirmationCard,
-        });
+    const finalizeAssistant = () => {
+      setEntries((current) =>
+        current
+          .map((entry) =>
+            entry.kind === "message" && entry.id === assistantId
+              ? { ...entry, live: false }
+              : entry,
+          )
+          // Drop an assistant bubble that never received text (answer was
+          // delivered entirely as cards).
+          .filter(
+            (entry) =>
+              !(
+                entry.kind === "message" &&
+                entry.id === assistantId &&
+                entry.text.trim().length === 0
+              ),
+          ),
+      );
+    };
 
-        for (const card of input.result.cards.slice(1)) {
-          next.push(assistantCardEntry(card));
-        }
-        return next;
-      }
-
-      for (const card of input.result.cards) {
-        next.push(assistantCardEntry(card));
-      }
-      return next;
-    });
-  });
-
-  const updateConfirmation = useEffectEvent((entryId: string, status: ConfirmationEntry["status"]) => {
-    setEntries((current) =>
-      current.map((entry) =>
-        entry.kind === "confirmation" && entry.id === entryId
-          ? { ...entry, status }
-          : entry,
-      ),
-    );
-  });
-
-  const markAssistantIdle = useEffectEvent(() => {
-    setAssistantBusy(false);
-    setHoldActive(false);
-  });
-
-  const handleRealtimeEvent = useEffectEvent((event: AssistantRealtimeEvent) => {
-    if (event.type === "session.created") {
-      setConnectionState("connected");
-      return;
-    }
-
-    if (event.type === "response.created") {
-      const response = asRecord(event.response);
-      const responseId = asString(response?.id);
-      const outputModalities = Array.isArray(response?.output_modalities)
-        ? response.output_modalities
-        : [];
-      if (responseId) {
-        responseTextOnlyRef.current.set(
-          responseId,
-          outputModalities.length > 0 &&
-            outputModalities.every((value) => value === "text"),
-        );
-      }
-      setAssistantBusy(true);
-      return;
-    }
-
-    if (event.type === "response.output_text.delta") {
-      const itemId = asString(event.item_id);
-      const delta = asString(event.delta);
-      if (itemId && delta) {
-        upsertMessage({
-          itemId,
-          role: "assistant",
-          source: "text",
-          append: delta,
-          live: true,
-        });
-      }
-      return;
-    }
-
-    if (event.type === "response.output_audio_transcript.delta") {
-      const itemId = asString(event.item_id);
-      const delta = asString(event.delta);
-      if (itemId && delta) {
-        upsertMessage({
-          itemId,
-          role: "assistant",
-          source: "voice",
-          append: delta,
-          live: true,
-        });
-      }
-      return;
-    }
-
-    if (event.type === "conversation.item.input_audio_transcription.delta") {
-      const itemId = asString(event.item_id);
-      const delta = asString(event.delta);
-      if (itemId && delta) {
-        upsertMessage({
-          itemId,
-          role: "user",
-          source: "voice",
-          append: delta,
-          live: true,
-        });
-      }
-      return;
-    }
-
-    if (event.type === "conversation.item.input_audio_transcription.completed") {
-      const itemId = asString(event.item_id);
-      const transcript = asString(event.transcript);
-      if (itemId && transcript) {
-        upsertMessage({
-          itemId,
-          role: "user",
-          source: "voice",
-          text: transcript,
-          live: false,
-        });
-      }
-      return;
-    }
-
-    if (event.type === "input_audio_buffer.speech_started") {
-      const itemId = asString(event.item_id);
-      if (itemId) {
-        upsertMessage({
-          itemId,
-          role: "user",
-          source: "voice",
-          text: "",
-          live: true,
-        });
-      }
-      setAssistantBusy(false);
-      return;
-    }
-
-    if (event.type === "input_audio_buffer.speech_stopped") {
-      setHoldActive(false);
-      return;
-    }
-
-    if (event.type === "conversation.item.created") {
-      const item = asRecord(event.item);
-      if (!item) return;
-      const itemId = asString(item.id);
-      const role =
-        item.role === "assistant" || item.role === "user"
-          ? item.role
-          : null;
-      const text = extractMessageText(item);
-      if (itemId && role && text) {
-        upsertMessage({
-          itemId,
-          role,
-          source: role === "assistant" ? "text" : "text",
-          text,
-          live: false,
-        });
-      }
-      return;
-    }
-
-    if (event.type === "response.function_call_arguments.done") {
-      const callId = asString(event.call_id);
-      const toolName = asString(event.name);
-      const responseId = asString(event.response_id);
-      if (!callId || !toolName) return;
-
-      const textOnly = responseId
-        ? responseTextOnlyRef.current.get(responseId) ?? false
-        : sessionModeRef.current !== "voice";
-
-      void (async () => {
-        try {
-          const rawArguments = asString(event.arguments) ?? "{}";
-          const parsedArguments = JSON.parse(rawArguments) as Record<string, unknown>;
-          const body: AssistantToolRequest = {
-            action: "invoke",
-            // Tool name arrives from the realtime model as an untrusted string;
-            // the /api/assistant/tool route revalidates it against the allowed
-            // tool surface (400 on unknown), so a boundary cast is safe here.
-            tool_name: toolName as AssistantToolName,
-            call_id: callId,
-            request_id: responseId ?? null,
-            arguments: parsedArguments,
-          };
-          const response = await fetch("/api/assistant/tool", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(body),
-          });
-          const result =
-            (await response.json()) as AssistantToolRouteResponse | { error?: string };
-
-          if (!response.ok && response.status !== 422) {
-            throw new Error(asString((result as { error?: string }).error) ?? "Assistant tool failed.");
-          }
-
-          const toolResult = result as AssistantToolRouteResponse;
-          appendToolEntries({
-            callId,
-            result: toolResult,
-            textOnly,
-          });
-
-          if (toolResult.status === "requires_confirmation") return;
-
-          connectionRef.current?.sendFunctionOutput(
-            callId,
-            toolResult.tool_output ?? {
-              status: toolResult.status,
-              error: toolResult.error ?? null,
-              tool_name: toolResult.tool_name,
+    try {
+      for await (const event of streamAssistantChat({
+        message,
+        history,
+        signal: controller.signal,
+      })) {
+        if (event.type === "text-delta") {
+          appendAssistantText(event.text);
+        } else if (event.type === "card") {
+          setEntries((current) => [...current, assistantCardEntry(event.card)]);
+        } else if (event.type === "confirmation") {
+          setEntries((current) => [
+            ...current,
+            {
+              kind: "confirmation",
+              id: createId("confirm"),
+              confirmation: event.confirmation,
+              status: "pending",
+              card: event.card,
             },
-          );
-          connectionRef.current?.requestResponse({ textOnly });
-        } catch (error) {
+          ]);
+        } else if (event.type === "error") {
+          setErrorMessage(event.error);
           appendLocalStatus({
-            title: "Tool call failed",
-            body:
-              error instanceof Error
-                ? error.message
-                : "The assistant could not finish that tool call.",
+            title: "Assistant error",
+            body: event.error,
             tone: "error",
           });
-          connectionRef.current?.sendFunctionOutput(callId, {
-            status: "errored",
-            tool_name: toolName,
-            error:
-              error instanceof Error
-                ? error.message
-                : "The assistant could not finish that tool call.",
-          });
-          connectionRef.current?.requestResponse({ textOnly });
         }
-      })();
-      return;
-    }
-
-    if (event.type === "response.done") {
-      finalizeMessagesFromResponse(event);
-      const response = asRecord(event.response);
-      const responseId = asString(response?.id);
-      if (responseId) {
-        responseTextOnlyRef.current.delete(responseId);
       }
-      markAssistantIdle();
-      return;
-    }
-
-    if (event.type === "error") {
-      const detail = asRecord(event.error);
-      setErrorMessage(
-        asString(detail?.message) ?? "The assistant hit a realtime error.",
-      );
-      markAssistantIdle();
-    }
-  });
-
-  async function disconnectAssistant() {
-    connectionRef.current?.close();
-    connectionRef.current = null;
-    setConnectionState("idle");
-    setSessionMode(null);
-    setAssistantBusy(false);
-    setHoldActive(false);
-  }
-
-  async function ensureConnection(
-    targetMode: "text" | "voice",
-  ): Promise<AssistantRealtimeConnection> {
-    if (
-      connectionRef.current &&
-      sessionModeRef.current === targetMode
-    ) {
-      return connectionRef.current;
-    }
-
-    if (connectionRef.current) {
-      await disconnectAssistant();
-    }
-
-    setConnectionState("connecting");
-    setErrorMessage(null);
-
-    let liveConnection: AssistantRealtimeConnection | null = null;
-
-    try {
-      liveConnection = await connectAssistantRealtime({
-        mode: targetMode,
-        onClose: () => {
-          if (connectionRef.current === liveConnection) {
-            connectionRef.current = null;
-            setConnectionState("idle");
-            setSessionMode(null);
-            setAssistantBusy(false);
-          }
-        },
-        onEvent: handleRealtimeEvent,
-      });
-
-      const history = replayableEntries(entriesRef.current);
-      if (history.length > 0) {
-        liveConnection.replayHistory(history);
-      }
-
-      connectionRef.current = liveConnection;
-      setConnectionState("connected");
-      setSessionMode(targetMode);
-      if (targetMode === "voice") {
-        setMicState("ready");
-      }
-      return liveConnection;
     } catch (error) {
-      setConnectionState("idle");
-      setSessionMode(null);
-      if (targetMode === "voice") {
-        setMicState("blocked");
+      if (!controller.signal.aborted) {
+        const detail =
+          error instanceof Error ? error.message : "Assistant request failed.";
+        setErrorMessage(detail);
+        appendLocalStatus({
+          title: "Assistant offline",
+          body: detail,
+          tone: "error",
+        });
       }
-      throw error;
-    }
-  }
-
-  async function sendText(text: string) {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-
-    setErrorMessage(null);
-    const itemId = createId("user");
-    upsertMessage({
-      itemId,
-      role: "user",
-      source: "text",
-      text: trimmed,
-      live: false,
-    });
-
-    const preferredMode =
-      sessionModeRef.current ??
-      (micStateRef.current === "ready" ? "voice" : "text");
-
-    try {
-      const connection = await ensureConnection(preferredMode);
-      connection.interrupt();
-      connection.sendText({ itemId, text: trimmed });
-      connection.requestResponse({ textOnly: true });
-      setAssistantBusy(true);
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Assistant connection failed.",
-      );
-      appendLocalStatus({
-        title: "Assistant offline",
-        body:
-          error instanceof Error
-            ? error.message
-            : "Assistant connection failed.",
-        tone: "error",
-      });
+    } finally {
+      finalizeAssistant();
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setAssistantBusy(false);
+      }
     }
   }
 
@@ -625,35 +252,61 @@ export default function VoiceAssistantDrawer() {
     event.preventDefault();
     const next = draft;
     setDraft("");
-    await sendText(next);
+    await streamTurn(next, "text");
+  }
+
+  async function ensureMic(): Promise<AssistantTranscriptionConnection> {
+    if (micRef.current) return micRef.current;
+
+    setMicConnecting(true);
+    setErrorMessage(null);
+    try {
+      const connection = await connectAssistantTranscription({
+        onTranscript: (text) => {
+          void streamTurn(text, "voice");
+        },
+        onError: (detail) => setErrorMessage(detail),
+        onClose: () => {
+          if (micRef.current) {
+            micRef.current = null;
+            setMicState("unknown");
+          }
+        },
+      });
+      micRef.current = connection;
+      setMicState("ready");
+      return connection;
+    } catch (error) {
+      setMicState("blocked");
+      throw error;
+    } finally {
+      setMicConnecting(false);
+    }
   }
 
   async function beginVoiceTurn(event: ReactPointerEvent<HTMLButtonElement>) {
     event.preventDefault();
+    if (assistantBusy) return;
     holdRequestedRef.current = true;
     setHoldActive(true);
     setErrorMessage(null);
 
     try {
-      const connection = await ensureConnection("voice");
-      connection.interrupt();
+      const connection = await ensureMic();
       if (holdRequestedRef.current) {
         connection.setMicrophoneEnabled(true);
       }
     } catch (error) {
       holdRequestedRef.current = false;
       setHoldActive(false);
-      setErrorMessage(
+      const detail =
         error instanceof Error
           ? error.message
-          : "Microphone access is required for voice.",
-      );
+          : "Microphone access is required for voice.";
+      setErrorMessage(detail);
       appendLocalStatus({
         title: "Voice unavailable",
-        body:
-          error instanceof Error
-            ? error.message
-            : "Microphone access is required for voice.",
+        body: detail,
         tone: "warning",
       });
     }
@@ -662,38 +315,20 @@ export default function VoiceAssistantDrawer() {
   function endVoiceTurn() {
     holdRequestedRef.current = false;
     setHoldActive(false);
-    connectionRef.current?.setMicrophoneEnabled(false);
+    micRef.current?.setMicrophoneEnabled(false);
   }
 
   async function resolveConfirmation(entry: ConfirmationEntry, approve: boolean) {
-    const preferredMode =
-      sessionModeRef.current ??
-      (micStateRef.current === "ready" ? "voice" : "text");
-
-    let connection: AssistantRealtimeConnection | null = null;
-    try {
-      connection = await ensureConnection(preferredMode);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Assistant connection failed.";
-      setErrorMessage(message);
-      appendLocalStatus({
-        title: "Assistant offline",
-        body: message,
-        tone: "error",
-      });
-      return;
-    }
-
-    updateConfirmation(entry.id, approve ? "working" : "resolved");
+    if (entry.status !== "pending") return;
 
     if (!approve) {
-      connection.sendFunctionOutput(entry.callId, {
-        status: "cancelled_by_user",
-        tool_name: "confirmation",
-        message: "The user declined the action.",
-      });
-      connection.requestResponse({ textOnly: entry.textOnly });
+      setEntries((current) =>
+        current.map((item) =>
+          item.kind === "confirmation" && item.id === entry.id
+            ? { ...item, status: "resolved" }
+            : item,
+        ),
+      );
       appendLocalStatus({
         title: "Action canceled",
         body: "The assistant did not apply that change.",
@@ -702,83 +337,100 @@ export default function VoiceAssistantDrawer() {
       return;
     }
 
+    setEntries((current) =>
+      current.map((item) =>
+        item.kind === "confirmation" && item.id === entry.id
+          ? { ...item, status: "working" }
+          : item,
+      ),
+    );
+
     try {
-      const body: AssistantToolRequest = {
-        action: "confirm",
-        confirmation_token: entry.confirmation.token,
-      };
       const response = await fetch("/api/assistant/tool", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          action: "confirm",
+          confirmation_token: entry.confirmation.token,
+        }),
       });
-      const result =
-        (await response.json()) as AssistantToolRouteResponse | { error?: string };
+      const result = (await response.json()) as
+        | AssistantToolRouteResponse
+        | { error?: string };
 
       if (!response.ok && response.status !== 422) {
-        throw new Error(asString((result as { error?: string }).error) ?? "Confirmation failed.");
+        const detail =
+          typeof (result as { error?: unknown }).error === "string"
+            ? (result as { error: string }).error
+            : "Confirmation failed.";
+        throw new Error(detail);
       }
 
       const toolResult = result as AssistantToolRouteResponse;
-      appendToolEntries({
-        callId: entry.callId,
-        result: toolResult,
-        textOnly: entry.textOnly,
-      });
-      connection.sendFunctionOutput(
-        entry.callId,
-        toolResult.tool_output ?? {
-          status: toolResult.status,
-          error: toolResult.error ?? null,
-          tool_name: toolResult.tool_name,
-        },
-      );
-      connection.requestResponse({ textOnly: entry.textOnly });
-      updateConfirmation(entry.id, "resolved");
+      setEntries((current) => [
+        ...current.map((item) =>
+          item.kind === "confirmation" && item.id === entry.id
+            ? { ...item, status: "resolved" as const }
+            : item,
+        ),
+        ...toolResult.cards.map((card) => assistantCardEntry(card)),
+      ]);
     } catch (error) {
-      const message =
+      const detail =
         error instanceof Error ? error.message : "Confirmation failed.";
-      updateConfirmation(entry.id, "pending");
-      setErrorMessage(message);
+      setEntries((current) =>
+        current.map((item) =>
+          item.kind === "confirmation" && item.id === entry.id
+            ? { ...item, status: "pending" }
+            : item,
+        ),
+      );
+      setErrorMessage(detail);
       appendLocalStatus({
         title: "Confirmation failed",
-        body: message,
+        body: detail,
         tone: "error",
       });
     }
   }
 
+  function teardown() {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    micRef.current?.close();
+    micRef.current = null;
+    setAssistantBusy(false);
+    setHoldActive(false);
+    holdRequestedRef.current = false;
+    setMicState("unknown");
+  }
+
   useEffect(() => {
-    if (!drawerOpen) {
-      void disconnectAssistant();
-    }
+    if (!drawerOpen) teardown();
   }, [drawerOpen]);
 
   useEffect(() => {
     if (!drawerOpen) return undefined;
-
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setDrawerOpen(false);
-      }
+      if (event.key === "Escape") setDrawerOpen(false);
     }
-
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [drawerOpen]);
 
   useEffect(() => {
-    return () => {
-      void disconnectAssistant();
-    };
+    return () => teardown();
   }, []);
 
-  const voiceLabel =
-    holdActive || assistantBusy
-      ? "Release to send"
-      : sessionMode === "voice"
-        ? "Hold to talk"
-        : "Push to talk";
+  const sessionLabel = assistantBusy
+    ? "Working"
+    : micState === "ready"
+      ? "Voice ready"
+      : micConnecting
+        ? "Connecting"
+        : "Ready";
+
+  const voiceLabel = holdActive ? "Release to send" : "Hold to talk";
 
   return (
     <>
@@ -790,7 +442,7 @@ export default function VoiceAssistantDrawer() {
       >
         <span className="relative inline-flex size-7 items-center justify-center rounded-full bg-[var(--color-ink-2)] text-[var(--color-text-1)]">
           <Icon name="mic" size={14} />
-          {connectionState === "connected" ? (
+          {micState === "ready" ? (
             <span className="assistant-live-pulse absolute inset-0 rounded-full" />
           ) : null}
         </span>
@@ -827,8 +479,8 @@ export default function VoiceAssistantDrawer() {
                 Talk to Bombsell
               </h2>
               <p className="mt-2 max-w-md text-[13.5px] leading-[1.6] tracking-[-0.01em] text-[var(--color-text-3)]">
-                Ask about signals, channel blockers, approvals, company memory,
-                conversation proof, and meeting prep.
+                Ask about metrics, today&apos;s work, companies targeted, reply
+                rate, qualified signals, and meeting prep.
               </p>
             </div>
 
@@ -848,13 +500,7 @@ export default function VoiceAssistantDrawer() {
                 Session
               </p>
               <p className="mt-1.5 text-[14px] font-semibold tracking-[-0.02em] text-[var(--color-text-1)]">
-                {connectionState === "connected"
-                  ? sessionMode === "voice"
-                    ? "Voice ready"
-                    : "Text ready"
-                  : connectionState === "connecting"
-                    ? "Connecting"
-                    : "Idle"}
+                {sessionLabel}
               </p>
             </div>
             <div className="rounded-[16px] border border-[var(--color-line-1)] bg-white/76 px-3.5 py-3">
@@ -873,10 +519,10 @@ export default function VoiceAssistantDrawer() {
             </div>
             <div className="rounded-[16px] border border-[var(--color-line-1)] bg-white/76 px-3.5 py-3">
               <p className="text-[11px] uppercase tracking-[0.16em] text-[var(--color-text-4)]">
-                Scope
+                Brain
               </p>
               <p className="mt-1.5 text-[14px] font-semibold tracking-[-0.02em] text-[var(--color-text-1)]">
-                Account + data
+                DeepSeek + data
               </p>
             </div>
           </div>
@@ -896,16 +542,16 @@ export default function VoiceAssistantDrawer() {
                   Try a live operating question
                 </p>
                 <p className="mt-2 text-[13.5px] leading-[1.6] text-[var(--color-text-3)]">
-                  The assistant can read your quantitative surfaces and pull
-                  qualitative evidence from company memory, conversation proof,
-                  and launch readiness.
+                  The assistant reads your live metrics and pulls qualitative
+                  evidence from the knowledge graph, company memory, and
+                  conversation proof.
                 </p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   {STARTERS.map((starter) => (
                     <button
                       key={starter}
                       type="button"
-                      onClick={() => void sendText(starter)}
+                      onClick={() => void streamTurn(starter, "text")}
                       className="rounded-full border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3.5 py-2 text-left text-[12.5px] font-medium tracking-[-0.01em] text-[var(--color-text-2)] transition hover:border-[var(--color-line-2)] hover:text-[var(--color-text-1)]"
                     >
                       {starter}
@@ -942,7 +588,7 @@ export default function VoiceAssistantDrawer() {
                           </span>
                         </div>
                         <p className={entry.live && !entry.text ? "italic opacity-70" : ""}>
-                          {entry.text || (entry.live ? "Listening..." : "")}
+                          {entry.text || (entry.live ? "Thinking..." : "")}
                         </p>
                       </div>
                     </div>
@@ -1079,13 +725,11 @@ export default function VoiceAssistantDrawer() {
 
         <footer className="border-t border-[var(--color-line-1)] bg-white/72 px-5 pb-5 pt-4 backdrop-blur-sm sm:px-6">
           <div className="mb-3 flex items-center justify-between gap-3 text-[12px] tracking-[-0.01em] text-[var(--color-text-3)]">
-            <span>
-              {voiceLabel}
-            </span>
+            <span>{voiceLabel}</span>
             <span>
               {assistantBusy
-                ? "Working through your workspace"
-                : "Direct access to Bombsell tools"}
+                ? "Querying your workspace"
+                : "DeepSeek over your live data"}
             </span>
           </div>
 
@@ -1098,12 +742,12 @@ export default function VoiceAssistantDrawer() {
                 id="assistant-draft"
                 value={draft}
                 onChange={(event) => setDraft(event.currentTarget.value)}
-                placeholder="Ask about approvals, signals, blockers, or meeting prep..."
+                placeholder="Ask about metrics, signals, blockers, or meeting prep..."
                 className="h-12 min-w-0 rounded-full border border-[var(--color-line-1)] bg-white px-4 text-[14px] text-[var(--color-text-1)] outline-none transition focus:border-[var(--color-line-2)]"
               />
               <button
                 type="submit"
-                disabled={!draft.trim()}
+                disabled={!draft.trim() || assistantBusy}
                 className="btn-solid h-12 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Icon name="send" size={15} />
@@ -1113,6 +757,7 @@ export default function VoiceAssistantDrawer() {
 
             <button
               type="button"
+              disabled={assistantBusy}
               onPointerDown={(event) => void beginVoiceTurn(event)}
               onPointerUp={endVoiceTurn}
               onPointerCancel={endVoiceTurn}
@@ -1120,7 +765,7 @@ export default function VoiceAssistantDrawer() {
                 if (holdRequestedRef.current) endVoiceTurn();
               }}
               className={
-                "inline-flex h-12 items-center justify-center gap-2 rounded-full px-5 text-[13px] font-semibold tracking-[-0.01em] transition " +
+                "inline-flex h-12 items-center justify-center gap-2 rounded-full px-5 text-[13px] font-semibold tracking-[-0.01em] transition disabled:cursor-not-allowed disabled:opacity-60 " +
                 (holdActive
                   ? "bg-[var(--color-cta-bg)] text-[var(--color-cta-text)] shadow-[0_12px_28px_rgba(33,33,33,0.18)]"
                   : "border border-[var(--color-line-1)] bg-white text-[var(--color-text-1)]")

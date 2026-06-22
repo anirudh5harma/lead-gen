@@ -325,14 +325,8 @@ export default async function ContactProfilePage({
           icon="linkedin"
           label="LinkedIn"
           value={contact.linkedin_url ? "Profile found" : "Missing"}
-          ready={Boolean(contact.linkedin_url) && channelState.connected_linkedin > 0}
-          detail={
-            contact.linkedin_url
-              ? channelState.connected_linkedin > 0
-                ? "Account ready"
-                : "Connect LinkedIn"
-              : "Needs enrichment"
-          }
+          ready={false}
+          detail="Coming soon"
         />
         <ReadinessTile
           icon="add_business"

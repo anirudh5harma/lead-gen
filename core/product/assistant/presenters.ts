@@ -28,7 +28,102 @@ export function presentToolResult(
   toolName: string,
   result: Record<string, unknown>,
 ): AssistantCard[] {
-  if (toolName === "get_brief") {
+  const normalizedToolName =
+    toolName === "signals.list"
+      ? "list_qualified_signals"
+      : toolName === "workspace.context"
+        ? "get_workspace_context"
+        : toolName === "company_brain.recall"
+          ? "recall_company_brain"
+          : toolName === "conversation.proof"
+            ? "get_conversation_proof"
+            : toolName === "meeting.prep"
+              ? "generate_meeting_prep"
+              : toolName;
+
+  if (normalizedToolName === "metrics.get") {
+    const metric = asString(result.label) ?? asString(result.metric) ?? "Metric";
+    const window = asString(result.window) ?? "selected window";
+    const unit = asString(result.unit) ?? "count";
+    const numericValue = asNumber(result.value) ?? 0;
+    const numerator = asNumber(result.numerator);
+    const denominator = asNumber(result.denominator);
+    const formattedValue =
+      unit === "ratio"
+        ? `${Math.round(numericValue * 100)}%`
+        : String(Math.round(numericValue));
+    return [
+      card({
+        kind: "summary",
+        tone: "default",
+        title: metric,
+        body: `${metric} for ${window}.`,
+        metrics: [
+          { label: "Value", value: formattedValue },
+          ...(numerator !== null ? [{ label: "Replies", value: String(numerator) }] : []),
+          ...(denominator !== null ? [{ label: "Sent", value: String(denominator) }] : []),
+        ],
+        actions: [{ label: "Open Brief", href: "/dashboard/brief", variant: "solid" }],
+      }),
+    ];
+  }
+
+  if (normalizedToolName === "entities.find") {
+    const entityType = asString(result.entity_type) ?? "entity";
+    const count = asNumber(result.count) ?? 0;
+    const items = Array.isArray(result.items) ? result.items : [];
+    const labels = items
+      .slice(0, 3)
+      .map((item) => {
+        if (!item || typeof item !== "object") return null;
+        return (
+          asString((item as { name?: unknown }).name) ??
+          asString((item as { full_name?: unknown }).full_name) ??
+          asString((item as { domain?: unknown }).domain)
+        );
+      })
+      .filter(Boolean) as string[];
+    return [
+      card({
+        kind: "summary",
+        tone: "default",
+        title: `${entityType[0]?.toUpperCase() ?? "E"}${entityType.slice(1)} matches`,
+        body:
+          labels.length > 0
+            ? `Top matches: ${labels.join("; ")}`
+            : `No ${entityType} matches found.`,
+        metrics: [{ label: "Matches", value: String(count) }],
+        actions: [{ label: "Open Agent", href: "/dashboard/agent", variant: "solid" }],
+      }),
+    ];
+  }
+
+  if (normalizedToolName === "entities.get") {
+    const entityType = asString(result.entity_type) ?? "entity";
+    const entity =
+      result.entity && typeof result.entity === "object"
+        ? result.entity as Record<string, unknown>
+        : null;
+    const title =
+      (entity &&
+        (asString(entity.name) ??
+          asString(entity.full_name) ??
+          asString(entity.domain))) ||
+      `${entityType} details`;
+    return [
+      card({
+        kind: "summary",
+        tone: entity ? "default" : "warning",
+        title,
+        body: entity
+          ? `Loaded ${entityType} details from the knowledge graph.`
+          : `No ${entityType} found for that id.`,
+        actions: [{ label: "Open Agent", href: "/dashboard/agent", variant: "solid" }],
+      }),
+    ];
+  }
+
+  if (normalizedToolName === "get_brief") {
     const windows = (result.windows ?? {}) as Record<string, unknown>;
     const lastDay = (windows.last_24h ?? {}) as Record<string, unknown>;
     const lastWeek = (windows.last_7d ?? {}) as Record<string, unknown>;
@@ -66,7 +161,7 @@ export function presentToolResult(
     ];
   }
 
-  if (toolName === "get_launch_readiness") {
+  if (normalizedToolName === "get_launch_readiness") {
     const blockers = Array.isArray(result.blockers) ? result.blockers : [];
     const warnings = Array.isArray(result.warnings) ? result.warnings : [];
     const checks = Array.isArray(result.checks) ? result.checks : [];
@@ -107,7 +202,7 @@ export function presentToolResult(
     ];
   }
 
-  if (toolName === "list_qualified_signals") {
+  if (normalizedToolName === "list_qualified_signals") {
     const stats = (result.stats ?? {}) as Record<string, unknown>;
     const signals = Array.isArray(result.signals) ? result.signals : [];
     const topTitles = signals
@@ -143,7 +238,7 @@ export function presentToolResult(
     ];
   }
 
-  if (toolName === "get_workspace_context") {
+  if (normalizedToolName === "get_workspace_context") {
     const counts = (result.counts ?? {}) as Record<string, unknown>;
     return [
       card({
@@ -165,7 +260,7 @@ export function presentToolResult(
     ];
   }
 
-  if (toolName === "recall_company_brain") {
+  if (normalizedToolName === "recall_company_brain") {
     const cards = Array.isArray(result.cards) ? result.cards : [];
     const titles = cards
       .slice(0, 3)
@@ -190,7 +285,7 @@ export function presentToolResult(
     ];
   }
 
-  if (toolName === "get_conversation_proof") {
+  if (normalizedToolName === "get_conversation_proof") {
     const conversationId = asString(result.conversation_id) ?? asString(result.id);
     return [
       card({
@@ -211,7 +306,7 @@ export function presentToolResult(
     ];
   }
 
-  if (toolName === "generate_meeting_prep") {
+  if (normalizedToolName === "generate_meeting_prep") {
     const conversationId = asString(result.conversation_id);
     return [
       card({
@@ -248,7 +343,7 @@ export function presentToolResult(
     ];
   }
 
-  if (toolName === "decide_approval") {
+  if (normalizedToolName === "decide_approval") {
     return [
       card({
         kind: "status",
@@ -260,7 +355,7 @@ export function presentToolResult(
     ];
   }
 
-  if (toolName === "dispatch_outreach") {
+  if (normalizedToolName === "dispatch_outreach") {
     return [
       card({
         kind: "status",
@@ -294,4 +389,3 @@ export function presentErrorCard(toolName: string, message: string): AssistantCa
     }),
   ];
 }
-

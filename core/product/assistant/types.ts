@@ -80,6 +80,20 @@ export type AssistantSessionResponse = z.infer<
   typeof AssistantSessionResponseSchema
 >;
 
+export const AssistantChatHistoryTurnSchema = z.object({
+  role: z.enum(["user", "assistant"]),
+  text: z.string().min(1).max(20_000),
+});
+export type AssistantChatHistoryTurn = z.infer<
+  typeof AssistantChatHistoryTurnSchema
+>;
+
+export const AssistantChatRequestSchema = z.object({
+  message: z.string().min(1).max(20_000),
+  history: z.array(AssistantChatHistoryTurnSchema).max(50).optional(),
+});
+export type AssistantChatRequest = z.infer<typeof AssistantChatRequestSchema>;
+
 const AssistantCallIdSchema = z.string().min(1).max(256);
 const AssistantRequestIdSchema = z.string().min(1).max(256);
 
@@ -107,3 +121,37 @@ export const AssistantToolRequestSchema = z.discriminatedUnion("action", [
   AssistantToolConfirmRequestSchema,
 ]);
 export type AssistantToolRequest = z.infer<typeof AssistantToolRequestSchema>;
+
+export interface AssistantTextDeltaEvent {
+  type: "text-delta";
+  text: string;
+}
+
+export interface AssistantCardEvent {
+  type: "card";
+  card: AssistantCard;
+}
+
+export interface AssistantConfirmationEvent {
+  type: "confirmation";
+  confirmation: AssistantConfirmationRequest;
+  card: AssistantCard;
+  call_id: string;
+}
+
+export interface AssistantDoneEvent {
+  type: "done";
+  finish_reason: "stop";
+}
+
+export interface AssistantErrorEvent {
+  type: "error";
+  error: string;
+}
+
+export type AssistantStreamEvent =
+  | AssistantTextDeltaEvent
+  | AssistantCardEvent
+  | AssistantConfirmationEvent
+  | AssistantDoneEvent
+  | AssistantErrorEvent;

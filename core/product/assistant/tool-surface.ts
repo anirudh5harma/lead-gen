@@ -41,7 +41,7 @@ const AssistantToolInputSchemas = {
   }).strict(),
 } satisfies Record<AssistantToolName, z.ZodType<Record<string, unknown>>>;
 
-interface AssistantToolDefinition {
+export interface AssistantToolDefinition {
   description: string;
   inputSchema: z.ZodType<Record<string, unknown>>;
   name: AssistantToolName;
@@ -234,7 +234,18 @@ export function assistantRealtimeTools(): AssistantRealtimeFunctionTool[] {
   }));
 }
 
-function getAssistantTool(
+export function assistantConfirmationTools(): AssistantRealtimeFunctionTool[] {
+  return Object.values(TOOL_DEFS)
+    .filter((tool) => toolRequiresConfirmation(tool.name))
+    .map((tool) => ({
+      type: "function",
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+    }));
+}
+
+export function getAssistantTool(
   toolName: string,
 ): AssistantToolDefinition | undefined {
   return TOOL_DEFS[toolName as AssistantToolName];

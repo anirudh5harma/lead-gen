@@ -1,6 +1,5 @@
 import type { AssistantSessionMode } from "./types.ts";
 import { assistantOpenAiApiKey, assistantSafetyIdentifier, assistantVoice, buildRealtimeSessionConfig } from "./config.ts";
-import { assistantRealtimeTools } from "./tool-surface.ts";
 
 export interface RealtimeSessionStartResult {
   callId: string | null;
@@ -25,9 +24,7 @@ export async function startAssistantRealtimeSession(input: {
   const fetchImpl = input.fetchImpl ?? fetch;
   const apiKey = assistantOpenAiApiKey();
   const safetyId = assistantSafetyIdentifier(input.userId);
-  const sessionConfig = JSON.stringify(
-    buildRealtimeSessionConfig(input.mode, assistantRealtimeTools()),
-  );
+  const sessionConfig = JSON.stringify(buildRealtimeSessionConfig(input.mode));
 
   let lastError = "unknown error";
   for (let attempt = 1; attempt <= REALTIME_MAX_ATTEMPTS; attempt += 1) {
@@ -91,4 +88,3 @@ export async function startAssistantRealtimeSession(input: {
 }
 
 export { assistantVoice };
-

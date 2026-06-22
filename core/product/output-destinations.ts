@@ -47,12 +47,11 @@ export function buildOutputDestinations(
       key: "linkedin",
       title: "LinkedIn",
       category: "Social outreach",
-      status: input.linkedin_connected ? "connected" : "blocked",
-      detail: input.linkedin_connected
-        ? "LinkedIn-ready profiles can become connection requests, accepted-connection follow-ups, DMs, and reply traces."
-        : "Connect LinkedIn in Profile before profile-backed outreach can run.",
+      status: "planned",
+      detail:
+        "LinkedIn connection requests, accepted-connection follow-ups, DMs, and reply traces are coming soon.",
       handoff_stage: "channel_send",
-      href: "/dashboard/profile#linkedin",
+      href: null,
       tools: ["product.linkedin_account.connect_url.get"],
     },
     {

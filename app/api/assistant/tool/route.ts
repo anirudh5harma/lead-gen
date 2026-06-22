@@ -1,11 +1,13 @@
 import { handleAssistantToolRequest as runAssistantToolRequest } from "../../../../core/product/assistant/controller.ts";
-import { validateAssistantToolInvocation } from "../../../../core/product/assistant/tool-surface.ts";
 import {
   assertAssistantToolAllowed,
   isAssistantUsageCapExceededError,
   publishAssistantToolCalled,
 } from "../../../../core/product/assistant/telemetry.ts";
-import { AssistantToolRequestSchema } from "../../../../core/product/assistant/types.ts";
+import {
+  AssistantToolConfirmRequestSchema,
+  AssistantToolRequestSchema,
+} from "../../../../core/product/assistant/types.ts";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -28,7 +30,6 @@ export async function handleAssistantToolRequest(
     publishToolCalled?: typeof publishAssistantToolCalled;
     assertToolAllowed?: typeof assertAssistantToolAllowed;
     runToolRequest?: typeof runAssistantToolRequest;
-    validateInvocation?: typeof validateAssistantToolInvocation;
   } = {},
 ): Promise<Response> {
   const startedAt = Date.now();
@@ -47,20 +48,14 @@ export async function handleAssistantToolRequest(
     );
   }
 
-  if (parsed.data.action === "invoke") {
-    try {
-      (deps.validateInvocation ?? validateAssistantToolInvocation)({
-        toolName: parsed.data.tool_name,
-        arguments: parsed.data.arguments,
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Invalid assistant tool request.";
-      return Response.json({ error: message }, { status: 400 });
-    }
+  if (parsed.data.action !== "confirm") {
+    return Response.json(
+      { error: "Direct assistant tool invocation is not supported on this route." },
+      { status: 400 },
+    );
   }
+
+  const confirmBody = AssistantToolConfirmRequestSchema.parse(parsed.data);
 
   try {
     await (deps.assertToolAllowed ?? assertAssistantToolAllowed)({
@@ -79,7 +74,7 @@ export async function handleAssistantToolRequest(
 
   try {
     const result = await (deps.runToolRequest ?? runAssistantToolRequest)({
-      body: parsed.data,
+      body: confirmBody,
       workspaceId: active.workspace.id,
       userId: active.user_id,
     });
@@ -87,11 +82,7 @@ export async function handleAssistantToolRequest(
     await (deps.publishToolCalled ?? publishAssistantToolCalled)({
       workspaceId: active.workspace.id,
       userId: active.user_id,
-      toolName:
-        parsed.data.action === "invoke" ? parsed.data.tool_name : result.tool_name,
-      callId: parsed.data.action === "invoke" ? parsed.data.call_id ?? null : null,
-      requestId:
-        parsed.data.action === "invoke" ? parsed.data.request_id ?? null : null,
+      toolName: result.tool_name,
       status:
         result.status === "requires_confirmation"
           ? "confirmation_pending"
@@ -118,8 +109,7 @@ export async function handleAssistantToolRequest(
     await (deps.publishToolCalled ?? publishAssistantToolCalled)({
       workspaceId: active.workspace.id,
       userId: active.user_id,
-      toolName:
-        parsed.data.action === "invoke" ? parsed.data.tool_name : "confirmation",
+      toolName: "confirmation",
       status: "errored",
       requiresConfirmation: false,
       latencyMs: Date.now() - startedAt,

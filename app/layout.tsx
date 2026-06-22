@@ -21,9 +21,9 @@ const bricolage = Bricolage_Grotesque({
 });
 
 export const metadata: Metadata = {
-  title: "Bombsell | Signal-led outbound",
+  title: "Bombsell | Autonomous outbound",
   description:
-    "Profile, quality signals, verified contacts, and email or LinkedIn outreach for founders and lean teams.",
+    "Grow your sales with high-intent outreach — autonomous email and LinkedIn outbound for founders and lean teams.",
 };
 
 export const viewport: Viewport = {

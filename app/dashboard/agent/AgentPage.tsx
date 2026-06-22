@@ -1979,6 +1979,7 @@ function AgentStatusHeader({
               icon="linkedin"
               connection={coverage.linkedIn}
               policy={linkedInPolicy}
+              comingSoon
             />
           </div>
           {operatingMode ? (
@@ -2190,15 +2191,12 @@ function AgentCommandStrip({
       <AgentCommandLink
         href={coverage.linkedIn.href}
         icon={<BrandIcon name="linkedin" size={17} />}
-        title={coverage.linkedIn.connected ? "LinkedIn ready" : "Connect LinkedIn"}
-        value={coverage.linkedIn.connected ? outreach.linkedin_messages_7d : "Setup"}
-        detail={
-          coverage.linkedIn.connected
-            ? `${outreach.linkedin_invites_7d} invites, ${outreach.linkedin_accepts_7d} accepted, ${acceptedFollowups} follow-ups due`
-            : "LinkedIn unlocks connection requests, DMs, and reply capture."
-        }
-        metricLabel={coverage.linkedIn.connected ? "DMs 7d" : "needed"}
-        ready={coverage.linkedIn.connected}
+        title="LinkedIn"
+        value="Soon"
+        detail="LinkedIn outreach — connection requests, DMs, and reply capture — is coming soon."
+        metricLabel=""
+        ready={false}
+        comingSoon
       />
       <div className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-4">
         <span className="flex items-center justify-between gap-3">
@@ -2429,6 +2427,7 @@ function AgentCommandLink({
   detail,
   metricLabel = "now",
   ready,
+  comingSoon = false,
 }: {
   href: string;
   icon: ReactNode;
@@ -2437,37 +2436,40 @@ function AgentCommandLink({
   detail: string;
   metricLabel?: string;
   ready: boolean;
+  comingSoon?: boolean;
 }) {
-  return (
-    <Link
-      href={href}
-      prefetch
-      className="group grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-3)]"
-    >
+  const inner = (
+    <>
       <span className="flex items-center justify-between gap-3">
         <span
           className={
             "grid size-9 place-items-center rounded-[8px] " +
-            (ready
+            (ready && !comingSoon
               ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
               : "bg-[var(--color-ink-0)] text-[var(--color-text-3)]")
           }
         >
           {icon}
         </span>
-        <Icon
-          name="arrow_forward"
-          size={14}
-          className="text-[var(--color-text-4)] transition-transform group-hover:translate-x-0.5 group-hover:text-[var(--color-accent)]"
-        />
+        {comingSoon ? (
+          <span className="rounded-[8px] bg-[var(--color-ink-0)] px-2 py-1 text-[11px] font-medium text-[var(--color-text-4)]">
+            Coming soon
+          </span>
+        ) : (
+          <Icon
+            name="arrow_forward"
+            size={14}
+            className="text-[var(--color-text-4)] transition-transform group-hover:translate-x-0.5 group-hover:text-[var(--color-accent)]"
+          />
+        )}
       </span>
       <span>
         <span className="flex items-end gap-2">
           <strong className="text-2xl font-semibold tabular-nums text-[var(--color-text-1)]">
-            {value}
+            {comingSoon ? "Soon" : value}
           </strong>
           <span className="pb-1 text-[11px] text-[var(--color-text-4)]">
-            {metricLabel}
+            {comingSoon ? "" : metricLabel}
           </span>
         </span>
         <span className="mt-1 block text-sm font-semibold text-[var(--color-text-1)]">
@@ -2477,6 +2479,27 @@ function AgentCommandLink({
           {detail}
         </span>
       </span>
+    </>
+  );
+
+  if (comingSoon) {
+    return (
+      <div
+        aria-disabled="true"
+        className="grid cursor-default gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-4 opacity-60"
+      >
+        {inner}
+      </div>
+    );
+  }
+
+  return (
+    <Link
+      href={href}
+      prefetch
+      className="group grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-3)]"
+    >
+      {inner}
     </Link>
   );
 }
@@ -3593,6 +3616,7 @@ function AgentSystemPanel({
               icon="linkedin"
               connection={coverage.linkedIn}
               policy={linkedInPolicy}
+              comingSoon
             />
           </div>
         </div>
@@ -6873,20 +6897,18 @@ function AgentChannelPill({
   icon,
   connection,
   policy,
+  comingSoon = false,
 }: {
   title: string;
   icon: string;
   connection: ChannelConnection;
   policy?: RepChannelPolicy;
+  comingSoon?: boolean;
 }) {
   const cap = policy?.daily_cap ?? connection.dailyCap ?? 0;
   const approval = policy?.approval ?? "not set";
-  return (
-    <Link
-      href={connection.href}
-      prefetch
-      className="rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-3 transition-colors hover:border-[var(--color-line-3)]"
-    >
+  const inner = (
+    <>
       <span className="flex items-center justify-between gap-3">
         <span className="flex min-w-0 items-center gap-2 text-xs font-semibold text-[var(--color-text-1)]">
           {icon === "linkedin" ? (
@@ -6899,20 +6921,45 @@ function AgentChannelPill({
         <span
           className={
             "rounded-[8px] px-2 py-1 text-[11px] font-medium " +
-            (connection.connected
-              ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
-              : "bg-[var(--color-ink-0)] text-[var(--color-text-3)]")
+            (comingSoon
+              ? "bg-[var(--color-ink-0)] text-[var(--color-text-4)]"
+              : connection.connected
+                ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+                : "bg-[var(--color-ink-0)] text-[var(--color-text-3)]")
           }
         >
-          {connection.connected ? "Ready" : "Connect"}
+          {comingSoon ? "Coming soon" : connection.connected ? "Ready" : "Connect"}
         </span>
       </span>
       <span className="mt-2 block truncate text-xs text-[var(--color-text-3)]">
-        {connection.label}
+        {comingSoon ? "LinkedIn outreach is coming soon." : connection.label}
       </span>
       <span className="mt-1 block text-[11px] leading-5 text-[var(--color-text-3)]">
-        {cap > 0 ? `${cap}/day` : "No cap"} - {approvalLabel(approval)}
+        {comingSoon
+          ? "Not yet available"
+          : `${cap > 0 ? `${cap}/day` : "No cap"} - ${approvalLabel(approval)}`}
       </span>
+    </>
+  );
+
+  if (comingSoon) {
+    return (
+      <div
+        aria-disabled="true"
+        className="cursor-default rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-3 opacity-60"
+      >
+        {inner}
+      </div>
+    );
+  }
+
+  return (
+    <Link
+      href={connection.href}
+      prefetch
+      className="rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-3 transition-colors hover:border-[var(--color-line-3)]"
+    >
+      {inner}
     </Link>
   );
 }

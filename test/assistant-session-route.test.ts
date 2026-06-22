@@ -101,7 +101,7 @@ test("assistant session route starts realtime and records telemetry", async () =
     userId: USER_ID,
     mode: "voice",
     callId: "call_123",
-    voice: "marin",
+    voice: "transcription_only",
   });
 });
 

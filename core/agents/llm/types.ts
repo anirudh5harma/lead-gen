@@ -11,9 +11,38 @@
 
 import type { LLMModelEscalation } from "./model-policy.ts";
 
+export interface JsonSchemaObject {
+  type: "object";
+  properties?: Record<string, unknown>;
+  required?: string[];
+  additionalProperties?: boolean;
+  description?: string;
+  [key: string]: unknown;
+}
+
+export interface ToolFunctionCall {
+  id: string;
+  type: "function";
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
+export interface ToolSpec {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: JsonSchemaObject;
+  };
+}
+
 export interface Message {
-  role: "system" | "user" | "assistant";
-  content: string;
+  role: "system" | "user" | "assistant" | "tool";
+  content: string | null;
+  tool_call_id?: string;
+  tool_calls?: ToolFunctionCall[];
 }
 
 export interface CompletionUsage {
@@ -33,6 +62,15 @@ export interface CompletionRequest {
   stop?: string[];
   /** Ask for a JSON object response. The judge uses this. */
   response_format?: { type: "text" | "json_object" };
+  tools?: ToolSpec[];
+  tool_choice?:
+    | "auto"
+    | "none"
+    | {
+        type: "function";
+        function: { name: string };
+      };
+  stream?: boolean;
   abort_signal?: AbortSignal;
 }
 
@@ -41,8 +79,16 @@ export interface CompletionResponse {
   model: string;
   finish_reason: "stop" | "length" | "content_filter" | "tool_calls" | string;
   usage: CompletionUsage;
+  tool_calls?: ToolFunctionCall[];
+}
+
+export interface StreamCompletionChunk {
+  delta?: string;
+  tool_calls?: ToolFunctionCall[];
+  finish_reason?: string;
 }
 
 export interface LLMClient {
   complete(req: CompletionRequest): Promise<CompletionResponse>;
+  streamComplete?(req: CompletionRequest): AsyncIterable<StreamCompletionChunk>;
 }

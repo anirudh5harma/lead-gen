@@ -55,7 +55,10 @@ export function isLLMBudgetExceededError(err: unknown): err is LLMBudgetExceeded
 }
 
 export function estimateCompletionTokens(req: CompletionRequest): number {
-  const promptChars = req.messages.reduce((sum, msg) => sum + msg.content.length, 0);
+  const promptChars = req.messages.reduce(
+    (sum, msg) => sum + (msg.content?.length ?? 0),
+    0,
+  );
   const promptTokens = Math.ceil(promptChars / 4);
   return promptTokens + (req.max_tokens ?? 1024);
 }

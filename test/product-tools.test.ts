@@ -465,7 +465,7 @@ test("output destination model is shared by Profile and Bombsell MCP aliases", (
   );
   assert.equal(
     blocked.find((destination) => destination.key === "linkedin")?.status,
-    "blocked",
+    "planned",
   );
   assert.deepEqual(
     blocked.find((destination) => destination.key === "claude-code")?.tools,
@@ -512,7 +512,7 @@ test("output destination model is shared by Profile and Bombsell MCP aliases", (
   );
   assert.equal(
     connected.find((destination) => destination.key === "linkedin")?.status,
-    "connected",
+    "planned",
   );
   assert.equal(
     connected.find((destination) => destination.key === "crm-sync")?.status,
@@ -1294,7 +1294,7 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
   );
   assert.equal(
     integrations.destinations.find((item) => item.key === "linkedin")?.status,
-    "connected",
+    "planned",
   );
   assert.equal(
     integrations.destinations.find((item) => item.key === "claude-code")

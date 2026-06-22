@@ -1,11 +1,10 @@
 import { createHash } from "node:crypto";
-import type { AssistantRealtimeFunctionTool, AssistantSessionMode } from "./types.ts";
-import { buildAssistantInstructions } from "./instructions.ts";
+import type { AssistantSessionMode } from "./types.ts";
 
 export function assistantOpenAiApiKey(): string {
   const key = process.env.OPENAI_API_KEY?.trim();
   if (!key) {
-    throw new Error("OPENAI_API_KEY is required for the voice assistant.");
+    throw new Error("OPENAI_API_KEY is required for Realtime voice transcription.");
   }
   return key;
 }
@@ -19,7 +18,7 @@ export function assistantConfirmationSecret(): string {
 }
 
 export function assistantVoice(): string {
-  return "marin";
+  return "transcription_only";
 }
 
 function readNonnegativeIntEnv(
@@ -48,38 +47,27 @@ export function assistantSafetyIdentifier(userId: string): string {
 
 export function buildRealtimeSessionConfig(
   mode: AssistantSessionMode,
-  tools: AssistantRealtimeFunctionTool[],
 ): Record<string, unknown> {
-  const voice = assistantVoice();
-  const audioInput =
-    mode === "voice"
-      ? {
-          noise_reduction: { type: "near_field" },
-          transcription: {
-            model: "gpt-realtime-whisper",
-            language: "en",
-            delay: "low",
-          },
-          turn_detection: {
-            type: "server_vad",
-            threshold: 0.55,
-            prefix_padding_ms: 250,
-            silence_duration_ms: 450,
-          },
-        }
-      : undefined;
+  const audioInput = {
+    noise_reduction: { type: "near_field" },
+    transcription: {
+      model: "gpt-4o-transcribe",
+      language: "en",
+    },
+    turn_detection: {
+      type: "server_vad",
+      threshold: 0.55,
+      prefix_padding_ms: mode === "voice" ? 250 : 0,
+      silence_duration_ms: mode === "voice" ? 450 : 300,
+    },
+  };
 
   return {
     type: "realtime",
-    model: "gpt-realtime-2",
-    instructions: buildAssistantInstructions(),
-    reasoning: { effort: "low" },
+    model: "gpt-4o-transcribe",
     audio: {
-      output: { voice },
-      ...(audioInput ? { input: audioInput } : {}),
+      input: audioInput,
     },
-    output_modalities: ["audio", "text"],
-    tools,
-    tool_choice: "auto",
+    output_modalities: ["text"],
   };
 }
