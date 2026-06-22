@@ -7,6 +7,7 @@ export interface ProductEnvVar {
     | "auth"
     | "channels"
     | "database"
+    | "deploy"
     | "intelligence"
     | "llm"
     | "local"
@@ -749,6 +750,59 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     category: "runtime",
     description: "Timeout for the Render worker /health check in the AWS exit cutover verifier.",
     example: "10000",
+  },
+  {
+    name: "FLY_API_TOKEN",
+    requirement: "optional",
+    category: "deploy",
+    description: "Fly.io API token used by the Fly worker deploy script to authenticate flyctl non-interactively.",
+  },
+  {
+    name: "FLY_CLI",
+    requirement: "optional",
+    category: "deploy",
+    description: "Optional flyctl binary path override for the Fly worker deploy script.",
+    example: "/Users/example/.fly/bin/flyctl",
+  },
+  {
+    name: "FLY_CONFIG_FILE",
+    requirement: "optional",
+    category: "deploy",
+    description: "Fly.io app config file used by the Fly worker deploy script.",
+    example: "fly.toml",
+  },
+  {
+    name: "FLY_ORG",
+    requirement: "optional",
+    category: "deploy",
+    description: "Fly.io organization slug used when creating the Fly worker app.",
+  },
+  {
+    name: "FLY_WORKER_ORG",
+    requirement: "optional",
+    category: "deploy",
+    description: "Legacy fallback Fly.io organization slug for the Fly worker app when FLY_ORG is unset.",
+  },
+  {
+    name: "FLY_WORKER_APP_NAME",
+    requirement: "optional",
+    category: "deploy",
+    description: "Fly.io app name for the managed background worker deploy.",
+    example: "bombsell-production-worker",
+  },
+  {
+    name: "FLY_SKIP_RESTATE_CUTOVER",
+    requirement: "optional",
+    category: "deploy",
+    description: "Set to 1 for Fly cutover checks that should not prove or modify Restate production routing.",
+    example: "0",
+  },
+  {
+    name: "FLY_SKIP_RUNTIME_GATES",
+    requirement: "optional",
+    category: "deploy",
+    description: "Set to 1 for Fly cutover checks that should not run Restate runtime, outreach, or production app gates.",
+    example: "0",
   },
   {
     name: "ACTIVATION_VERIFY_AGGREGATOR_LIMIT",

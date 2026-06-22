@@ -6,6 +6,10 @@ import { ENVIRONMENT_KEY_NAMES } from "../core/config/env.ts";
 
 const root = join(import.meta.dirname, "..");
 
+// System-provided variables read by scripts (e.g. shell/OS env). These are not
+// product configuration, so they are not declared in the deployment contract.
+const SYSTEM_ENV_VARS = new Set(["HOME"]);
+
 function sourceFiles(path: string): string[] {
   return readdirSync(path).flatMap((entry) => {
     const full = join(path, entry);
@@ -40,6 +44,7 @@ test("runtime process.env reads are registered in the deployment contract", () =
     }
   }
   for (const key of referenced) {
+    if (SYSTEM_ENV_VARS.has(key)) continue;
     assert.ok(ENVIRONMENT_KEY_NAMES.has(key), `${key} is read but not tracked`);
   }
 });

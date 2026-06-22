@@ -13,6 +13,10 @@ import {
 
 const ROOT = new URL("..", import.meta.url).pathname;
 
+// System-provided variables read by scripts (e.g. shell/OS env). These are not
+// product configuration, so they are not declared in the product env manifest.
+const SYSTEM_ENV_VARS = new Set(["HOME"]);
+
 test("product env: production readiness reports missing required keys", () => {
   const report = checkProductEnvironment({
     NODE_ENV: "production",
@@ -140,7 +144,9 @@ test("product env: runtime process.env keys are tracked in the manifest", () => 
     }
   }
 
-  const missing = [...used].filter((name) => !documented.has(name)).sort();
+  const missing = [...used]
+    .filter((name) => !documented.has(name) && !SYSTEM_ENV_VARS.has(name))
+    .sort();
   assert.deepEqual(missing, []);
 });
 
