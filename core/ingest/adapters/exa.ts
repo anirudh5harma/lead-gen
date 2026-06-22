@@ -2,6 +2,11 @@ import {
   createExaClientFromEnv,
   type ExaResult,
 } from "../../exa/index.ts";
+import {
+  buildSocialStructured,
+  matchedKeywordsFromQuery,
+  socialPlatformFromUrl,
+} from "../social-signals.ts";
 import type {
   WorkspaceAdapter,
   WorkspacePollInput,
@@ -79,21 +84,41 @@ function candidateFromResult(
     result.summary ??
     result.text ??
     (result.highlights.length ? result.highlights.join("\n\n") : undefined);
+  const socialPlatform = socialPlatformFromUrl(result.url);
+  const matchedKeywords = matchedKeywordsFromQuery(
+    context.query,
+    `${title}\n${content ?? ""}`,
+  );
   return [{
     external_id: result.id ?? result.url,
     title,
     content,
     url: result.url,
     freshness_at: parseTimestamp(result.publishedDate) ?? new Date().toISOString(),
-    structured: {
-      source: "exa",
-      query: context.query,
-      title: result.title,
-      author: result.author,
-      score: result.score,
-      summary: result.summary,
-      highlights: result.highlights,
-    },
+    structured: socialPlatform
+      ? {
+          ...buildSocialStructured({
+            platform: socialPlatform,
+            query: context.query,
+            source_name: context.sourceName,
+            post_url: result.url,
+            author_name: result.author,
+            matched_keywords: matchedKeywords,
+          }),
+          exa_author: result.author ?? null,
+          exa_score: result.score ?? null,
+          exa_summary: result.summary ?? null,
+          exa_highlights: result.highlights,
+        }
+      : {
+          source: "exa",
+          query: context.query,
+          title: result.title,
+          author: result.author,
+          score: result.score,
+          summary: result.summary,
+          highlights: result.highlights,
+        },
     provenance: {
       adapter: "exa",
       provider: "exa",

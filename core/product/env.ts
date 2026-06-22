@@ -509,6 +509,24 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     description: "Product Hunt ingestion token.",
   },
   {
+    name: "X_API_BEARER_TOKEN",
+    requirement: "optional",
+    category: "intelligence",
+    description: "Official X recent-search bearer token for workspace or pooled social signal ingestion.",
+  },
+  {
+    name: "SOCIALDATA_API_KEY",
+    requirement: "optional",
+    category: "intelligence",
+    description: "SocialData API key for usage-priced X search ingestion when that provider is selected.",
+  },
+  {
+    name: "TWITTERAPI_IO_API_KEY",
+    requirement: "optional",
+    category: "intelligence",
+    description: "TwitterAPI.io API key for the low-cost pooled X search source and workspace X experiments.",
+  },
+  {
     name: "REDDIT_USER_AGENT",
     requirement: "optional",
     category: "channels",

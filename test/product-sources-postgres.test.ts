@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { setupPg } from "./_pg.ts";
 import {
+  configureExaOpenWebSignalSource,
+  configureExaSocialSignalPack,
   configureDefaultSignalAggregator,
   configureWorkspaceSignalSource,
   configureRssSource,
@@ -13,6 +15,10 @@ import {
   getProductReviewPulse,
   resetProductEngineForTests,
 } from "../core/product/app.ts";
+import {
+  DEFAULT_GOOGLE_NEWS_QUERIES,
+  DEFAULT_RSS_FEEDS,
+} from "../core/ingest/default-news-queries.ts";
 import { RSS_SIGNAL_INGESTION_WORKFLOW } from "../core/signals/index.ts";
 import { resetPool, setPool } from "../core/substrate/storage/index.ts";
 
@@ -66,22 +72,28 @@ test("product surface: default aggregator stays free-source-only even when Exa i
       { workspace_id: workspace.id, user_id: userId },
     );
 
-    const { rows } = await fx.pool.query<{ adapter: string }>(
-      `select config->>'adapter' as adapter
+    const { rows } = await fx.pool.query<{ adapter: string; count: string }>(
+      `select config->>'adapter' as adapter,
+              count(*)::text as count
          from graph_sources
         where workspace_id = $1
-        order by name asc`,
+        group by 1
+        order by 1 asc`,
       [workspace.id],
     );
 
-    const adapters = rows.map((row) => row.adapter).sort();
-    assert.equal(result.source_count, 4);
-    assert.deepEqual(adapters, [
-      "google_news",
-      "hn_front",
-      "hn_whos_hiring",
-      "product_hunt",
-    ]);
+    const counts = Object.fromEntries(rows.map((row) => [row.adapter, Number(row.count)]));
+    assert.equal(
+      result.source_count,
+      1 + DEFAULT_GOOGLE_NEWS_QUERIES.length + DEFAULT_RSS_FEEDS.length + 3,
+    );
+    assert.deepEqual(counts, {
+      google_news: 1 + DEFAULT_GOOGLE_NEWS_QUERIES.length,
+      hn_front: 1,
+      hn_whos_hiring: 1,
+      product_hunt: 1,
+      rss: DEFAULT_RSS_FEEDS.length,
+    });
   } finally {
     if (priorExaKey === undefined) delete process.env.EXA_API_KEY;
     else process.env.EXA_API_KEY = priorExaKey;
@@ -258,6 +270,139 @@ test("product surface: X search sources stay pollable with provider budgets", as
     assert.equal(rows[0].config.max_daily_calls, 5);
     assert.equal(rows[0].properties.acquisition_mode, "workspace_adapter");
     assert.equal(rows[0].properties.provider, "twitterapi_io");
+  } finally {
+    await resetProductEngineForTests();
+    await fx.close();
+    await resetPool();
+  }
+});
+
+test("product surface: Exa social sources support platform filters and generated queries", async (t) => {
+  const fx = await setupPg("product_exa_social_source");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  setPool(fx.pool);
+  try {
+    const userId = randomUUID();
+    const workspace = await createProductWorkspaceForUser(
+      { name: "Exa Social Workspace", slug: "exa-social-workspace" },
+      userId,
+    );
+    const boot = await configureExaOpenWebSignalSource(
+      {
+        company_name: "Acme",
+        industry: "AI infrastructure",
+        signal_keywords: "revops, outbound automation",
+        competitor_watchlist: "Apollo, ZoomInfo",
+        signal_kind: "hiring",
+        platforms: ["x", "linkedin"],
+        intent_presets: ["hiring", "feature_release"],
+        freshness_days: 7,
+        limit: 15,
+        max_daily_calls: 6,
+        enabled: true,
+      },
+      { workspace_id: workspace.id, user_id: userId },
+    );
+
+    const { rows } = await fx.pool.query<{
+      kind: string;
+      config: Record<string, unknown>;
+      properties: Record<string, unknown>;
+      poll_enabled: boolean;
+      poll_cadence_sec: number;
+    }>(
+      `select gs.kind::text as kind,
+              gs.config,
+              gs.properties,
+              wsc.enabled as poll_enabled,
+              wsc.poll_cadence_sec
+         from graph_sources gs
+         join workspace_source_configs wsc
+           on wsc.workspace_id = gs.workspace_id and wsc.source_id = gs.id
+        where gs.workspace_id = $1 and gs.id = $2`,
+      [workspace.id, boot.source_id],
+    );
+
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].kind, "other");
+    assert.equal(rows[0].poll_enabled, true);
+    assert.equal(rows[0].poll_cadence_sec, 3600);
+    assert.equal(rows[0].config.adapter, "exa");
+    assert.equal(rows[0].config.provider, "exa");
+    assert.equal(rows[0].config.type, "fast");
+    assert.equal(rows[0].config.signal_kind, "hiring");
+    assert.deepEqual(rows[0].config.platforms, ["x", "linkedin"]);
+    assert.deepEqual(rows[0].config.intent_presets, ["hiring", "feature_release"]);
+    assert.deepEqual(rows[0].config.include_domains, ["linkedin.com"]);
+    assert.match(String(rows[0].config.query), /Latest public posts on X\/Twitter and LinkedIn/i);
+    assert.match(String(rows[0].config.query), /"we're hiring"/i);
+    assert.match(String(rows[0].config.query), /"new feature"/i);
+    assert.equal(rows[0].properties.provider, "exa");
+    assert.equal(rows[0].properties.source_reason, "exa_social_posts");
+    assert.equal(rows[0].properties.source_tier, "aggregator");
+  } finally {
+    await resetProductEngineForTests();
+    await fx.close();
+    await resetPool();
+  }
+});
+
+test("product surface: Exa social pack configures stable hiring, funding, and launch sources", async (t) => {
+  const fx = await setupPg("product_exa_social_pack");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  setPool(fx.pool);
+  try {
+    const userId = randomUUID();
+    const workspace = await createProductWorkspaceForUser(
+      { name: "Exa Social Pack Workspace", slug: "exa-social-pack-workspace" },
+      userId,
+    );
+    const result = await configureExaSocialSignalPack(
+      {
+        company_name: "Acme",
+        industry: "AI infrastructure",
+        description: "Outbound intelligence for GTM teams.",
+        signal_keywords: "revops, outbound automation",
+      },
+      { workspace_id: workspace.id, user_id: userId },
+    );
+
+    assert.equal(result.source_count, 3);
+    assert.deepEqual(
+      result.sources.map((source) => source.name),
+      [
+        "Acme X/LinkedIn hiring posts",
+        "Acme X/LinkedIn funding posts",
+        "Acme X/LinkedIn launch and feature posts",
+      ],
+    );
+
+    const { rows } = await fx.pool.query<{
+      name: string;
+      config: Record<string, unknown>;
+    }>(
+      `select name, config
+         from graph_sources
+        where workspace_id = $1
+          and config->>'adapter' = 'exa'
+        order by name asc`,
+      [workspace.id],
+    );
+
+    assert.equal(rows.length, 3);
+    assert.deepEqual(rows.map((row) => row.name), [
+      "Acme X/LinkedIn funding posts",
+      "Acme X/LinkedIn hiring posts",
+      "Acme X/LinkedIn launch and feature posts",
+    ]);
+    assert.deepEqual(rows.map((row) => row.config.platforms), [
+      ["x", "linkedin"],
+      ["x", "linkedin"],
+      ["x", "linkedin"],
+    ]);
+    assert.deepEqual(rows.map((row) => row.config.type), ["fast", "fast", "fast"]);
   } finally {
     await resetProductEngineForTests();
     await fx.close();

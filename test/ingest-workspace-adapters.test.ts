@@ -172,6 +172,10 @@ test("exa adapter: searches public web and normalizes evidence candidates", asyn
         config: {
           query: "Acme AI workflow launch",
           limit: 5,
+          type: "fast",
+          include_domains: ["x.com", "linkedin.com"],
+          exclude_domains: ["facebook.com"],
+          start_published_date: "2026-06-01T00:00:00.000Z",
           signal_kind: "product_launch",
           summary: true,
         },
@@ -182,6 +186,10 @@ test("exa adapter: searches public web and normalizes evidence candidates", asyn
     assert.match(capturedUrl, /api\.exa\.ai\/search/);
     assert.equal(capturedKey, "exa-test");
     assert.equal(capturedBody.query, "Acme AI workflow launch");
+    assert.equal(capturedBody.type, "fast");
+    assert.deepEqual(capturedBody.includeDomains, ["x.com", "linkedin.com"]);
+    assert.deepEqual(capturedBody.excludeDomains, ["facebook.com"]);
+    assert.equal(capturedBody.startPublishedDate, "2026-06-01T00:00:00.000Z");
     assert.deepEqual(capturedBody.contents, {
       text: { maxCharacters: 1600 },
       highlights: true,
@@ -194,6 +202,53 @@ test("exa adapter: searches public web and normalizes evidence candidates", asyn
     assert.equal(result.items[0].provenance?.adapter, "exa");
     assert.equal(result.items[0].structured?.source, "exa");
     assert.equal(result.cursor.request_id, "req_1");
+  } finally {
+    if (prior === undefined) delete process.env.EXA_API_KEY;
+    else process.env.EXA_API_KEY = prior;
+  }
+});
+
+test("exa adapter: social post URLs normalize into shared social structured fields", async () => {
+  const prior = process.env.EXA_API_KEY;
+  process.env.EXA_API_KEY = "exa-test";
+  const fetchImpl = (async () =>
+    jsonResponse({
+      requestId: "req_social",
+      results: [
+        {
+          id: "li-post-1",
+          url: "https://www.linkedin.com/posts/acme_hiring-we-are-hiring-a-founding-ae-activity-123",
+          title: "We are hiring a founding AE",
+          publishedDate: "2026-06-18T03:00:00.000Z",
+          author: "Acme",
+          text: "We are hiring a founding AE and revops lead.",
+          highlights: ["founding AE", "revops lead"],
+          summary: "Acme is hiring GTM roles.",
+        },
+      ],
+    })) as unknown as typeof fetch;
+  try {
+    const result = await exaAdapter.poll({
+      workspace_id: "ws",
+      source: {
+        id: "s",
+        name: "Exa LinkedIn posts",
+        config: {
+          query: "\"we are hiring\" linkedin recruiter posts",
+          limit: 5,
+          type: "fast",
+          include_domains: ["linkedin.com"],
+        },
+      },
+      cursor: {},
+      fetchImpl,
+    });
+    assert.equal(result.items.length, 1);
+    assert.equal(result.items[0].structured?.source, "social");
+    assert.equal(result.items[0].structured?.platform, "linkedin");
+    assert.equal(result.items[0].structured?.post_url, "https://www.linkedin.com/posts/acme_hiring-we-are-hiring-a-founding-ae-activity-123");
+    assert.equal(result.items[0].structured?.author_name, "Acme");
+    assert.deepEqual(result.items[0].structured?.matched_keywords, ["we are hiring"]);
   } finally {
     if (prior === undefined) delete process.env.EXA_API_KEY;
     else process.env.EXA_API_KEY = prior;
@@ -352,7 +407,11 @@ test("x_search adapter: official X recent search normalizes tweets and authors",
     assert.equal(result.items[0].external_id, "1800000000000000001");
     assert.equal(result.items[0].url, "https://x.com/anne/status/1800000000000000001");
     assert.equal(result.items[0].provenance?.provider, "x_official");
+    assert.equal(result.items[0].structured?.source, "social");
+    assert.equal(result.items[0].structured?.platform, "x");
     assert.equal(result.items[0].structured?.author_handle, "anne");
+    assert.equal(result.items[0].structured?.author_profile_url, "https://x.com/anne");
+    assert.deepEqual(result.items[0].structured?.matched_keywords, ["apollo alternative"]);
     assert.equal(result.cursor.provider, "x_official");
   } finally {
     if (prior === undefined) delete process.env.X_API_BEARER_TOKEN;
@@ -374,7 +433,18 @@ test("x_search adapter: TwitterAPI.io advanced search uses API key and since_tim
           id: "1900000000000000001",
           text: "We are switching from our current outbound tool.",
           createdAt: "2026-06-03T02:00:00.000Z",
-          user: { username: "kai", name: "Kai" },
+          author: {
+            userName: "kai",
+            name: "Kai",
+            url: "https://x.com/kai",
+          },
+          entities: {
+            urls: [
+              {
+                expanded_url: "https://jobs.techtree.dev/openings/sdr",
+              },
+            ],
+          },
           metrics: { reply_count: 3 },
         },
       ],
@@ -400,6 +470,12 @@ test("x_search adapter: TwitterAPI.io advanced search uses API key and since_tim
     assert.equal(result.items.length, 1);
     assert.equal(result.items[0].url, "https://x.com/kai/status/1900000000000000001");
     assert.equal(result.items[0].provenance?.provider, "twitterapi_io");
+    assert.equal(result.items[0].structured?.source, "social");
+    assert.equal(result.items[0].structured?.platform, "x");
+    assert.equal(result.items[0].structured?.author_handle, "kai");
+    assert.equal(result.items[0].structured?.author_profile_url, "https://x.com/kai");
+    assert.equal(result.items[0].structured?.company_domain, "techtree.dev");
+    assert.deepEqual(result.items[0].structured?.matched_keywords, ["switching from"]);
   } finally {
     if (prior === undefined) delete process.env.TWITTERAPI_IO_API_KEY;
     else process.env.TWITTERAPI_IO_API_KEY = prior;

@@ -110,3 +110,41 @@ test("source quality: projected source tier is used when config tier is invalid"
     "official",
   );
 });
+
+test("source quality: direct social company context boosts authority and intent", () => {
+  const quality = deriveSignalQualityMetadata({
+    adapter_id: "exa",
+    source_name: "Exa LinkedIn hiring posts",
+    source_config: { source_tier: "aggregator" },
+    item: {
+      external_id: "social_1",
+      title: "Acme is hiring a founding AE",
+      content: "We are hiring a founding AE and revops lead.",
+      url: "https://www.linkedin.com/posts/acme_hiring-activity-123",
+      kind: "hiring",
+      structured: {
+        source: "social",
+        platform: "linkedin",
+        author_name: "Acme",
+        author_kind: "company",
+        company_name: "Acme",
+        company_domain: "acme.example",
+        matched_keywords: ["we are hiring", "founding ae"],
+      },
+      freshness_at: "2026-06-16T08:30:00.000Z",
+    },
+    kind: "hiring",
+    now: new Date("2026-06-16T09:00:00.000Z"),
+  });
+
+  assert.equal(quality.properties.source_tier, "aggregator");
+  assert.equal(quality.properties.source_authority, 0.92);
+  assert.equal(
+    (quality.properties.buying_intent as { level?: string }).level,
+    "high",
+  );
+  assert.match(
+    JSON.stringify((quality.properties.source_credibility as { reasons?: unknown }).reasons),
+    /linked to a tracked company via linkedin metadata/i,
+  );
+});

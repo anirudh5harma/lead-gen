@@ -4,8 +4,13 @@ import type {
   WorkspacePollResult,
 } from "./_workspace-types.ts";
 import type { RawCandidate } from "../types.ts";
+import {
+  buildSocialStructured,
+  matchedKeywordsFromQuery,
+} from "../social-signals.ts";
+import { normalizeCompanyDomain } from "../company-domain.ts";
 
-type XSearchProvider = "x_official" | "socialdata" | "twitterapi_io";
+export type XSearchProvider = "x_official" | "socialdata" | "twitterapi_io";
 
 interface ProviderRequest {
   url: string;
@@ -27,42 +32,55 @@ export const xSearchAdapter: WorkspaceAdapter = {
   kindHint: null,
 
   async poll(input: WorkspacePollInput): Promise<WorkspacePollResult> {
-    const cfg = input.source.config;
-    const query = stringValue(cfg.query);
-    if (!query) return { items: [], cursor: input.cursor };
-    const provider = xSearchProvider(cfg.provider);
-    const limit = boundedLimit(cfg.limit);
-    const fetchImpl = input.fetchImpl ?? globalThis.fetch;
-    const request = buildProviderRequest({
-      provider,
-      query,
-      limit,
+    return pollXSearchSource({
+      query: stringValue(input.source.config.query),
+      provider: xSearchProvider(input.source.config.provider),
+      limit: boundedLimit(input.source.config.limit),
       cursor: input.cursor,
-    });
-    const response = await fetchImpl(request.url, {
-      headers: request.headers,
-    });
-    if (!response.ok) {
-      throw new XSearchError(`${request.provider} search failed`, response.status);
-    }
-    const json = await response.json();
-    const items = normalizeProviderResponse(request.provider, json, {
-      query,
+      fetchImpl: input.fetchImpl,
       sourceName: input.source.name,
     });
-    return {
-      items,
-      cursor: {
-        last_polled_at: new Date().toISOString(),
-        provider: request.provider,
-        query,
-        count: items.length,
-      },
-    };
   },
 };
 
-function buildProviderRequest(input: {
+export async function pollXSearchSource(input: {
+  query: string | undefined;
+  provider: XSearchProvider;
+  limit: number;
+  cursor: Record<string, unknown>;
+  fetchImpl?: typeof fetch;
+  sourceName: string;
+}): Promise<WorkspacePollResult> {
+  if (!input.query) return { items: [], cursor: input.cursor };
+  const request = buildProviderRequest({
+    provider: input.provider,
+    query: input.query,
+    limit: input.limit,
+    cursor: input.cursor,
+  });
+  const response = await (input.fetchImpl ?? globalThis.fetch)(request.url, {
+    headers: request.headers,
+  });
+  if (!response.ok) {
+    throw new XSearchError(`${request.provider} search failed`, response.status);
+  }
+  const json = await response.json();
+  const items = normalizeProviderResponse(request.provider, json, {
+    query: input.query,
+    sourceName: input.sourceName,
+  });
+  return {
+    items,
+    cursor: {
+      last_polled_at: new Date().toISOString(),
+      provider: request.provider,
+      query: input.query,
+      count: items.length,
+    },
+  };
+}
+
+export function buildProviderRequest(input: {
   provider: XSearchProvider;
   query: string;
   limit: number;
@@ -118,7 +136,7 @@ function buildProviderRequest(input: {
   }
 }
 
-function normalizeProviderResponse(
+export function normalizeProviderResponse(
   provider: XSearchProvider,
   json: unknown,
   context: { query: string; sourceName: string },
@@ -183,7 +201,8 @@ function normalizeThirdPartyTweet(
     stringValue(record?.username) ??
     stringValue(record?.screen_name) ??
     stringValue(author?.screen_name) ??
-    stringValue(author?.username);
+    stringValue(author?.username) ??
+    stringValue(author?.userName);
   const url =
     stringValue(record?.url) ??
     (handle ? `https://x.com/${handle}/status/${id}` : `https://x.com/i/web/status/${id}`);
@@ -198,6 +217,11 @@ function normalizeThirdPartyTweet(
       stringValue(record?.creation_date),
     authorName: stringValue(author?.name) ?? stringValue(record?.name),
     authorHandle: handle,
+    authorProfileUrl:
+      stringValue(author?.url) ??
+      stringValue(author?.twitterUrl) ??
+      (handle ? `https://x.com/${handle}` : undefined),
+    companyDomain: firstExpandedDomain(record, author),
     metrics: recordValue(record?.public_metrics) ?? recordValue(record?.metrics),
     query: context.query,
     sourceName: context.sourceName,
@@ -213,12 +237,15 @@ function candidateFromTweet(input: {
   createdAt?: string;
   authorName?: string;
   authorHandle?: string;
+  authorProfileUrl?: string;
+  companyDomain?: string | null;
   metrics?: Record<string, unknown>;
   query: string;
   sourceName: string;
   raw: Record<string, unknown>;
 }): RawCandidate {
   const author = input.authorHandle ? `@${input.authorHandle}` : input.authorName ?? "X";
+  const matchedKeywords = matchedKeywordsFromQuery(input.query, input.text);
   return {
     external_id: input.id,
     external_thread_id: stringValue(input.raw.conversation_id),
@@ -226,13 +253,20 @@ function candidateFromTweet(input: {
     content: input.text,
     url: input.url,
     freshness_at: parseTimestamp(input.createdAt) ?? new Date().toISOString(),
-    structured: {
-      source: "x",
+    structured: buildSocialStructured({
+      platform: "x",
       query: input.query,
+      source_name: input.sourceName,
+      post_url: input.url,
       author_name: input.authorName ?? null,
       author_handle: input.authorHandle ?? null,
-      metrics: input.metrics ?? {},
-    },
+      author_profile_url:
+        input.authorProfileUrl ??
+        (input.authorHandle ? `https://x.com/${input.authorHandle}` : null),
+      company_domain: input.companyDomain ?? null,
+      matched_keywords: matchedKeywords,
+      engagement: normalizeEngagement(input.metrics),
+    }),
     provenance: {
       adapter: "x_search",
       provider: input.provider,
@@ -297,4 +331,41 @@ function arrayValue(value: unknown): unknown[] | undefined {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function firstExpandedDomain(
+  record: Record<string, unknown>,
+  author: Record<string, unknown> | undefined,
+): string | null {
+  const entityUrls = arrayValue(recordValue(record.entities)?.urls) ?? [];
+  for (const entry of entityUrls) {
+    const url = stringValue(recordValue(entry)?.expanded_url) ?? stringValue(recordValue(entry)?.url);
+    const domain = normalizeCompanyDomain(url);
+    if (domain) return domain;
+  }
+  const authorUrl = stringValue(author?.url);
+  return normalizeCompanyDomain(authorUrl);
+}
+
+function normalizeEngagement(
+  metrics: Record<string, unknown> | undefined,
+): Record<string, unknown> | null {
+  if (!metrics) return null;
+  const normalized: Record<string, unknown> = {};
+  for (const key of [
+    "like_count",
+    "favorite_count",
+    "retweet_count",
+    "reply_count",
+    "quote_count",
+    "bookmark_count",
+    "view_count",
+    "impression_count",
+  ]) {
+    const value = metrics[key];
+    const numeric =
+      typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+    if (Number.isFinite(numeric) && numeric >= 0) normalized[key] = numeric;
+  }
+  return Object.keys(normalized).length > 0 ? normalized : null;
 }

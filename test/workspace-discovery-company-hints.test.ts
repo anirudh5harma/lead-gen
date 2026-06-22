@@ -175,3 +175,33 @@ test("workspace discovery company hints: derives linked target domains for HN an
     confidence: "derived",
   });
 });
+
+test("workspace discovery company hints: derives social company hints from normalized social structured data", () => {
+  const hint = deriveSignalCompanyHint({
+    adapter_id: "exa",
+    source_name: "Exa LinkedIn posts",
+    source_config: {},
+    item: {
+      title: "Acme is hiring a founding AE",
+      content: "We are hiring a founding AE and revops lead.",
+      url: "https://www.linkedin.com/posts/acme_hiring-activity-123",
+      freshness_at: "2026-06-18T00:00:00.000Z",
+      structured: {
+        source: "social",
+        platform: "linkedin",
+        author_name: "Acme",
+        author_kind: "company",
+        company_name: "Acme",
+        company_domain: "acme.example",
+      },
+    },
+  });
+
+  assert.deepEqual(hint, {
+    name: "Acme",
+    domain: "acme.example",
+    description: null,
+    source: "social_company_name",
+    confidence: "derived",
+  });
+});

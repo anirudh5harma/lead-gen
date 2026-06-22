@@ -45,6 +45,7 @@ const WORKFLOW_FACTORIES: WorkerServiceContract[] = [
   { service: "play.reply_to_email.v1", factory: "createReplyToEmailPlayWorkflow" },
   { service: "contact.resolve_for_signal.v1", factory: "createContactResolutionWorkflow" },
   { service: "ingest_catalog_poll", factory: "createCatalogPollWorkflow" },
+  { service: "ingest_shared_x_poll", factory: "createSharedXPollWorkflow" },
   { service: "ingest_workspace_poll", factory: "createWorkspacePollWorkflow" },
   { service: "ingest_expire_sweep", factory: "createExpireWorkflow" },
   { service: "channel.email_domain_provision.v1", factory: "createSendingDomainProvisioningWorkflow" },

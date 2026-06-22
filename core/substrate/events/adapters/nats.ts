@@ -216,16 +216,19 @@ interface SubscriptionStartOptions {
   durableName?: string;
 }
 
+interface SubscriptionNames {
+  consumerName: string;
+  durableName?: string;
+}
+
 async function startSubscription(
   opts: SubscriptionStartOptions,
 ): Promise<JetStreamSubscription> {
   // Push-based JetStream subscription. nats.js creates the consumer with
   // the deliver_subject we hand it; the consumer is ephemeral unless
   // `durable_name` is set, in which case it persists across restarts.
-  const consumerName =
-    opts.durableName ??
-    `bombsell_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
-  const sub = await subscribeJetStream(opts, consumerName);
+  const names = subscriptionNames(opts.durableName);
+  const sub = await subscribeJetStream(opts, names);
   void opts.jsm; // reserved for future stream/consumer admin
 
   // Pump messages.
@@ -259,26 +262,26 @@ async function startSubscription(
 
 async function subscribeJetStream(
   opts: SubscriptionStartOptions,
-  consumerName: string,
+  names: SubscriptionNames,
 ): Promise<JetStreamSubscription> {
   try {
-    return await opts.js.subscribe(opts.filterSubject, subscriptionOptions(opts, consumerName));
+    return await opts.js.subscribe(opts.filterSubject, subscriptionOptions(opts, names));
   } catch (err) {
     if (!opts.durableName || !isDurableQueueMigrationError(err)) throw err;
-    await opts.jsm.consumers.delete(opts.prefix, consumerName);
-    return opts.js.subscribe(opts.filterSubject, subscriptionOptions(opts, consumerName));
+    await opts.jsm.consumers.delete(opts.prefix, names.consumerName);
+    return opts.js.subscribe(opts.filterSubject, subscriptionOptions(opts, names));
   }
 }
 
 function subscriptionOptions(
   opts: SubscriptionStartOptions,
-  consumerName: string,
+  names: SubscriptionNames,
 ) {
-  const queueGroup = opts.durableName ? `${consumerName}_workers` : undefined;
+  const queueGroup = names.durableName ? `${names.consumerName}_workers` : undefined;
   return {
     config: {
-      durable_name: opts.durableName,
-      name: consumerName,
+      durable_name: names.durableName,
+      name: names.consumerName,
       ack_policy: AckPolicy.Explicit,
       filter_subject: opts.filterSubject,
       deliver_subject: `_INBOX.${randomUUID()}`,
@@ -409,4 +412,25 @@ function safeSegment(s: string): string {
   // event types are dotted ASCII (e.g. 'signal.ingested'). Both are safe
   // — but a defensive replace keeps the regex obvious.
   return s.replace(/[^a-zA-Z0-9_\-]/g, "_");
+}
+
+function subscriptionNames(durableName?: string): SubscriptionNames {
+  if (!durableName) {
+    return {
+      consumerName: `bombsell_${randomUUID().replace(/-/g, "").slice(0, 12)}`,
+    };
+  }
+  const normalized = normalizeConsumerName(durableName);
+  return {
+    consumerName: normalized,
+    durableName: normalized,
+  };
+}
+
+export function normalizeConsumerName(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    throw new Error("NATS consumer name required");
+  }
+  return trimmed.replace(/[^a-zA-Z0-9_\-]/g, "_");
 }

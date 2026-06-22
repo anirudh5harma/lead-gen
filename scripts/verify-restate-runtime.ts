@@ -38,15 +38,17 @@ const TERMINAL_STATUSES = new Set<WorkflowRun["status"]>([
 export async function runRestateRuntimeProbe(
   opts: RestateRuntimeProbeOptions = {},
 ): Promise<RestateRuntimeProbeResult> {
-  const runtime = opts.runtime ?? runtimeFromEnv(opts.env ?? process.env);
+  const env = opts.env ?? process.env;
+  const runtime = opts.runtime ?? runtimeFromEnv(env);
   const workflow = createRestateRuntimeProbeWorkflow();
   runtime.register(workflow);
 
   const marker = opts.marker ?? `probe-${randomUUID()}`;
   const now = opts.now ?? Date.now;
   const sleep = opts.sleep ?? ((ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
-  const timeoutMs = opts.timeoutMs ?? 60_000;
-  const pollIntervalMs = opts.pollIntervalMs ?? 1_000;
+  const timeoutMs = opts.timeoutMs ?? numberFromEnv(env.RESTATE_RUNTIME_PROBE_TIMEOUT_MS, 60_000);
+  const pollIntervalMs = opts.pollIntervalMs
+    ?? numberFromEnv(env.RESTATE_RUNTIME_PROBE_POLL_INTERVAL_MS, 1_000);
   const startedAt = now();
 
   const started = await runtime.start<RestateRuntimeProbeInput, RestateRuntimeProbeOutput>({
@@ -111,6 +113,12 @@ function runtimeFromEnv(env: Record<string, string | undefined>): WorkflowRuntim
     ingressUrl,
     bearer: restateBearerFromEnv(env),
   });
+}
+
+function numberFromEnv(raw: string | undefined, fallback: number): number {
+  if (!raw?.trim()) return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 async function main(): Promise<void> {

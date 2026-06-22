@@ -57,6 +57,7 @@ import {
   createOpenAIEmbeddingClient,
   createCatalogPollWorkflow,
   createExpireWorkflow,
+  createSharedXPollWorkflow,
   createWorkspacePollWorkflow,
 } from "../core/ingest/index.ts";
 import {
@@ -198,6 +199,11 @@ const workflows = [
     ...createContactResolutionProviders({ pool }),
   }),
   createCatalogPollWorkflow({
+    pool,
+    bus,
+    embedder: createOpenAIEmbeddingClient({ apiKey: openAiKey }),
+  }),
+  createSharedXPollWorkflow({
     pool,
     bus,
     embedder: createOpenAIEmbeddingClient({ apiKey: openAiKey }),

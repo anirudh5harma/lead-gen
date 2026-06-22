@@ -4,11 +4,13 @@ import {
   classifyAwsSesGate,
   classifyOutlookGate,
   classifyRestateEcsGate,
+  classifySharedXGate,
   summarizeProductionGate,
 } from "../scripts/verify-production-gate.ts";
 import type { AwsSesReadinessResult } from "../scripts/verify-aws-ses.ts";
 import type { OutlookReadinessResult } from "../scripts/verify-outlook-readiness.ts";
 import type { RestateEcsHealthResult } from "../scripts/verify-restate-ecs-health.ts";
+import type { SharedXReadinessResult } from "../scripts/verify-shared-x-readiness.ts";
 
 function healthyRestate(): RestateEcsHealthResult {
   return {
@@ -52,6 +54,25 @@ function healthyOutlook(): OutlookReadinessResult {
       { label: "outlook: reply sync subscription", status: "ok", detail: "1/1 connected Outlook account(s) have active Graph subscriptions" },
       { label: "outlook: account errors", status: "ok", detail: "No connected Outlook account errors recorded" },
       { label: "managed-domain fallback", status: "ok", detail: "Disabled unless MANAGED_OWNED_DOMAIN_EMAIL_ENABLED=1" },
+    ],
+  };
+}
+
+function healthySharedX(): SharedXReadinessResult {
+  return {
+    ok: true,
+    sourceEnabled: true,
+    provider: "twitterapi_io",
+    enabledRuleCount: 12,
+    projectedMonthlyCostUsd: 2.92,
+    monthlyBudgetUsd: 10,
+    steps: [
+      { label: "shared-x: database configured", status: "ok" },
+      { label: "shared-x: source configured", status: "ok", detail: "x_search_shared exists and is enabled" },
+      { label: "shared-x: provider configured", status: "ok", detail: "Provider twitterapi_io is configured" },
+      { label: "shared-x: provider key present", status: "ok", detail: "TWITTERAPI_IO_API_KEY is configured" },
+      { label: "shared-x: rule pack configured", status: "ok", detail: "12 enabled pooled X rule(s)" },
+      { label: "shared-x: monthly budget", status: "ok", detail: "Projected $2.92/mo against cap $10.00/mo" },
     ],
   };
 }
@@ -167,6 +188,44 @@ test("production gate classifies missing Outlook mailbox as external setup", () 
   assert.match(decision.next, /Connect a Microsoft 365 mailbox/);
 });
 
+test("production gate classifies missing shared X provider key as external setup", () => {
+  const sharedX = healthySharedX();
+  sharedX.ok = false;
+  sharedX.steps = sharedX.steps.map((step) =>
+    step.label === "shared-x: provider key present"
+      ? {
+          ...step,
+          status: "fail",
+          detail: "TWITTERAPI_IO_API_KEY is required for provider twitterapi_io",
+        }
+      : step,
+  );
+
+  const decision = classifySharedXGate(sharedX);
+
+  assert.equal(decision.status, "external");
+  assert.match(decision.next, /Add the required X provider key/);
+});
+
+test("production gate classifies broken shared X budget as fail", () => {
+  const sharedX = healthySharedX();
+  sharedX.ok = false;
+  sharedX.steps = sharedX.steps.map((step) =>
+    step.label === "shared-x: monthly budget"
+      ? {
+          ...step,
+          status: "fail",
+          detail: "Projected $12.40/mo against cap $10.00/mo",
+        }
+      : step,
+  );
+
+  const decision = classifySharedXGate(sharedX);
+
+  assert.equal(decision.status, "fail");
+  assert.match(decision.next, /Fix the shared X provider or budget configuration/);
+});
+
 test("production gate classifies missing Outlook reply subscription as fail", () => {
   const outlook = healthyOutlook();
   outlook.ok = false;
@@ -203,12 +262,17 @@ test("production gate is operator-ok but not launch-ready for known blockers", (
       : step,
   );
 
-  const result = summarizeProductionGate({ restate, outlook: healthyOutlook(), ses });
+  const result = summarizeProductionGate({
+    restate,
+    outlook: healthyOutlook(),
+    sharedX: healthySharedX(),
+    ses,
+  });
 
   assert.equal(result.ok, true);
   assert.equal(result.launchReady, false);
   assert.deepEqual(
     result.decisions.map((decision) => decision.status),
-    ["wait", "ok", "external"],
+    ["wait", "ok", "ok", "external"],
   );
 });

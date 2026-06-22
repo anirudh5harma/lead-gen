@@ -72,6 +72,24 @@ export async function listPlatformSources(
   return rows.map(rowToSource);
 }
 
+export async function updatePlatformSourceRuntimeState(
+  pool: Pool,
+  source_id: string,
+  runtimeState: Record<string, unknown>,
+): Promise<void> {
+  await pool.query(
+    `update platform_signal_sources
+        set config = jsonb_set(
+          coalesce(config, '{}'::jsonb),
+          '{runtime_state}',
+          $2::jsonb,
+          true
+        )
+      where id = $1`,
+    [source_id, JSON.stringify(runtimeState)],
+  );
+}
+
 // ─── Catalog poll cursor management ───────────────────────────────────────
 
 export interface CatalogCursor {

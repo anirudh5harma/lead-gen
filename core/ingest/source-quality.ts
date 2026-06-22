@@ -1,5 +1,6 @@
 import type { SignalKind } from "../primitives/signal.ts";
 import type { RawCandidate } from "./types.ts";
+import type { SocialPlatform } from "./social-signals.ts";
 
 export type SignalSourceTier =
   | "official"
@@ -115,20 +116,28 @@ function sourceAuthority(
   const configured = numberValue(input.source_config.source_authority) ??
     numberValue(input.source_properties?.source_authority);
   if (configured !== null) return clamp01(configured);
+  let authority: number;
   switch (tier) {
     case "official":
-      return 0.95;
+      authority = 0.95;
+      break;
     case "trusted":
-      return 0.82;
+      authority = 0.82;
+      break;
     case "provider":
-      return 0.72;
+      authority = 0.72;
+      break;
     case "aggregator":
-      return 0.66;
+      authority = 0.66;
+      break;
     case "community":
-      return 0.58;
+      authority = 0.58;
+      break;
     case "unknown":
-      return 0.45;
+      authority = 0.45;
+      break;
   }
+  return clamp01(authority + socialAuthorityBoost(input));
 }
 
 function learnedSourceModifier(input: SignalQualityInput): number {
@@ -165,11 +174,23 @@ function credibilityReasonsFor(
     return ["official employer job-board source"];
   }
   if (adapter === "google_news") return ["news aggregator result; original source should corroborate"];
-  if (adapter === "exa") return ["open-web search result with source URL provenance"];
+  if (adapter === "exa") {
+    const social = socialPlatform(input.item.structured);
+    if (social) {
+      return [
+        `open-web ${social} post result with source URL provenance`,
+        ...socialCredibilityReasons(input),
+      ];
+    }
+    return ["open-web search result with source URL provenance"];
+  }
   if (adapter === "product_hunt") return ["launch source with public product metadata"];
   if (adapter === "hn_whos_hiring") return ["public hiring thread with direct employer posts"];
   if (adapter === "reddit" || adapter === "hn_front" || adapter === "x_search") {
-    return ["community/social source; useful for intent, lower standalone authority"];
+    return [
+      "community/social source; useful for intent, lower standalone authority",
+      ...socialCredibilityReasons(input),
+    ].filter(Boolean);
   }
   return [`source adapter ${input.adapter_id}`];
 }
@@ -220,6 +241,15 @@ function buyingIntentFor(input: SignalQualityInput): {
   if (tier === "community" && /complain|frustrat|broken|doesn't work|too expensive/i.test(text)) {
     score += 0.12;
     reasons.push("pain-point language from community source");
+  }
+  const social = socialPlatform(input.item.structured);
+  if (social && hasDirectCompanyContext(input.item.structured)) {
+    score += 0.08;
+    reasons.push(`direct ${social} company context`);
+  }
+  if (social && hasMatchedKeywords(input.item.structured)) {
+    score += 0.06;
+    reasons.push(`matched ${social} intent keywords`);
   }
 
   const finalScore = clamp01(score);
@@ -317,6 +347,53 @@ function signalText(input: SignalQualityInput): string {
   ].filter(Boolean).join("\n");
 }
 
+function socialAuthorityBoost(input: SignalQualityInput): number {
+  const platform = socialPlatform(input.item.structured);
+  if (!platform) return 0;
+  let boost = 0;
+  if (hasDirectCompanyContext(input.item.structured)) boost += platform === "linkedin" ? 0.16 : 0.12;
+  if (hasMatchedKeywords(input.item.structured)) boost += 0.04;
+  const authorKind = stringValue(recordValue(input.item.structured)?.author_kind)?.toLowerCase();
+  if (authorKind === "company" || authorKind === "brand" || authorKind === "organization") {
+    boost += 0.06;
+  }
+  return boost;
+}
+
+function socialCredibilityReasons(input: SignalQualityInput): string[] {
+  const platform = socialPlatform(input.item.structured);
+  if (!platform) return [];
+  const reasons: string[] = [];
+  if (hasDirectCompanyContext(input.item.structured)) {
+    reasons.push(`linked to a tracked company via ${platform} metadata`);
+  }
+  if (hasMatchedKeywords(input.item.structured)) {
+    reasons.push(`matched configured ${platform} intent keywords`);
+  }
+  return reasons;
+}
+
+function socialPlatform(structured: Record<string, unknown> | undefined): SocialPlatform | null {
+  const platform = stringValue(recordValue(structured)?.platform);
+  if (platform === "x" || platform === "linkedin") return platform;
+  return null;
+}
+
+function hasDirectCompanyContext(structured: Record<string, unknown> | undefined): boolean {
+  const record = recordValue(structured);
+  if (!record) return false;
+  return Boolean(
+    stringValue(record.company_name) ||
+      stringValue(record.company_domain) ||
+      stringValue(record.link_reason),
+  );
+}
+
+function hasMatchedKeywords(structured: Record<string, unknown> | undefined): boolean {
+  const record = recordValue(structured);
+  return Array.isArray(record?.matched_keywords) && record.matched_keywords.length > 0;
+}
+
 function hasCompanyDomain(config: Record<string, unknown>, itemUrl: string | undefined): boolean {
   const configured = firstString(
     config.company_domain,
@@ -386,6 +463,12 @@ function firstString(...values: unknown[]): string | null {
     if (text) return text;
   }
   return null;
+}
+
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
 }
 
 function stringValue(value: unknown): string | undefined {

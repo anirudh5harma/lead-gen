@@ -181,6 +181,16 @@ test("product tools: Exa source discovery returns a source handle", () => {
   const tool = listTools().find((registered) => registered.name === "product.signal.discover_open_web");
   assert.ok(tool, "expected Exa open-web Signal tool");
 
+  const parsedInput = tool!.input.parse({
+    signal_kind: "hiring",
+    platforms: ["x", "linkedin"],
+    intent_presets: ["hiring", "feature_release"],
+    freshness_days: 7,
+  });
+  assert.equal(parsedInput.signal_kind, "hiring");
+  assert.deepEqual(parsedInput.platforms, ["x", "linkedin"]);
+  assert.deepEqual(parsedInput.intent_presets, ["hiring", "feature_release"]);
+
   const parsed = tool.output.parse({
     workspace_id: "00000000-0000-4000-8000-000000000001",
     source_id: "00000000-0000-4000-8000-000000000002",

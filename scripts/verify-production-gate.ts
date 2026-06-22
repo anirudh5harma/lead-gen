@@ -20,6 +20,10 @@ import {
   runOutlookReadinessProbe,
   type OutlookReadinessResult,
 } from "./verify-outlook-readiness.ts";
+import {
+  runSharedXReadinessProbe,
+  type SharedXReadinessResult,
+} from "./verify-shared-x-readiness.ts";
 
 export type ProductionGateStatus = "ok" | "wait" | "external" | "fail";
 
@@ -123,10 +127,12 @@ export function summarizeProductionGate(input: {
   restate: RestateEcsHealthResult;
   outlook: OutlookReadinessResult;
   ses: AwsSesReadinessResult;
+  sharedX: SharedXReadinessResult;
 }): ProductionGateResult {
   const decisions = [
     classifyRestateEcsGate(input.restate),
     classifyOutlookGate(input.outlook),
+    classifySharedXGate(input.sharedX),
     classifyAwsSesGate(input.ses),
   ];
   return {
@@ -140,6 +146,7 @@ async function main(): Promise<void> {
   const result = summarizeProductionGate({
     restate: await runRestateEcsHealthProbe(),
     outlook: await runOutlookReadinessProbe(),
+    sharedX: await runSharedXReadinessProbe(),
     ses: shouldRunAwsSesGate(process.env)
       ? await runAwsSesReadinessProbe()
       : skippedAwsSesReadiness(),
@@ -207,6 +214,60 @@ export function classifyOutlookGate(
       `${step.label}${step.detail ? `: ${step.detail}` : ""}`
     ).join(" | "),
     next: "Repair Outlook subscription/account state before sending customer outbound through Microsoft Graph.",
+  };
+}
+
+export function classifySharedXGate(
+  result: SharedXReadinessResult,
+): ProductionGateDecision {
+  if (result.ok) {
+    const keyHint =
+      result.provider === "twitterapi_io"
+        ? "TWITTERAPI_IO_API_KEY"
+        : result.provider === "socialdata"
+          ? "SOCIALDATA_API_KEY"
+          : "X_API_BEARER_TOKEN";
+    return {
+      name: "Shared X ingestion",
+      status: "ok",
+      detail: `${result.provider} configured with ${result.enabledRuleCount} pooled rule(s) at projected $${(result.projectedMonthlyCostUsd ?? 0).toFixed(2)}/mo against cap $${(result.monthlyBudgetUsd ?? 0).toFixed(2)}/mo.`,
+      next: `Keep ${keyHint} in the worker/app runtime and trigger a controlled ingest_shared_x_poll smoke run whenever provider credentials rotate.`,
+    };
+  }
+
+  const failed = result.steps.filter((step) => step.status === "fail");
+  const database = failed.find((step) => step.label === "shared-x: database configured");
+  if (database) {
+    return {
+      name: "Shared X ingestion",
+      status: "external",
+      detail: database.detail ?? "Production database was not available for the pooled X readiness probe.",
+      next: "Run npm run verify:shared-x-readiness from an environment that can read platform_signal_sources.",
+    };
+  }
+
+  const missingSetup = failed.find((step) =>
+    step.label === "shared-x: source configured" ||
+    step.label === "shared-x: provider key present"
+  );
+  if (missingSetup) {
+    return {
+      name: "Shared X ingestion",
+      status: "external",
+      detail: missingSetup.detail ?? "Shared X source setup is incomplete.",
+      next: missingSetup.label === "shared-x: provider key present"
+        ? "Add the required X provider key to the runtime, then rerun npm run verify:shared-x-readiness."
+        : "Create or enable the x_search_shared platform source, then rerun npm run verify:shared-x-readiness.",
+    };
+  }
+
+  return {
+    name: "Shared X ingestion",
+    status: "fail",
+    detail: failed.map((step) =>
+      `${step.label}${step.detail ? `: ${step.detail}` : ""}`
+    ).join(" | "),
+    next: "Fix the shared X provider or budget configuration before depending on pooled X signals.",
   };
 }
 

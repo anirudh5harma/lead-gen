@@ -74,6 +74,10 @@ import {
   createSelectedOutreachSkill,
   listOutreachSkills,
 } from "../agents/skills/outreach.ts";
+import {
+  EXA_SOCIAL_PLATFORMS,
+  EXA_SOCIAL_SIGNAL_INTENTS,
+} from "../exa/social-signals.ts";
 
 const SignalKindSchema = z.enum([
   "funding",
@@ -102,6 +106,14 @@ const ExaResearchIntentSchema = z.enum([
   "brief_refresh",
   "draft_grounding",
 ]);
+const ExaSearchTypeSchema = z.enum([
+  "auto",
+  "neural",
+  "keyword",
+  "fast",
+]);
+const ExaSocialPlatformSchema = z.enum(EXA_SOCIAL_PLATFORMS);
+const ExaSocialIntentSchema = z.enum(EXA_SOCIAL_SIGNAL_INTENTS);
 const CampaignOutcomeKindSchema = z.enum([
   "positive_reply",
   "meeting_booked",
@@ -1940,7 +1952,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.sources.default_aggregator.configure",
     description:
-      "Configure the default free Signal source mix for a profiled company: official website/ATS sources when discoverable, plus Google News, HN, and Product Hunt.",
+      "Configure the default free Signal source mix for a profiled company: official website/ATS sources when discoverable, legacy Google News queries, curated RSS feeds, HN, and Product Hunt.",
     kind: "write",
     input: z.object({
       company_name: z.string().min(1),
@@ -1963,17 +1975,35 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.signal.discover_open_web",
     description:
-      "Configure an Exa open-web Signal source. The durable workspace poll workflow owns fetching, budgets, dedupe, projection, and signal.discovered publication.",
+      "Configure an Exa open-web Signal source. Use a custom query or let Bombsell generate X / LinkedIn social-post queries from signal intents and keyword hints. The durable workspace poll workflow owns fetching, budgets, dedupe, projection, and signal.discovered publication.",
     kind: "write",
     input: z.object({
-      query: z.string().min(1),
+      query: z.string().min(1).optional(),
       source_name: z.string().optional(),
+      company_name: z.string().optional(),
+      industry: z.string().optional(),
+      signal_keywords: z.string().optional(),
+      competitor_watchlist: z.string().optional(),
+      linkedin_signal_behaviors: z.string().optional(),
       signal_kind: SignalKindSchema.optional(),
+      platforms: z.array(ExaSocialPlatformSchema).min(1).max(2).optional(),
+      intent_presets: z.array(ExaSocialIntentSchema).min(1).max(10).optional(),
+      include_domains: z.array(z.string().min(1)).max(10).optional(),
+      exclude_domains: z.array(z.string().min(1)).max(10).optional(),
+      search_type: ExaSearchTypeSchema.optional(),
+      category: z.string().min(1).optional(),
+      freshness_days: z.number().int().min(1).max(30).optional(),
       limit: z.number().int().positive().max(100).optional(),
       max_daily_items: z.number().int().positive().optional(),
       max_daily_calls: z.number().int().positive().optional(),
       monthly_spend_cap_usd: z.number().positive().optional(),
       enabled: z.boolean().optional(),
+    }).refine((input) =>
+      Boolean(input.query?.trim()) ||
+      Boolean(input.signal_kind) ||
+      Boolean(input.intent_presets?.length),
+    {
+      message: "query, signal_kind, or intent_presets is required",
     }),
     output: WorkspaceResultSchema.extend({
       source_id: z.string().uuid(),

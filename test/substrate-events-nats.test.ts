@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { createNatsEventBus } from "../core/substrate/events/adapters/nats.ts";
 import {
   buildAuthenticator,
+  normalizeConsumerName,
   subjectFor,
   subscribeSubject,
 } from "../core/substrate/events/adapters/nats.ts";
@@ -103,6 +104,22 @@ test("nats subjects: per-workspace + per-event-type encoding round-trip", () => 
     subscribeSubject("events", ws, "*"),
     "events.550e8400-e29b-41d4-a716-446655440000.>",
   );
+});
+
+test("nats consumer names: durable names normalize to JetStream-safe identifiers", () => {
+  assert.equal(
+    normalizeConsumerName("signal.discovered.projector.v1"),
+    "signal_discovered_projector_v1",
+  );
+  assert.equal(
+    normalizeConsumerName(" reply/classifier\\v2 "),
+    "reply_classifier_v2",
+  );
+  assert.equal(
+    normalizeConsumerName("product-signal-play-dispatcher-v1"),
+    "product-signal-play-dispatcher-v1",
+  );
+  assert.throws(() => normalizeConsumerName("   "), /consumer name required/i);
 });
 
 test("nats event bus: publish + scoped subscribe roundtrip", async (t) => {

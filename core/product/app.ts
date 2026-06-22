@@ -12,6 +12,15 @@ import {
   DEFAULT_GOOGLE_NEWS_QUERIES,
   DEFAULT_RSS_FEEDS,
 } from "../ingest/default-news-queries.ts";
+import type { ExaSearchType } from "../exa/client.ts";
+import {
+  buildExaSocialSignalQuery,
+  exaSocialFreshnessStartDate,
+  normalizeExaSocialIntents,
+  normalizeExaSocialPlatforms,
+  type ExaSocialPlatform,
+  type ExaSocialSignalIntent,
+} from "../exa/social-signals.ts";
 import {
   createIcp,
   updateIcp,
@@ -706,11 +715,19 @@ export interface ConfigureWorkspaceSignalSourceInput {
   signal_kind?: string;
   url?: string;
   query?: string;
+  include_domains?: string[];
+  exclude_domains?: string[];
+  search_type?: ExaSearchType;
+  category?: string;
+  start_published_date?: string;
+  platforms?: ExaSocialPlatform[];
+  intent_presets?: ExaSocialSignalIntent[];
   subreddit?: string;
   limit?: number;
   max_daily_items?: number;
   max_daily_calls?: number;
   monthly_spend_cap_usd?: number;
+  bypass_icp_filter?: boolean;
   poll_interval_minutes?: number;
   enabled?: boolean;
 }
@@ -1124,14 +1141,53 @@ export interface ProductExaBriefRefreshResult extends ProductExaResearchResult {
 }
 
 export interface ProductExaSignalDiscoveryInput {
-  query: string;
+  query?: string;
   source_name?: string;
+  company_name?: string;
+  industry?: string | null;
+  signal_keywords?: string | null;
+  competitor_watchlist?: string | null;
+  linkedin_signal_behaviors?: string | null;
   signal_kind?: string;
+  platforms?: ExaSocialPlatform[];
+  intent_presets?: ExaSocialSignalIntent[];
+  include_domains?: string[];
+  exclude_domains?: string[];
+  search_type?: ExaSearchType;
+  category?: string;
+  freshness_days?: number;
+  limit?: number;
+  max_daily_items?: number;
+  max_daily_calls?: number;
+  monthly_spend_cap_usd?: number;
+  bypass_icp_filter?: boolean;
+  enabled?: boolean;
+}
+
+export interface ProductExaSocialSignalPackInput {
+  company_name: string;
+  industry?: string | null;
+  description?: string | null;
+  signal_keywords?: string | null;
+  competitor_watchlist?: string | null;
+  linkedin_signal_behaviors?: string | null;
+  platforms?: ExaSocialPlatform[];
+  freshness_days?: number;
   limit?: number;
   max_daily_items?: number;
   max_daily_calls?: number;
   monthly_spend_cap_usd?: number;
   enabled?: boolean;
+}
+
+export interface ProductExaSocialSignalPackResult {
+  workspace_id: string;
+  source_count: number;
+  sources: Array<{
+    source_id: string;
+    name: string;
+    signal_kind: string;
+  }>;
 }
 
 export interface SubmittedSignalResult {
@@ -5165,13 +5221,25 @@ export async function configureExaOpenWebSignalSource(
   input: ProductExaSignalDiscoveryInput,
   session: ProductWorkspaceSession,
 ): Promise<BootstrapResult & { source_id: string }> {
+  const planned = planExaOpenWebSignalSource(input);
   const result = await configureWorkspaceSignalSource(
     {
       adapter: "exa",
-      name: input.source_name?.trim() || "Exa open-web intelligence",
+      name: planned.source_name,
       provider: "exa",
-      query: input.query,
+      query: planned.query,
       signal_kind: input.signal_kind,
+      source_tier: planned.source_tier,
+      source_authority: planned.source_authority,
+      source_reason: planned.source_reason,
+      search_type: planned.search_type,
+      category: planned.category,
+      include_domains: planned.include_domains,
+      exclude_domains: planned.exclude_domains,
+      start_published_date: planned.start_published_date,
+      platforms: planned.platforms,
+      intent_presets: planned.intent_presets,
+      bypass_icp_filter: input.bypass_icp_filter,
       limit: input.limit,
       max_daily_items: input.max_daily_items,
       max_daily_calls: input.max_daily_calls,
@@ -5184,6 +5252,165 @@ export async function configureExaOpenWebSignalSource(
   if (!result.source_id)
     throw new Error("Exa source configuration did not return a source id.");
   return { ...result, source_id: result.source_id };
+}
+
+export async function configureExaSocialSignalPack(
+  input: ProductExaSocialSignalPackInput,
+  session: ProductWorkspaceSession,
+): Promise<ProductExaSocialSignalPackResult> {
+  const companyName = input.company_name.trim() || "Workspace";
+  const signalKeywords = compactSearchTerms(
+    input.signal_keywords,
+    signalKeywordsFromDescription(input.description),
+  );
+  const shared = {
+    company_name: companyName,
+    industry: input.industry ?? null,
+    signal_keywords: signalKeywords || undefined,
+    competitor_watchlist: input.competitor_watchlist ?? undefined,
+    linkedin_signal_behaviors: input.linkedin_signal_behaviors ?? undefined,
+    platforms: input.platforms ?? ["x", "linkedin"],
+    freshness_days: input.freshness_days ?? 7,
+    limit: input.limit ?? 15,
+    max_daily_items: input.max_daily_items ?? 25,
+    max_daily_calls: input.max_daily_calls ?? 6,
+    monthly_spend_cap_usd: input.monthly_spend_cap_usd ?? 3,
+    bypass_icp_filter: true,
+    enabled: input.enabled ?? true,
+    search_type: "fast" as const,
+  };
+  const definitions: Array<{
+    source_name: string;
+    signal_kind: ProductExaSignalDiscoveryInput["signal_kind"];
+    intent_presets: ExaSocialSignalIntent[];
+  }> = [
+    {
+      source_name: `${companyName} X/LinkedIn hiring posts`,
+      signal_kind: "hiring",
+      intent_presets: ["hiring"],
+    },
+    {
+      source_name: `${companyName} X/LinkedIn funding posts`,
+      signal_kind: "funding",
+      intent_presets: ["funding"],
+    },
+    {
+      source_name: `${companyName} X/LinkedIn launch and feature posts`,
+      signal_kind: "product_launch",
+      intent_presets: ["product_launch", "feature_release"],
+    },
+    {
+      source_name: `${companyName} X/LinkedIn leadership posts`,
+      signal_kind: "leadership_change",
+      intent_presets: ["leadership_change"],
+    },
+    {
+      source_name: `${companyName} X/LinkedIn pain and migration posts`,
+      signal_kind: "churn_risk",
+      intent_presets: ["buyer_intent", "pain"],
+    },
+  ];
+
+  const sources: ProductExaSocialSignalPackResult["sources"] = [];
+  for (const definition of definitions) {
+    const result = await configureExaOpenWebSignalSource(
+      {
+        ...shared,
+        source_name: definition.source_name,
+        signal_kind: definition.signal_kind,
+        intent_presets: definition.intent_presets,
+        bypass_icp_filter: shared.bypass_icp_filter,
+      },
+      session,
+    );
+    sources.push({
+      source_id: result.source_id,
+      name: definition.source_name,
+      signal_kind: definition.signal_kind ?? "other",
+    });
+  }
+
+  return {
+    workspace_id: session.workspace_id,
+    source_count: sources.length,
+    sources,
+  };
+}
+
+function planExaOpenWebSignalSource(input: ProductExaSignalDiscoveryInput): {
+  source_name: string;
+  query: string;
+  source_tier: "aggregator";
+  source_authority: number;
+  source_reason: string;
+  search_type: ExaSearchType;
+  category?: string;
+  include_domains?: string[];
+  exclude_domains?: string[];
+  start_published_date?: string;
+  platforms?: ExaSocialPlatform[];
+  intent_presets?: ExaSocialSignalIntent[];
+} {
+  const query = blankToNull(input.query ?? undefined);
+  const requestedPlatforms =
+    input.platforms && input.platforms.length
+      ? normalizeExaSocialPlatforms(input.platforms)
+      : [];
+  const requestedIntents = normalizeExaSocialIntents(input.intent_presets);
+  const shouldBuildSocialQuery = !query && (
+    requestedIntents.length > 0 ||
+    Boolean(blankToNull(input.signal_kind ?? undefined))
+  );
+  const socialPlan = shouldBuildSocialQuery
+    ? buildExaSocialSignalQuery({
+        company_name: input.company_name ?? null,
+        industry: input.industry ?? null,
+        signal_keywords: input.signal_keywords ?? null,
+        competitor_watchlist: input.competitor_watchlist ?? null,
+        linkedin_signal_behaviors: input.linkedin_signal_behaviors ?? null,
+        platforms: requestedPlatforms.length ? requestedPlatforms : undefined,
+        intents: requestedIntents.length ? requestedIntents : undefined,
+        signal_kind: input.signal_kind ?? null,
+        freshness_days: input.freshness_days ?? null,
+      })
+    : null;
+  const source_name =
+    input.source_name?.trim() ||
+    socialPlan?.source_name ||
+    "Exa open-web intelligence";
+  const include_domains = dedupeStringList([
+    ...(socialPlan?.include_domains ?? []),
+    ...(input.include_domains ?? []),
+  ]);
+  const exclude_domains = dedupeStringList(input.exclude_domains ?? []);
+  const resolvedQuery = query ?? socialPlan?.query;
+  if (!resolvedQuery) {
+    throw new Error("Exa open-web source requires a query or signal intent presets.");
+  }
+  const source_reason = socialPlan ? "exa_social_posts" : "exa_open_web_search";
+  return {
+    source_name,
+    query: resolvedQuery,
+    source_tier: "aggregator",
+    source_authority: socialPlan ? 0.64 : 0.68,
+    source_reason,
+    search_type: input.search_type ?? (socialPlan ? "fast" : "auto"),
+    category: blankToNull(input.category ?? undefined) ?? undefined,
+    include_domains: include_domains.length ? include_domains : undefined,
+    exclude_domains: exclude_domains.length ? exclude_domains : undefined,
+    start_published_date:
+      typeof input.freshness_days === "number"
+        ? exaSocialFreshnessStartDate(input.freshness_days)
+        : undefined,
+    platforms:
+      requestedPlatforms.length || socialPlan?.platforms?.length
+        ? socialPlan?.platforms ?? requestedPlatforms
+        : undefined,
+    intent_presets:
+      requestedIntents.length || socialPlan?.intents?.length
+        ? socialPlan?.intents ?? requestedIntents
+        : undefined,
+  };
 }
 
 async function projectWorkspaceCompanyProfiled(
@@ -7331,6 +7558,20 @@ function compactSearchTerms(
     .join(" ");
 }
 
+function dedupeStringList(values: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const cleaned = value.trim();
+    if (!cleaned) continue;
+    const key = cleaned.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(cleaned);
+  }
+  return result;
+}
+
 const COMMON_PROFILE_WORDS = new Set([
   "that",
   "with",
@@ -9125,10 +9366,11 @@ function sourceConfigForAdapter(
     case "x_search":
       return {
         ...base,
-        provider: signalSourceProvider(input.provider) ?? "x_official",
+        provider: signalSourceProvider(input.provider) ?? "twitterapi_io",
         query: input.query?.trim() || input.name.trim(),
         limit: positiveInteger(input.limit) ?? 25,
         max_items_per_poll: 10,
+        ...(input.bypass_icp_filter ? { bypass_icp_filter: true } : {}),
         ...(sourceQuotaConfig(input) ?? {}),
       };
     case "exa":
@@ -9137,10 +9379,18 @@ function sourceConfigForAdapter(
         provider: "exa",
         query: input.query?.trim() || input.name.trim(),
         limit: positiveInteger(input.limit) ?? 10,
+        type: input.search_type ?? "auto",
+        category: input.category?.trim() || undefined,
+        include_domains: cleanedStringArray(input.include_domains),
+        exclude_domains: cleanedStringArray(input.exclude_domains),
+        start_published_date: input.start_published_date?.trim() || undefined,
+        platforms: cleanedStringArray(input.platforms),
+        intent_presets: cleanedStringArray(input.intent_presets),
         include_text: true,
         text_max_characters: 1600,
         highlights: true,
         summary: true,
+        ...(input.bypass_icp_filter ? { bypass_icp_filter: true } : {}),
         ...(sourceQuotaConfig(input) ?? {}),
       };
     case "webhook":
@@ -9196,6 +9446,14 @@ function signalSourceProvider(provider: unknown): string | undefined {
     .toLowerCase()
     .replace(/[^a-z0-9_:-]+/g, "_");
   return normalized || undefined;
+}
+
+function cleanedStringArray(
+  values: readonly string[] | undefined,
+): string[] | undefined {
+  if (!Array.isArray(values)) return undefined;
+  const cleaned = dedupeStringList(values);
+  return cleaned.length ? cleaned : undefined;
 }
 
 function sourceQuotaConfig(

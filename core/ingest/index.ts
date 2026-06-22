@@ -145,6 +145,26 @@ export type {
   CatalogPollInput as CatalogPollWorkflowInput,
   CatalogPollSummary,
 } from "./poll-workflow.ts";
+export { createSharedXPollWorkflow } from "./shared-x-workflow.ts";
+export type {
+  SharedXPollInput as SharedXPollWorkflowInput,
+  SharedXPollSummary,
+  SharedXPollWorkflowDeps,
+} from "./shared-x-workflow.ts";
+export {
+  DEFAULT_SHARED_X_RULES,
+  SHARED_X_POLL_WORKFLOW,
+  SHARED_X_SOURCE_ADAPTER,
+  createTrackedCompanyResolver,
+  defaultSharedXSourceConfig,
+  sharedXMonthlyCostEstimateUsd,
+} from "./shared-x.ts";
+export type {
+  SharedTrackedCompanyMatch,
+  SharedXRule,
+  SharedXRuleState,
+  SharedXSourceConfig,
+} from "./shared-x.ts";
 
 // Workspace adapters + poll
 export {

@@ -141,6 +141,7 @@ export const REQUIRED_RESTATE_SERVICES = [
   "play.reply_to_email.v1",
   "contact.resolve_for_signal.v1",
   "ingest_catalog_poll",
+  "ingest_shared_x_poll",
   "ingest_workspace_poll",
   "ingest_expire_sweep",
   "channel.email_domain_provision.v1",

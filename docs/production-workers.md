@@ -86,7 +86,7 @@ advertises the full required service set, including
 `workspace.source.discovery`,
 `workspace.signal.matching`,
 `workspace.vertical_intelligence.refresh`,
-`contact.resolve_for_signal.v1`, and the Exa workflows, and
+`contact.resolve_for_signal.v1`, `ingest_shared_x_poll`, and the Exa workflows, and
 `npm run verify:restate-runtime` completed
 `system.restate_runtime_probe.v1` with run
 `inv_1aad8PkwVeZz4b6dIS7Wt89Db8DnNEeMi5`. The rev33 deployment also makes the
@@ -105,6 +105,8 @@ that emit `reply.classified` and any attributable reply Outcome before follow-up
 or meeting prep workflows run.
 It includes `workspace.signal.ingestion` for the stateful Signal ingestion step
 that starts due `ingest_workspace_poll` runs before LangGraph matching.
+It includes `ingest_shared_x_poll` for the pooled platform-scoped X rule pack
+that fills shared `signal_candidates` before tracked-company fanout.
 It includes `workspace.signal.matching` for the stateful lead-matching step
 that scores ingested Signals against Profile/ICP before `signal.matched` wakes
 Play dispatch.
@@ -202,6 +204,17 @@ Workers that start or bridge Restate invocations also need:
 - `RESTATE_WORKFLOW_HTTP1=1` when the host is behind an HTTP/1.1 managed proxy
   and must accept `/health` checks on the Restate handler port
 
+When pooled shared X ingestion is enabled through `x_search_shared`, the same
+runtime also needs the configured provider credential:
+
+- `TWITTERAPI_IO_API_KEY` for the default low-cost pooled X source
+- `SOCIALDATA_API_KEY` when the shared source provider is `socialdata`
+- `X_API_BEARER_TOKEN` when the shared source provider is `x_official`
+
+Use `npm run verify:shared-x-readiness` to confirm the live platform source
+exists, the provider key is present, and the projected monthly spend stays
+inside the configured cap before depending on pooled X ingestion.
+
 ## Render Blueprint
 
 `render.yaml` defines a same-contract `bombsell-production-worker` web service
@@ -211,6 +224,61 @@ managed owned-domain outbound by default, and leaves all secrets as
 dashboard-synced values. After the service is created and secrets are entered,
 register its public URL with Restate and run the verification gates in this
 document before scaling ECS down.
+
+`fly.toml` defines the same worker contract for Fly.io. It pins the production
+worker to one always-on `shared-cpu-2x` Machine with `1gb` RAM, keeps
+`auto_stop_machines = "off"`, sets `RESTATE_WORKFLOW_PORT=8080`,
+`RESTATE_WORKFLOW_HTTP1=1`, and keeps managed owned-domain outbound disabled by
+default. Fly does not inject a platform `PORT` env like Render/Railway, so the
+config explicitly binds the Restate-capable worker to `8080` and exposes that
+same port through `http_service`.
+
+Deploy the Fly worker with the same Dockerfile/env contract:
+
+```bash
+npm run deploy:fly-worker
+```
+
+This deploy helper reads local env, creates the app when needed, syncs the
+worker secrets to Fly, deploys with `--ha=false`, and then forces the app back
+to one active Machine. It requires `FLY_API_TOKEN` or a prior
+`flyctl auth login`.
+
+If you want to run the Fly commands yourself instead, use `--ha=false` on the
+first deploy. Fly otherwise creates two running Machines by default for
+service-backed apps, which doubles the monthly floor. If the app already has
+two Machines, collapse it back to one:
+
+```bash
+fly scale count 1 -a bombsell-production-worker
+```
+
+Then register `https://bombsell-production-worker.fly.dev` with Restate Cloud
+and run the Fly-specific cutover gate:
+
+```bash
+npm run verify:fly-cutover
+```
+
+Important: keep the Restate deployment registration on the default HTTP/2 path
+for Fly. `RESTATE_WORKFLOW_HTTP1=1` is only for the worker's local server and
+health compatibility behind managed proxies; do not force `use_http_11=true`
+when registering the Fly URL with Restate or durable workflow probes can stall
+after a checkpoint.
+
+When production traffic is already flowing, the runtime probe can sit behind
+live workflow work for longer than the default minute. In that case, raise the
+probe timeout instead of treating it as a host failure:
+
+```bash
+RESTATE_RUNTIME_PROBE_TIMEOUT_MS=180000 npm run verify:restate-runtime
+```
+
+It intentionally fails before the provider-side cutover is complete. A passing
+run proves the Fly worker exists, exactly one active Machine is running, the
+Machine shape matches `shared-cpu-2x` / `1gb`, `/health` responds, every
+required Restate workflow deployment points at the Fly URL, the durable runtime
+probe passes, strict outreach passes, and the production app smoke passes.
 
 `render.free.yaml` defines the same container contract as
 `bombsell-production-worker-free-smoke` on Render Free. Use it only to verify
@@ -244,17 +312,22 @@ blueprint keeps sensitive values as dashboard-synced env vars.
 Do not scale ECS to `0` until the Render/Railway/Fly service is created, the
 public URL is registered in Restate Cloud, and the migration gate below passes.
 
-The cutover gate is:
+The cutover gates are:
+
+```bash
+npm run verify:fly-cutover
+```
+
+and for the existing Render blueprint:
 
 ```bash
 npm run verify:aws-exit-cutover
 ```
 
-It intentionally fails before the provider-side cutover is complete. A passing
-run proves the Render worker exists on the expected always-on plan, `/health`
-responds, every required Restate workflow deployment points at the replacement
-worker URL, the durable runtime probe passes, strict outreach passes, and the
-production app smoke passes.
+Both intentionally fail before the provider-side cutover is complete. The Fly
+gate proves the single-machine Fly worker is running with the expected
+shared-CPU shape; the Render gate proves the Render worker exists on the
+expected always-on plan.
 
 Optional managed owned-domain capacity needs:
 

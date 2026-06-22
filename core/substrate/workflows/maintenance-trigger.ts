@@ -15,6 +15,10 @@ interface PlatformCatalogTarget {
   adapter: string;
 }
 
+interface PlatformSharedTarget {
+  adapter: string;
+}
+
 export interface WorkspaceMaintenanceTriggerDeps {
   pool: Pool;
   runtime: Pick<WorkflowRuntime, "start">;
@@ -31,6 +35,7 @@ export interface WorkspaceMaintenanceStartFailure {
 export interface WorkspaceMaintenanceTriggerSummary {
   triggered_at: string;
   platform_catalog_polls_started: number;
+  platform_shared_polls_started: number;
   platform_expiry_sweeps_started: number;
   workspace_polls_started: number;
   warmup_sweeps_started: number;
@@ -50,6 +55,7 @@ export async function triggerDueWorkspaceMaintenance(
   const summary: WorkspaceMaintenanceTriggerSummary = {
     triggered_at: now.toISOString(),
     platform_catalog_polls_started: 0,
+    platform_shared_polls_started: 0,
     platform_expiry_sweeps_started: 0,
     workspace_polls_started: 0,
     warmup_sweeps_started: 0,
@@ -57,8 +63,9 @@ export async function triggerDueWorkspaceMaintenance(
     failures: [],
   };
 
-  const [platformCatalog, polls, warmups, outlookRepairs] = await Promise.all([
+  const [platformCatalog, platformShared, polls, warmups, outlookRepairs] = await Promise.all([
     listEnabledPlatformCatalogTargets(deps.pool),
+    listEnabledPlatformSharedTargets(deps.pool),
     listDueWorkspacePolls(deps.pool, now),
     listWarmupWorkspaces(deps.pool),
     listOutlookRepairWorkspaces(deps.pool, now),
@@ -74,6 +81,17 @@ export async function triggerDueWorkspaceMaintenance(
       input: { adapter_id: target.adapter },
     });
     if (started) summary.platform_catalog_polls_started += 1;
+  }
+
+  for (const target of platformShared) {
+    const started = await startWorkflow(deps.runtime, summary, {
+      execution_scope: "platform",
+      workspace_id: null,
+      workflow_name: "ingest_shared_x_poll",
+      idempotency_key: `maintenance:shared:${target.adapter}:${sixHourBucket}`,
+      input: { adapter_id: target.adapter },
+    });
+    if (started) summary.platform_shared_polls_started += 1;
   }
 
   const dayBucket = now.toISOString().slice(0, 10);
@@ -153,6 +171,20 @@ async function listEnabledPlatformCatalogTargets(
     `select adapter
        from platform_signal_sources
       where enabled
+        and adapter <> 'x_search_shared'
+      order by adapter`,
+  );
+  return rows;
+}
+
+async function listEnabledPlatformSharedTargets(
+  pool: Pool,
+): Promise<PlatformSharedTarget[]> {
+  const { rows } = await pool.query<PlatformSharedTarget>(
+    `select adapter
+       from platform_signal_sources
+      where enabled
+        and adapter = 'x_search_shared'
       order by adapter`,
   );
   return rows;

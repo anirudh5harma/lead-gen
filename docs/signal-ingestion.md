@@ -48,8 +48,8 @@ Legal/acquisition decision:
 |---|---|---|
 | Hacker News | Keep native HN Firebase/Algolia adapters | Official HN API exposes public data near real time and currently has no stated rate limit; cheap and clean. |
 | Reddit | Keep native subreddit adapter for bounded, OAuth-ready use; add commercial access review before broad scale | Reddit's official Data API is the authorized path and commercial/significant usage can require approval/fees. Use descriptive user agents, caching, tight subreddit/keyword scope, and source budgets. |
-| X/Twitter | Add one narrow, usage-priced unofficial/provider-backed X data API only after native/free sources prove which queries matter | SocialData/TwitterAPI.io-style APIs are materially cheaper than social-listening suites when we cap keyword rules and store only normalized `Signal`s. |
-| LinkedIn | Avoid broad LinkedIn listening at launch. If needed, test targeted company-page/post actors for known accounts only | LinkedIn is the highest cost/risk surface. Do not use cookies, user sessions, profile crawling, or broad people scraping in the product path. |
+| X/Twitter | Run one pooled, platform-scoped X search source with a usage-priced provider-backed API and a tight global rule pack | TwitterAPI.io/SocialData-style APIs stay materially cheaper than social-listening suites when we share polling across workspaces, cap rules, and only store normalized `Signal`s plus provenance. |
+| LinkedIn | Use Exa to discover recent public LinkedIn company/founder/recruiter posts for narrow intent buckets | This avoids cookie/session scraping while still letting us ingest public LinkedIn evidence through the normal open-web workflow. |
 | Cross-platform social listening | Defer Octolens/Trigify/Syften until signal quality proves the subscription cost | Aggregators are useful, but they are not the cheapest way to validate the first live signal loop. |
 
 Practical startup provider stack:
@@ -71,19 +71,29 @@ Recommended provider order:
    Workable, SEC EDGAR, HN, Google News RSS, Product Hunt, and bounded Reddit.
    This is the cheapest path and already runs through durable
    `ingest_workspace_poll`.
-2. **Paid X provider gateway after query proof**: use the `x_search` workspace
-   adapter to compare official X API with SocialData/TwitterAPI.io-style
-   providers for 5-10 tightly scoped searches. Enforce source-level item/call
-   quotas, monthly spend caps, kill switches, provenance, and dedupe by tweet id
-   before storing.
-3. **Targeted LinkedIn company-post experiment** only for known company pages
-   and public posts, via an Apify/Bright Data/Data365-style provider that does
-   not require cookies or user accounts. Keep it off the hot path until terms,
-   data deletion, and rate behavior are reviewed.
-4. **Exa intelligence layer before X/LinkedIn procurement**: use Exa for
+2. **Pooled X provider gateway after query proof**: make `x_search_shared`
+   the production path. Poll once at the platform layer, store into
+   `signal_candidates`, link candidates to tracked companies, and only fan out
+   matched candidates into workspace `Signal`s. Keep `x_search` as the
+   workspace-level adapter for experiments or premium bespoke watchlists.
+   Enforce a shared monthly spend cap, kill switch, provenance, and dedupe by
+   tweet id / novelty key before fanout.
+3. **Targeted LinkedIn public-post intake through Exa**: configure one Exa
+   source per narrow intent bucket and use `linkedin.com` as the hard domain
+   filter. This keeps LinkedIn acquisition inside the normal open-web
+   search/fetch model and avoids broad scraping or cookie/session operations.
+4. **Exa intelligence layer before heavier social procurement**: use Exa for
    profile enrichment, Rep research, draft grounding, open-web Signals, content
-   opportunities, and AEO audits. Do not count it as a LinkedIn/X firehose,
-   and do not add it to the default signup aggregator automatically.
+   opportunities, and AEO audits. For social-signal experiments, prefer
+   domain-filtered Exa searches where Exa supports the domain directly. Today
+   that works well for `linkedin.com` public post URLs. On this Exa account,
+   `x.com` / `twitter.com` domain filters are rejected, so X remains on the
+   dedicated provider path while Exa handles LinkedIn and other open-web
+   evidence. Keep social queries constrained to "latest public posts" plus
+   intent keywords such as hiring, funding, launches, feature releases,
+   leadership changes, vendor evaluation, and migration pain. Do not count it
+   as a guaranteed social firehose, and do not add it to the default signup
+   aggregator automatically.
 5. **Crustdata or Octolens later** only after cheap sources prove that managed
    coverage would save enough engineering time or improve outcome volume.
 
@@ -112,6 +122,24 @@ not alternate workflows. They push normalized mentions into the same typed event
 bus, and Reps see them as ordinary `Signal`s with source confidence,
 provenance, and channel-specific response guidance.
 
+Recommended Exa social-post operating pattern:
+
+1. Create one Exa source per narrow intent bucket, not one giant social feed.
+   Good first buckets: `hiring`, `funding`, `product_launch`, and
+   `feature_release`.
+2. Filter domains to `x.com`, `twitter.com`, and/or `linkedin.com`; bias the
+   query toward "latest public posts" and direct company/founder/recruiter
+   updates. In practice, keep `linkedin.com` as the hard filter today and
+   treat X/Twitter as query-text guidance only until Exa exposes reliable
+   filterable X coverage for this account.
+3. Keep freshness tight, usually the last 7 days for fast-moving launch and
+   hiring work.
+4. Carry workspace keywords and competitor watchlists into the Exa query so the
+   same GTM language used in Google News and RSS also steers social discovery.
+5. Let the durable workspace poll workflow own cadence, budgets, dedupe,
+   projection, and `signal.discovered` publication exactly like every other
+   source.
+
 Implementation convention: configure provider trials through
 `product.source.configure` with `adapter: "webhook"` and a paid-provider label
 such as `x_official`, `socialdata`, `twitterapi_io`, `apify`, `data365`,
@@ -124,12 +152,34 @@ fetch/scrape mechanics stay outside the product spine. Free streams such as HN,
 Reddit, RSS, Google News, Product Hunt, and ATS job boards stay native adapters
 rather than paid push providers.
 
-For X, prefer `adapter: "x_search"` over webhook glue. It is a pure workspace
-adapter that reads provider credentials from environment
-(`X_API_BEARER_TOKEN`, `SOCIALDATA_API_KEY`, or `TWITTERAPI_IO_API_KEY`),
-normalizes posts into source-backed `Signal` candidates, and lets the durable
-workspace poll workflow own cursors, `max_daily_calls`, `max_daily_items`,
-embedding, dedupe, and `signal.discovered` publication.
+For X, prefer a platform-scoped `x_search_shared` source over webhook glue for
+the default product path. The shared poll workflow reads provider credentials
+from environment (`X_API_BEARER_TOKEN`, `SOCIALDATA_API_KEY`, or
+`TWITTERAPI_IO_API_KEY`), normalizes posts into shared social
+`signal_candidates`, links them to tracked companies, and only then fans them
+out into workspace `Signal`s. Keep `adapter: "x_search"` available for
+workspace-specific experiments, premium watchlists, or provider bake-offs, but
+do not pay to re-run the same X keyword searches per workspace.
+
+Current recommended operating model:
+
+1. LinkedIn social discovery runs through Exa with one source per intent
+   bucket, `linkedin.com` filters, and `bypass_icp_filter` enabled so public
+   company/founder/recruiter posts are stored and classified before we decide
+   they are low fit.
+2. X runs through the pooled shared source using `twitterapi_io` as the
+   default low-cost provider, a small global rule pack, a hard monthly budget
+   cap, and company-link resolution before workspace fanout.
+3. Both paths normalize into the same social structured shape
+   (`platform`, `post_url`, author metadata, matched keywords, engagement,
+   company hint) so quality scoring, company linking, and downstream matching
+   stay source-agnostic.
+
+Operational note: once `x_search_shared` is enabled, verify the live runtime
+with `npm run verify:shared-x-readiness`. That probe checks the platform source
+row, confirms the right X provider credential is present, and re-estimates the
+shared monthly spend against the configured cap before we trust pooled X
+ingestion in production.
 
 References to recheck before procurement or provider enablement:
 

@@ -15,6 +15,7 @@ import { allMatchingIcps } from "./icp-filter.ts";
 import { listIcps } from "./icps.ts";
 import { deriveSignalQualityMetadata } from "./source-quality.ts";
 import { normalizeCompanyDomain } from "./company-domain.ts";
+import { socialCompanyHintFromStructured } from "./social-signals.ts";
 
 export interface WorkspaceSignalSourceRow {
   id: string;
@@ -161,7 +162,8 @@ export async function discoverWorkspaceSignal(
       freshness_at: item.freshness_at,
     },
   };
-  if (ctx.icps.length > 0 && allMatchingIcps(ctx.icps, filterCtx).length === 0) {
+  const bypassIcpFilter = ctx.source.config.bypass_icp_filter === true;
+  if (!bypassIcpFilter && ctx.icps.length > 0 && allMatchingIcps(ctx.icps, filterCtx).length === 0) {
     return { outcome: "skipped:must_haves" };
   }
 
@@ -319,6 +321,8 @@ export function deriveSignalCompanyHint(input: {
   if (configHint) return configHint;
 
   const structured = recordValue(input.item.structured);
+  const socialHint = hintFromSocial(structured);
+  if (socialHint) return socialHint;
   const structuredHint = hintFromStructured(structured);
   if (structuredHint) return structuredHint;
 
@@ -530,6 +534,32 @@ function hintFromStructured(
     if (directCompany) return directCompany;
   }
   return hintFromExplicitFields(structured, "structured_company", "explicit");
+}
+
+function hintFromSocial(
+  structured: Record<string, unknown> | null,
+): SignalCompanyHint | null {
+  if (!structured) return null;
+  const source = stringValue(structured.source)?.toLowerCase();
+  const platform = stringValue(structured.platform)?.toLowerCase();
+  if (
+    source !== "social" &&
+    platform !== "x" &&
+    platform !== "linkedin"
+  ) {
+    return null;
+  }
+  const hint = socialCompanyHintFromStructured(structured);
+  if (!hint) return null;
+  return {
+    name: hint.name,
+    domain: hint.domain,
+    description:
+      stringValue(recordValue(structured.company)?.description) ??
+      stringValue(structured.company_description),
+    source: hint.source,
+    confidence: hint.confidence,
+  };
 }
 
 function hintFromCompanyObject(record: Record<string, unknown>): SignalCompanyHint | null {

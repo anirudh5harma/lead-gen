@@ -1,0 +1,41 @@
+app = "bombsell-production-worker"
+primary_region = "iad"
+kill_signal = "SIGTERM"
+kill_timeout = 120
+
+[build]
+  dockerfile = "Dockerfile.worker"
+
+[env]
+  NODE_ENV = "production"
+  WORKER_COMMAND = "worker:production"
+  RESTATE_WORKFLOW_HTTP1 = "1"
+  RESTATE_WORKFLOW_PORT = "8080"
+  BOMBSELL_SUBSTRATE = "nats_restate"
+  APP_ORIGIN = "https://www.bombsell.com"
+  MANAGED_OWNED_DOMAIN_EMAIL_ENABLED = "0"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = "20s"
+    interval = "30s"
+    method = "GET"
+    timeout = "10s"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "1gb"
+  cpus = 2
+  cpu_kind = "shared"
+
+[[restart]]
+  policy = "on-failure"
+  retries = 10
+  processes = ["app"]
