@@ -2746,6 +2746,7 @@ function VoiceActivationForm({
 }
 
 function OutlookPanel({ account }: { account: ProfileOutlookAccount | null }) {
+  const healthy = account?.status === "connected" && !account.last_error;
   return (
     <div className="section-note grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
       <div className="flex min-w-0 gap-3">
@@ -2753,9 +2754,17 @@ function OutlookPanel({ account }: { account: ProfileOutlookAccount | null }) {
           <BrandIcon name="microsoft" size={18} />
         </span>
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-[var(--color-text-1)]">
-            {account ? outlookMailbox(account) : "Outlook inbox"}
-          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="truncate text-sm font-semibold text-[var(--color-text-1)]">
+              {account ? outlookMailbox(account) : "Outlook inbox"}
+            </p>
+            {healthy ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
+                <Icon name="check_circle" size={12} />
+                Connected
+              </span>
+            ) : null}
+          </div>
           <p className="mt-1 text-sm text-[var(--color-text-3)]">
             {account
               ? `${statusLabel(account.status)} - ${account.daily_cap ?? "unlimited"} daily ceiling`
@@ -2769,10 +2778,11 @@ function OutlookPanel({ account }: { account: ProfileOutlookAccount | null }) {
       <Link
         href="/api/auth/outlook?return_to=%2Fdashboard%2Fprofile%23email"
         prefetch={false}
-        className="btn-solid w-fit"
+        className={healthy ? "btn-quiet-sm w-fit" : "btn-solid w-fit"}
+        title={healthy ? "Reconnect if you change mailbox or permissions" : undefined}
       >
         <BrandIcon name="microsoft" size={16} />
-        {account ? "Reconnect Outlook" : "Connect Outlook"}
+        {!account ? "Connect Outlook" : healthy ? "Reconnect" : "Reconnect Outlook"}
       </Link>
     </div>
   );

@@ -264,6 +264,7 @@ interface AgentReviewRow {
   expires_at: Date | null;
   conversation_id: string | null;
   message_id: string | null;
+  counterparty_person_id: string | null;
   counterparty_name: string | null;
   company_name: string | null;
   signal_title: string | null;
@@ -273,6 +274,22 @@ interface AgentReviewRow {
   eval_passed: boolean | null;
   emails: string[];
   linkedin_url: string | null;
+}
+
+// Collapse pending-review rows so a single contact/conversation surfaces once,
+// even if multiple pending approval gates exist for them. Rows are assumed to
+// arrive newest-first, so the first occurrence wins.
+function dedupeReviewRows(rows: AgentReviewRow[]): AgentReviewRow[] {
+  const seen = new Set<string>();
+  const deduped: AgentReviewRow[] = [];
+  for (const row of rows) {
+    const key =
+      row.counterparty_person_id ?? row.conversation_id ?? row.message_id ?? row.id;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(row);
+  }
+  return deduped;
 }
 
 interface AgentReviewSummary {
@@ -1608,6 +1625,7 @@ async function loadAgentReviewSummary(
               a.expires_at,
               a.payload->>'conversation_id' as conversation_id,
               coalesce(a.payload->>'message_id', a.payload->>'inbound_message_id') as message_id,
+              c.counterparty_person_id::text as counterparty_person_id,
               p.full_name as counterparty_name,
               coalesce(p.emails, '{}'::text[]) as emails,
               p.linkedin_url,
@@ -1637,7 +1655,7 @@ async function loadAgentReviewSummary(
         where a.workspace_id = $1
           and a.decision = 'pending'
         order by a.created_at desc
-        limit 6`,
+        limit 20`,
       [workspaceId],
     ),
     pool.query<{ pending_count: string }>(
@@ -1650,7 +1668,7 @@ async function loadAgentReviewSummary(
   ]);
   return {
     pending_count: Number(summary.rows[0]?.pending_count ?? 0),
-    recent: recent.rows,
+    recent: dedupeReviewRows(recent.rows).slice(0, 6),
   };
 }
 
@@ -1769,12 +1787,17 @@ function AgentTopStrip({
   heatingUpAccounts: number;
 }) {
   const channelConnected = coverage.email.connected || coverage.linkedIn.connected;
-  const next = channelConnected
+  // An account can exist but not be fully "connected" yet (e.g. reauth/sync
+  // pending). Only prompt to *connect* when no channel account exists at all;
+  // otherwise let readiness guide the next action (review sync, finish setup).
+  const hasChannelAccount =
+    coverage.email.status !== "needed" || coverage.linkedIn.status !== "needed";
+  const next = channelConnected || hasChannelAccount
     ? readinessNextAction(readiness)
     : {
         href: "/dashboard/profile#channels",
         icon: "account_tree",
-        label: "Connect Outlook / LinkedIn to start outreach",
+        label: "Connect Outlook to start outreach",
       };
   const sent7d = outreach.email_sent_7d + outreach.linkedin_sent_7d;
   const openConversations = sumRepMetric(reps, "open_conversations");

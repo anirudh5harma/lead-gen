@@ -474,7 +474,7 @@ async function loadBriefHotContacts(workspaceId: string): Promise<BriefHotContac
       where p.workspace_id = $1
         and (cardinality(coalesce(p.emails, '{}'::text[])) > 0 or p.linkedin_url is not null)
       order by latest_signal.signal_at desc
-      limit 12`,
+      limit 40`,
     [workspaceId],
   );
   return dedupeHotContacts(rows).slice(0, 5);
@@ -483,18 +483,27 @@ async function loadBriefHotContacts(workspaceId: string): Promise<BriefHotContac
 function dedupeHotContacts(contacts: BriefHotContact[]): BriefHotContact[] {
   const seenIds = new Set<string>();
   const seenEmails = new Set<string>();
+  const seenCompanies = new Set<string>();
   const deduped: BriefHotContact[] = [];
 
   for (const contact of contacts) {
     const emails = contact.emails
       .map((email) => email.trim().toLowerCase())
       .filter(Boolean);
+    // One contact per company so the brief surfaces unique companies rather
+    // than several people from the same account. Contacts with no company
+    // are never collapsed together.
+    const companyKey = (contact.company_domain ?? contact.company_name ?? "")
+      .trim()
+      .toLowerCase();
     const duplicateId = seenIds.has(contact.id);
     const duplicateEmail = emails.some((email) => seenEmails.has(email));
-    if (duplicateId || duplicateEmail) continue;
+    const duplicateCompany = companyKey.length > 0 && seenCompanies.has(companyKey);
+    if (duplicateId || duplicateEmail || duplicateCompany) continue;
 
     seenIds.add(contact.id);
     for (const email of emails) seenEmails.add(email);
+    if (companyKey.length > 0) seenCompanies.add(companyKey);
     deduped.push(contact);
   }
 

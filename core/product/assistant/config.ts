@@ -62,12 +62,14 @@ export function buildRealtimeSessionConfig(
     },
   };
 
+  // Transcription-only Realtime session: OpenAI requires `type: "transcription"`
+  // here (a realtime *response* model must NOT be set as the session model — the
+  // transcription model lives under audio.input.transcription.model). We only
+  // consume input-audio transcription events; the assistant brain is DeepSeek.
   return {
-    type: "realtime",
-    model: "gpt-4o-transcribe",
+    type: "transcription",
     audio: {
       input: audioInput,
     },
-    output_modalities: ["text"],
   };
 }
