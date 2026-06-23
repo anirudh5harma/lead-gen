@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { BOMBSELL_MCP_TOOL_NAMES } from "../mcp/tool-surface.ts";
 
 export const OutputDestinationSchema = z.object({
   key: z.string(),
@@ -64,9 +65,9 @@ export function buildOutputDestinations(
       handoff_stage: "agent_api",
       href: "/dashboard/profile#claude-code",
       tools: [
-        "bombsell.brief.get",
-        "bombsell.signals.list_qualified",
-        "bombsell.outreach.list_sent",
+        BOMBSELL_MCP_TOOL_NAMES.briefGet,
+        BOMBSELL_MCP_TOOL_NAMES.signalsListQualified,
+        BOMBSELL_MCP_TOOL_NAMES.outreachListSent,
       ],
     },
     {
@@ -107,9 +108,9 @@ export function buildOutputDestinations(
       handoff_stage: "qualified_contact_sync",
       href: "/dashboard/profile#crm-sync",
       tools: [
-        "bombsell.signals.list_qualified",
-        "bombsell.contacts.list_lanes",
-        "bombsell.crm_handoff.queue",
+        BOMBSELL_MCP_TOOL_NAMES.signalsListQualified,
+        BOMBSELL_MCP_TOOL_NAMES.contactLanesGet,
+        BOMBSELL_MCP_TOOL_NAMES.crmHandoffQueue,
         "crm.destination.configured",
         "crm.handoff.webhook.delivered",
         "crm.handoff.webhook.failed",

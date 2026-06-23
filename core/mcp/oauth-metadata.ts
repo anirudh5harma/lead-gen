@@ -4,6 +4,7 @@ export const BOMBSELL_MCP_OAUTH_SCOPES = [
   "signals:read",
   "outreach:read",
   "outreach:prepare",
+  "crm:write",
   "approvals:read",
   "approvals:write",
   "learning:read",

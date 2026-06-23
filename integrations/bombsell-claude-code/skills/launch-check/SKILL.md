@@ -8,8 +8,8 @@ Use this skill when the user asks whether Bombsell is ready to launch, send outr
 
 ## Steps
 
-1. Call `bombsell.launch.check`.
-2. If the user asks about integrations, output destinations, CRM sync, or where qualified work can go next, call `bombsell.integrations.list`.
+1. Call `bombsell_launch_check`.
+2. If the user asks about integrations, output destinations, CRM sync, or where qualified work can go next, call `bombsell_integrations_list`.
 3. Report:
    - launch status
    - blockers

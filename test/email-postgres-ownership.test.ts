@@ -101,4 +101,7 @@ test("postgres email channel scopes Outlook reservation to the resolved owner", 
   );
   assert.ok(selectCall);
   assert.deepEqual(selectCall?.params, [WORKSPACE_ID, true, false, USER_ID]);
+  assert.match(selectCall?.sql ?? "", /row_number\(\) over/);
+  assert.match(selectCall?.sql ?? "", /outlook:' \|\| coalesce|outlook:'\s*\|\|\s*coalesce/);
+  assert.match(selectCall?.sql ?? "", /rc\.account_rank = 1/);
 });

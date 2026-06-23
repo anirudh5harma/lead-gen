@@ -38,7 +38,7 @@ export function authCallbackOrigin({
   nodeEnv?: string;
   requestUrl: string;
 }): string {
-  const requestOrigin = originFromRequest(requestUrl, headers);
+  const requestOrigin = originFromRequest(requestUrl);
   if (nodeEnv !== "production" && isLoopbackOrigin(requestOrigin)) {
     return requestOrigin;
   }
@@ -79,17 +79,8 @@ function pathnameFor(value: string): string {
   return new URL(value, "https://bombsell.local").pathname;
 }
 
-function originFromRequest(requestUrl: string, headers: Pick<Headers, "get">): string {
-  const url = new URL(requestUrl);
-  const host =
-    headers.get("x-forwarded-host") ??
-    headers.get("host") ??
-    url.host;
-  const proto =
-    headers.get("x-forwarded-proto") ??
-    url.protocol.replace(/:$/, "") ??
-    "https";
-  return `${proto}://${host}`.replace(/\/$/, "");
+function originFromRequest(requestUrl: string): string {
+  return new URL(requestUrl).origin.replace(/\/$/, "");
 }
 
 function isLoopbackOrigin(origin: string): boolean {

@@ -31,6 +31,11 @@ import {
   validateMcpAccessToken,
 } from "../core/mcp/oauth.ts";
 import {
+  BOMBSELL_MCP_TOOL_NAMES,
+  getBombsellMcpSurfaceTools,
+  isSafeMcpToolName,
+} from "../core/mcp/tool-surface.ts";
+import {
   registerBombsellAliasTools,
   _resetBombsellAliasToolsRegistration,
 } from "../core/product/bombsell-tools.ts";
@@ -396,14 +401,16 @@ test("agent-native capability map references registered tools", () => {
   }
 });
 
-test("MCP manifest includes every registered product and graph tool", () => {
+test("MCP manifest exposes the focused Bombsell MCP surface", () => {
   registerGraphTools();
   registerExaTools();
   registerProductTools();
-  const registered = listTools().map((tool) => tool.name).sort();
   const manifest = createMcpManifest(null);
 
-  assert.deepEqual(manifest.tools, registered);
+  assert.deepEqual(
+    manifest.tools,
+    getBombsellMcpSurfaceTools().map((tool) => tool.name).sort(),
+  );
 });
 
 test("MCP manifest guides external agents through Brief, Agent, and Profile", () => {
@@ -414,7 +421,7 @@ test("MCP manifest guides external agents through Brief, Agent, and Profile", ()
 
   assert.equal(manifest.instructions, BOMBSELL_MCP_INSTRUCTIONS);
   assert.deepEqual(manifest.product_surfaces, ["Brief", "Agent", "Profile"]);
-  assert.equal(manifest.recommended_entry_tool, "product.brief.get");
+  assert.equal(manifest.recommended_entry_tool, BOMBSELL_MCP_TOOL_NAMES.briefGet);
   assert.match(manifest.auth, /oauth-protected-resource/);
   assert.equal(
     manifest.oauth_protected_resource,
@@ -434,10 +441,23 @@ test("MCP manifest guides external agents through Brief, Agent, and Profile", ()
     "email and LinkedIn outreach",
     "approval policy",
     "hot-path eval gate",
-    "bombsell.*",
+    "bombsell_",
   ]) {
     assert.match(BOMBSELL_MCP_INSTRUCTIONS, new RegExp(phrase));
   }
+});
+
+test("MCP manifest filters tools by granted OAuth scopes and keeps names provider-safe", () => {
+  registerProductTools();
+  const manifest = createMcpManifest(null, ["brief:read", "outreach:read"]);
+
+  assert.deepEqual(manifest.tools, [
+    BOMBSELL_MCP_TOOL_NAMES.briefGet,
+    BOMBSELL_MCP_TOOL_NAMES.draftGet,
+    BOMBSELL_MCP_TOOL_NAMES.outreachListSent,
+  ]);
+  assert.ok(manifest.tools.every((tool) => isSafeMcpToolName(tool)));
+  assert.ok(manifest.tools.every((tool) => !tool.includes(".")));
 });
 
 test("output destination model is shared by Profile and Bombsell MCP aliases", () => {
@@ -470,9 +490,9 @@ test("output destination model is shared by Profile and Bombsell MCP aliases", (
   assert.deepEqual(
     blocked.find((destination) => destination.key === "claude-code")?.tools,
     [
-      "bombsell.brief.get",
-      "bombsell.signals.list_qualified",
-      "bombsell.outreach.list_sent",
+      "bombsell_brief_get",
+      "bombsell_signals_list_qualified",
+      "bombsell_outreach_list_sent",
     ],
   );
   assert.equal(
@@ -521,9 +541,9 @@ test("output destination model is shared by Profile and Bombsell MCP aliases", (
   assert.deepEqual(
     connected.find((destination) => destination.key === "crm-sync")?.tools,
     [
-      "bombsell.signals.list_qualified",
-      "bombsell.contacts.list_lanes",
-      "bombsell.crm_handoff.queue",
+      "bombsell_signals_list_qualified",
+      "bombsell_contact_lanes_get",
+      "bombsell_crm_handoff_queue",
       "crm.destination.configured",
       "crm.handoff.webhook.delivered",
       "crm.handoff.webhook.failed",
@@ -703,6 +723,7 @@ test("Claude Code plugin package exposes Bombsell's focused GTM workbench", () =
   assert.equal(mcp.mcpServers.bombsell.url, "https://www.bombsell.com/api/mcp");
   assert.match(mcp.mcpServers.bombsell.oauth?.scopes ?? "", /profile:read/);
   assert.match(mcp.mcpServers.bombsell.oauth?.scopes ?? "", /outreach:prepare/);
+  assert.match(mcp.mcpServers.bombsell.oauth?.scopes ?? "", /crm:write/);
   assert.match(
     pkg.scripts?.["verify:claude-code-plugin"] ?? "",
     /scripts\/verify-claude-code-plugin\.ts/,
@@ -728,7 +749,7 @@ test("Claude Code plugin package exposes Bombsell's focused GTM workbench", () =
   assert.match(readme, /claude mcp add --transport http bombsell https:\/\/www\.bombsell\.com\/api\/mcp/);
   assert.match(plan, /Direct MCP dogfood/);
   assert.match(plan, /claude mcp add --transport http bombsell https:\/\/www\.bombsell\.com\/api\/mcp/);
-  assert.match(plan, /bombsell\.profile\.propose_from_context/);
+  assert.match(plan, /bombsell_profile_propose_from_context/);
   assert.doesNotMatch(plan, /Future ergonomic alias/);
 
   for (const skill of skills) {
@@ -740,19 +761,19 @@ test("Claude Code plugin package exposes Bombsell's focused GTM workbench", () =
   }
 
   for (const tool of [
-    "bombsell.brief.get",
-    "bombsell.profile.propose_from_context",
-    "bombsell.launch.check",
-    "bombsell.signals.list_qualified",
-    "bombsell.contact_lanes.get",
-    "bombsell.outreach.prepare",
-    "bombsell.outreach.list_sent",
-    "bombsell.draft.get",
-    "bombsell.approvals.list",
-    "bombsell.approvals.decide",
-    "bombsell.learning.get",
+    "bombsell_brief_get",
+    "bombsell_profile_propose_from_context",
+    "bombsell_launch_check",
+    "bombsell_signals_list_qualified",
+    "bombsell_contact_lanes_get",
+    "bombsell_outreach_prepare",
+    "bombsell_outreach_list_sent",
+    "bombsell_draft_get",
+    "bombsell_approvals_list",
+    "bombsell_approvals_decide",
+    "bombsell_learning_get",
   ]) {
-    assert.match(readme, new RegExp(tool.replace(/\./g, "\\.")));
+    assert.match(readme, new RegExp(tool));
   }
 
   assert.match(readme, /proposal-only/);
@@ -1330,9 +1351,9 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
   assert.deepEqual(
     integrations.destinations.find((item) => item.key === "crm-sync")?.tools,
     [
-      "bombsell.signals.list_qualified",
-      "bombsell.contacts.list_lanes",
-      "bombsell.crm_handoff.queue",
+      "bombsell_signals_list_qualified",
+      "bombsell_contact_lanes_get",
+      "bombsell_crm_handoff_queue",
       "crm.destination.configured",
       "crm.handoff.webhook.delivered",
       "crm.handoff.webhook.failed",

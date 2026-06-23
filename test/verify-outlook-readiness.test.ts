@@ -23,7 +23,6 @@ test("outlook readiness: connected account with active subscription passes", asy
       query: async () => ({
         rows: [
           {
-            total_outlook: "1",
             connected_outlook: "1",
             active_subscriptions: "1",
             needs_reauth_outlook: "0",
@@ -52,7 +51,6 @@ test("outlook readiness: no connected account fails explicitly", async () => {
       query: async () => ({
         rows: [
           {
-            total_outlook: "0",
             connected_outlook: "0",
             active_subscriptions: "0",
             needs_reauth_outlook: "0",
@@ -82,7 +80,6 @@ test("outlook readiness: reports actionable Microsoft client secret errors", asy
           return {
             rows: [
               {
-                total_outlook: "1",
                 connected_outlook: "1",
                 active_subscriptions: "0",
                 needs_reauth_outlook: "0",
@@ -121,7 +118,6 @@ test("outlook readiness: reauthorization-needed accounts fail with reconnect gui
           return {
             rows: [
               {
-                total_outlook: "1",
                 connected_outlook: "0",
                 active_subscriptions: "0",
                 needs_reauth_outlook: "1",
@@ -150,6 +146,38 @@ test("outlook readiness: reauthorization-needed accounts fail with reconnect gui
   const errors = result.steps.find((step) => step.label === "outlook: account errors");
   assert.equal(errors?.status, "fail");
   assert.match(errors?.detail ?? "", /need reauthorization/);
+});
+
+test("outlook readiness: duplicate mailbox rows do not count reauth when a connected row exists", async () => {
+  const result = await runOutlookReadinessProbe({
+    env: { DATABASE_URL: "postgresql://example" },
+    pool: {
+      query: async () => ({
+        rows: [
+          {
+            connected_outlook: "1",
+            active_subscriptions: "0",
+            needs_reauth_outlook: "0",
+            errored_connected: "0",
+            connected_managed_domains: "0",
+          },
+        ],
+      }),
+      end: async () => undefined,
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.connectedAccounts, 1);
+  assert.equal(result.needsReauthAccounts, 0);
+  assert.equal(
+    result.steps.find((step) => step.label === "outlook: account errors")?.status,
+    "ok",
+  );
+  assert.equal(
+    result.steps.find((step) => step.label === "outlook: reply sync subscription")?.status,
+    "fail",
+  );
 });
 
 test("summarizeOutlookError recognizes Microsoft invalid_client secret-id mistakes", () => {

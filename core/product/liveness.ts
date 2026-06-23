@@ -21,14 +21,14 @@ function formatEnvironmentCheck(
       status: "ok",
       detail:
         env.NODE_ENV === "production"
-          ? `Configured production keys: ${report.configuredProductionKeys.join(", ")}`
-          : "Production key enforcement is active when NODE_ENV=production",
+          ? "Required production environment configuration is present."
+          : "Production key enforcement is active when NODE_ENV=production.",
     };
   }
   return {
     name: "environment",
     status: "degraded",
-    detail: `Missing production env keys: ${report.missingProductionKeys.join(", ")}`,
+    detail: "Required production environment configuration is missing.",
   };
 }
 

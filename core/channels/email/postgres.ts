@@ -288,7 +288,43 @@ async function reserveAccount(
     await repairUserConnectedChannelAccountOwners(client, workspace_id);
   }
   const { rows } = await client.query<AccountCandidate>(
-    `select ca.id,
+    `with ranked_candidates as (
+       select ca.id,
+              row_number() over (
+                partition by case
+                  when ca.kind = 'oauth_outlook' then
+                    'outlook:' || coalesce(
+                      nullif(lower(ca.properties ->> 'mailbox_email'), ''),
+                      nullif(lower(ca.display_name), ''),
+                      ca.id::text
+                    )
+                  else 'account:' || ca.id::text
+                end
+                order by case
+                           when ca.kind = 'oauth_outlook' and ca.status = 'connected' then 0
+                           when ca.kind = 'oauth_outlook' and ca.status = 'needs_reauth' then 1
+                           else 2
+                         end,
+                         case
+                           when ca.kind = 'oauth_outlook'
+                             and ca.properties -> 'outlook_subscription' is not null
+                             and ca.properties -> 'outlook_subscription' ->> 'clientState' is not null
+                             and ca.properties -> 'outlook_subscription' ->> 'lifecycleNotificationUrl' is not null
+                           then 0
+                           else 1
+                         end,
+                         ca.updated_at desc,
+                         ca.created_at desc,
+                         ca.id desc
+              ) as account_rank
+         from channel_accounts ca
+        where ca.workspace_id = $1
+          and (
+            ($2::boolean and ca.kind = 'oauth_outlook' and ca.user_id = $4)
+            or ($3::boolean and ca.kind = 'email_domain')
+          )
+     )
+     select ca.id,
             ca.display_name,
             ca.kind,
             ca.status,
@@ -300,14 +336,11 @@ async function reserveAccount(
             sd.current_daily_cap,
             sd.bounce_rate_24h::text as bounce_rate_24h,
             sd.complaint_rate_24h::text as complaint_rate_24h
-       from channel_accounts ca
+       from ranked_candidates rc
+       join channel_accounts ca on ca.id = rc.id
        left join sending_domains sd
          on sd.channel_account_id = ca.id
-      where ca.workspace_id = $1
-        and (
-          ($2::boolean and ca.kind = 'oauth_outlook' and ca.user_id = $4)
-          or ($3::boolean and ca.kind = 'email_domain')
-        )
+      where rc.account_rank = 1
       order by case when ca.kind = 'oauth_outlook' then 0 else 1 end,
                ca.last_used_at nulls first,
                ca.created_at asc

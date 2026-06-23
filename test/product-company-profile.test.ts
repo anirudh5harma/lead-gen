@@ -28,8 +28,10 @@ function mockLLM(content: string): LLMClient & { calls: CompletionRequest[] } {
 
 test("normalizes company website urls for onboarding", () => {
   assert.equal(normalizeCompanyWebsiteUrl("bombsell.com"), "https://bombsell.com");
-  assert.equal(normalizeCompanyWebsiteUrl("https://www.bombsell.com/#top"), "https://www.bombsell.com");
+  assert.equal(normalizeCompanyWebsiteUrl("https://www.bombsell.com/#top"), "https://bombsell.com");
   assert.equal(normalizeCompanyWebsiteUrl("localhost:3000"), null);
+  assert.equal(normalizeCompanyWebsiteUrl("http://127.0.0.1:3000"), null);
+  assert.equal(normalizeCompanyWebsiteUrl("http://10.0.0.8"), null);
   assert.equal(normalizeCompanyWebsiteUrl("ftp://bombsell.com"), null);
 });
 

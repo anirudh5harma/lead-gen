@@ -190,6 +190,11 @@ import {
   type LLMClient,
 } from "../agents/llm/index.ts";
 import {
+  normalizePublicHostname,
+  normalizePublicHttpUrl,
+  publicHostnameFromUrl,
+} from "../../lib/network/public-url.ts";
+import {
   createDeepSeekJudge,
   isMalformedJudgeResponseError,
 } from "../agents/eval/adapters/deepseek-judge.ts";
@@ -9472,12 +9477,22 @@ function sourceConfigForAdapter(
         ...(sourceQuotaConfig(input) ?? {}),
       };
     case "webhook":
+      const provider = signalSourceProvider(input.provider) ?? "generic";
+      const websiteUrl = normalizePublicHttpUrl(
+        input.website_url?.trim() || input.url?.trim(),
+      );
+      const companyDomain =
+        normalizePublicHostname(input.company_domain?.trim()) ??
+        publicHostnameFromUrl(websiteUrl);
       return {
         ...base,
-        provider: signalSourceProvider(input.provider) ?? "generic",
+        provider,
         query: input.query?.trim() || undefined,
-        company_domain: input.company_domain?.trim(),
-        website_url: input.website_url?.trim() || input.url?.trim(),
+        company_domain: companyDomain ?? undefined,
+        website_url: websiteUrl ?? undefined,
+        ...(provider === "bombsell_script" && companyDomain
+          ? { allowed_origins: [companyDomain] }
+          : {}),
         ...(sourceQuotaConfig(input) ?? {}),
         ingestion_contract: "bombsell_signal_v1",
         webhook_payload: {

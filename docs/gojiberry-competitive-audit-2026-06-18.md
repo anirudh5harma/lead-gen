@@ -92,11 +92,11 @@ The MCP server and manifest now tell external agent clients to enter through Bri
 
 The MCP surface now includes the first read-only `bombsell.*` task aliases for Claude Code-style workflows: Brief, launch check, sent outreach, exact draft lookup, pending approvals, and reply/meeting learning. These wrappers are derived from the existing product registry, so external workflows can feel simple without bypassing Bombsell's architecture or inventing another user-facing model.
 
-Profile now exposes that agent surface as a concrete "Use Bombsell in Claude Code" integration instead of a raw MCP endpoint. The row names the useful handles (`bombsell.brief.get`, `bombsell.outreach.list_sent`) next to `/api/mcp`, making external-agent distribution part of the same Profile/integrations setup path users already understand.
+Profile now exposes that agent surface as a concrete "Use Bombsell in Claude Code" integration instead of a raw MCP endpoint. The row names the useful handles (`bombsell_brief_get`, `bombsell_outreach_list_sent`) next to `/api/mcp`, making external-agent distribution part of the same Profile/integrations setup path users already understand.
 
-External agents can now ask directly for qualified signals and contact lanes through `product.qualified_signals.list`, `bombsell.signals.list_qualified`, and `bombsell.contact_lanes.get`. The alias output groups signals by verified email, LinkedIn-ready profile, draft-ready, needs contact resolution, needs fit review, and blocked-by-fit, translating GojiBerry's contact table clarity into Bombsell's MCP surface without exposing raw email addresses by default.
+External agents can now ask directly for qualified signals and contact lanes through `product.qualified_signals.list`, `bombsell_signals_list_qualified`, and `bombsell_contact_lanes_get`. The alias output groups signals by verified email, LinkedIn-ready profile, draft-ready, needs contact resolution, needs fit review, and blocked-by-fit, translating GojiBerry's contact table clarity into Bombsell's MCP surface without exposing raw email addresses by default.
 
-Claude Code workflows can now decide Bombsell approval gates through `bombsell.approvals.decide`, but approving requires `confirm_channel_effects=true`. This keeps the external-agent flow simple while preserving the trust rule that an approved draft may continue only through Bombsell's existing channel readiness, approval, and eval-gated workflow path.
+Claude Code workflows can now decide Bombsell approval gates through `bombsell_approvals_decide`, but approving requires `confirm_channel_effects=true`. This keeps the external-agent flow simple while preserving the trust rule that an approved draft may continue only through Bombsell's existing channel readiness, approval, and eval-gated workflow path.
 
 Sent outreach proof now has a canonical Agent route at `/dashboard/agent/outreach/[id]`. Brief, Agent, Profile, contact pages, actions, and `bombsell.*` MCP aliases link to that route, while the old `/dashboard/conversations/[id]` path redirects for compatibility. This keeps exact draft/reply proof under Agent instead of leaving a hidden fourth product surface.
 
@@ -106,9 +106,9 @@ The Agent outreach proof sidebar now uses graph-backed contact trust instead of 
 
 The Brief LinkedIn DM metric now counts only LinkedIn DMs and InMail, not connection requests or comments. Connection requests and comments remain visible in Agent channel performance, while Brief preserves the user's requested last-day/last-week email and DM accounting.
 
-Claude Code clients now have a prepare-only `bombsell.outreach.prepare` alias. It requires explicit preparation confirmation, dispatches the existing durable Agent outreach workflow for qualified signals, and returns review-ready judged drafts with Agent links instead of sending from the external agent surface.
+Claude Code clients now have a prepare-only `bombsell_outreach_prepare` alias. It requires explicit preparation confirmation, dispatches the existing durable Agent outreach workflow for qualified signals, and returns review-ready judged drafts with Agent links instead of sending from the external agent surface.
 
-Claude Code clients can now call `bombsell.profile.propose_from_context` to turn repository, landing-page, README, and package context into a proposal-only Bombsell Profile update. It returns Profile fields, buyer-fit draft, source recommendations, and the exact product tools that would apply the update after user confirmation, keeping Profile setup accessible from Claude Code without granting silent write authority.
+Claude Code clients can now call `bombsell_profile_propose_from_context` to turn repository, landing-page, README, and package context into a proposal-only Bombsell Profile update. It returns Profile fields, buyer-fit draft, source recommendations, and the exact product tools that would apply the update after user confirmation, keeping Profile setup accessible from Claude Code without granting silent write authority.
 
 The Claude Code distribution path now has a concrete plugin package under `integrations/bombsell-claude-code`. It ships the Bombsell plugin manifest, remote HTTP MCP config, README, and six focused skills for Brief, Profile-from-repo, launch check, signal review, prepare-only outreach, and reply insights. The v1 package intentionally omits hooks, local binaries, and subagents until remote MCP dogfood and audit logging are complete.
 
@@ -118,7 +118,7 @@ The Claude Code distribution path now includes a concrete private marketplace ca
 
 `npm run verify:claude-code-plugin` now acts as the repeatable launch gate for that external-agent path: it strict-validates the Bombsell Claude Code plugin and marketplace, verifies the catalog uses the pinned `git-subdir` source, and checks that the release commit exists before design-partner install instructions are trusted.
 
-External agents can now inspect output destinations through `bombsell.integrations.list`. It mirrors Profile's integration model by showing connected Outlook, LinkedIn, Claude Code/MCP, and signal-webhook paths plus planned CRM, outreach-tool, and team-alert destinations, so Claude Code can answer where qualified signals, verified contacts, sent proof, replies, and meetings should flow without inventing another integrations tab.
+External agents can now inspect output destinations through `bombsell_integrations_list`. It mirrors Profile's integration model by showing connected Outlook, LinkedIn, Claude Code/MCP, and signal-webhook paths plus planned CRM, outreach-tool, and team-alert destinations, so Claude Code can answer where qualified signals, verified contacts, sent proof, replies, and meetings should flow without inventing another integrations tab.
 
 Profile and onboarding now capture concrete LinkedIn signal behaviors to watch:
 company/team engagement, keyworded post likes and comments, relevant LinkedIn
@@ -240,7 +240,7 @@ are acknowledged and suppressed instead of becoming Signals.
 CRM handoff is now configurable from Profile instead of only described as a
 future OAuth layer. The setup stores HubSpot, Salesforce, Pipedrive, Attio,
 Folk, Clay, or custom webhook destinations as `crm` channel accounts through the
-typed `crm.destination.configured` event. Calling `bombsell.crm_handoff.queue`
+typed `crm.destination.configured` event. Calling `bombsell_crm_handoff_queue`
 now packages qualified contacts, signal proof, sent outreach, replies, and
 meetings, posts the package to the configured webhook when present, and records
 typed delivered/failed status. This matches GojiBerry/Ploy-style CRM output

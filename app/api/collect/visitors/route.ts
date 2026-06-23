@@ -10,6 +10,10 @@ import {
   visitorSignal,
   visitorSuppressedByConsent,
 } from "../../../../core/product/visitor-intent.ts";
+import {
+  normalizePublicHostname,
+  publicHostMatches,
+} from "../../../../lib/network/public-url.ts";
 import { getPool } from "../../../../core/substrate/storage/index.ts";
 
 export const dynamic = "force-dynamic";
@@ -155,7 +159,7 @@ function originAllowed(
   payload: BrowserVisitorPayload,
   allowed: string[],
 ): boolean {
-  if (allowed.length === 0) return true;
+  if (allowed.length === 0) return false;
   const seen = uniqueStrings([
     hostFromUnknown(origin),
     hostFromUnknown(payload.page_url),
@@ -164,7 +168,7 @@ function originAllowed(
   ]);
   return seen.some((host) =>
     allowed.some((allowedHost) =>
-      host === allowedHost || host.endsWith(`.${allowedHost}`),
+      publicHostMatches(host, allowedHost),
     ),
   );
 }
@@ -195,17 +199,7 @@ function json(
 }
 
 function hostFromUnknown(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim().toLowerCase();
-  if (!trimmed) return null;
-  try {
-    const parsed = new URL(
-      trimmed.includes("://") ? trimmed : `https://${trimmed}`,
-    );
-    return parsed.hostname.replace(/^www\./, "");
-  } catch {
-    return null;
-  }
+  return normalizePublicHostname(value);
 }
 
 function unknownArray(value: unknown): unknown[] {

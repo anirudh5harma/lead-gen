@@ -1,10 +1,16 @@
-import { listTools } from "../agents/tools/index.ts";
 import { registerExaTools } from "../exa/index.ts";
 import { registerGraphTools } from "../graph/index.ts";
 import { registerProductTools } from "../product/tools.ts";
 import { BOMBSELL_MCP_INSTRUCTIONS } from "./instructions.ts";
+import {
+  BOMBSELL_MCP_TOOL_NAMES,
+  getBombsellMcpSurfaceTools,
+} from "./tool-surface.ts";
 
-export function createMcpManifest(workspaceId: string | null) {
+export function createMcpManifest(
+  workspaceId: string | null,
+  scopes?: Iterable<string> | null,
+) {
   registerGraphTools();
   registerExaTools();
   registerProductTools();
@@ -18,7 +24,7 @@ export function createMcpManifest(workspaceId: string | null) {
     workspace_id: workspaceId,
     instructions: BOMBSELL_MCP_INSTRUCTIONS,
     product_surfaces: ["Brief", "Agent", "Profile"],
-    recommended_entry_tool: "product.brief.get",
-    tools: listTools().map((tool) => tool.name).sort(),
+    recommended_entry_tool: BOMBSELL_MCP_TOOL_NAMES.briefGet,
+    tools: getBombsellMcpSurfaceTools(scopes).map((tool) => tool.name).sort(),
   };
 }

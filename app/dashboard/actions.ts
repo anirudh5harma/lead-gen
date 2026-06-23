@@ -33,6 +33,7 @@ import {
   analyzeCompanyWebsite,
   normalizeCompanyWebsiteUrl,
 } from "@/core/product/company-profile";
+import { normalizePublicHostname } from "@/lib/network/public-url";
 import { getRequestUserId } from "@/lib/auth";
 import {
   getActiveWorkspaceSession,
@@ -504,17 +505,26 @@ export async function runAgentSourceNowAction(formData: FormData) {
 export async function configureVisitorIntentSourceAction(formData: FormData) {
   const session = await requireDashboardSession(formData);
   const returnTo = dashboardReturnPath(formData, "/dashboard/profile#visitor-intent");
-  const websiteUrl = value(formData, "visitor_website_url");
-  const companyDomain = value(formData, "visitor_company_domain");
+  const websiteUrl = normalizeCompanyWebsiteUrl(value(formData, "visitor_website_url"));
+  const companyDomain =
+    normalizePublicHostname(value(formData, "visitor_company_domain")) ??
+    normalizePublicHostname(websiteUrl);
   const companyName = value(formData, "visitor_company_name");
+  if (!websiteUrl && !companyDomain) {
+    redirectWithToast(
+      returnTo,
+      "Add a public website or company domain before creating the visitor source.",
+      "error",
+    );
+  }
   try {
     await configureWorkspaceSignalSource(
       {
         adapter: "webhook",
         name: "Bombsell visitor intent",
         provider: "bombsell_script",
-        website_url: websiteUrl || undefined,
-        company_domain: companyDomain || undefined,
+        website_url: websiteUrl ?? undefined,
+        company_domain: companyDomain ?? undefined,
         company_name: companyName || undefined,
         signal_kind: "other",
         poll_interval_minutes: 60,

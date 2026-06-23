@@ -67,7 +67,10 @@ test("production app smoke passes for a fully ready production app", async () =>
       const protectedResponse = protectedAuthResponse(path);
       if (protectedResponse) return protectedResponse;
       if (path === "/") return landingPage();
-      if (path === "/api/health/readiness") return response(healthPayload());
+      if (path === "/api/health") return response(healthPayload());
+      if (path === "/api/health/readiness") {
+        return response({ error: "authentication required" }, { status: 401 });
+      }
       if (path === "/dashboard") return redirect("/auth/google?next=%2Fdashboard");
       if (path === "/onboarding") return redirect("/auth/google?next=%2Fonboarding");
       return new Response(null, { status: 404 });
@@ -76,33 +79,69 @@ test("production app smoke passes for a fully ready production app", async () =>
 
   assert.equal(result.ok, true);
   assert.equal(
-    result.checks.find((check) => check.name === "health.ready")?.status,
+    result.checks.find((check) => check.name === "health.readiness.protected")?.status,
     "ok",
   );
 });
 
 test("production app smoke allows only the known LinkedIn provider readiness gap", async () => {
+  const cookie = "sb-access-token=fake; sb-refresh-token=fake";
   const result = await runProductionAppSmoke({
     origin,
-    fetchImpl: async (url) => {
+    authCookieHeader: cookie,
+    fetchImpl: async (url, init) => {
       const path = new URL(String(url)).pathname;
+      const requestCookie = new Headers(init?.headers).get("cookie");
+      const signedIn = requestCookie === cookie;
       const protectedResponse = protectedAuthResponse(path);
       if (protectedResponse) return protectedResponse;
       if (path === "/") return landingPage();
-      if (path === "/api/health/readiness") {
-        return response(
-          healthPayload([
-            {
-              name: "linkedin.provider",
-              status: "degraded",
-              detail: "Missing LinkedIn provider env keys",
-            },
-          ]),
-          { status: 503 },
-        );
+      if (path === "/api/health") {
+        return response(healthPayload());
       }
-      if (path === "/dashboard") return redirect("/auth/google?next=%2Fdashboard");
-      if (path === "/onboarding") return redirect("/auth/google?next=%2Fonboarding");
+      if (path === "/api/health/readiness") {
+        return signedIn
+          ? response(
+              healthPayload([
+                {
+                  name: "linkedin.provider",
+                  status: "degraded",
+                  detail: "Missing LinkedIn provider env keys",
+                },
+              ]),
+              { status: 503 },
+            )
+          : response({ error: "authentication required" }, { status: 401 });
+      }
+      if (path === "/dashboard") {
+        return signedIn
+          ? new Response("<main>Brief</main>", {
+              status: 200,
+              headers: { "Content-Type": "text/html" },
+            })
+          : redirect("/auth/google?next=%2Fdashboard");
+      }
+      if (path === "/onboarding") {
+        return signedIn
+          ? redirect("/dashboard")
+          : redirect("/auth/google?next=%2Fonboarding");
+      }
+      if (path === "/dashboard/health") {
+        return signedIn
+          ? new Response("<main>Health</main>", {
+              status: 200,
+              headers: { "Content-Type": "text/html" },
+            })
+          : redirect("/auth/google?next=%2Fdashboard%2Fhealth");
+      }
+      if (path === "/api/mcp") {
+        return signedIn
+          ? response({
+              workspace_id: "00000000-0000-4000-8000-000000000001",
+              tools: ["bombsell_brief_get"],
+            })
+          : response({ workspace_id: null, tools: [] }, { status: 401 });
+      }
       return new Response(null, { status: 404 });
     },
   });
@@ -122,7 +161,10 @@ test("production app smoke fails when dashboard does not go straight to Google O
       const protectedResponse = protectedAuthResponse(path);
       if (protectedResponse) return protectedResponse;
       if (path === "/") return landingPage();
-      if (path === "/api/health/readiness") return response(healthPayload());
+      if (path === "/api/health") return response(healthPayload());
+      if (path === "/api/health/readiness") {
+        return response({ error: "authentication required" }, { status: 401 });
+      }
       if (path === "/dashboard") return redirect("/login?next=%2Fdashboard");
       if (path === "/onboarding") return redirect("/auth/google?next=%2Fonboarding");
       return new Response(null, { status: 404 });
@@ -149,7 +191,10 @@ test("production app smoke fails when the landing page keeps stale auth entrypoi
           '<form action="/onboarding" method="GET"></form>',
         ].join(""));
       }
-      if (path === "/api/health/readiness") return response(healthPayload());
+      if (path === "/api/health") return response(healthPayload());
+      if (path === "/api/health/readiness") {
+        return response({ error: "authentication required" }, { status: 401 });
+      }
       if (path === "/dashboard") return redirect("/auth/google?next=%2Fdashboard");
       if (path === "/onboarding") return redirect("/auth/google?next=%2Fonboarding");
       return new Response(null, { status: 404 });
@@ -164,34 +209,6 @@ test("production app smoke fails when the landing page keeps stale auth entrypoi
 });
 
 test("production app smoke fails on unexpected degraded health checks", async () => {
-  const result = await runProductionAppSmoke({
-    origin,
-    fetchImpl: async (url) => {
-      const path = new URL(String(url)).pathname;
-      const protectedResponse = protectedAuthResponse(path);
-      if (protectedResponse) return protectedResponse;
-      if (path === "/") return landingPage();
-      if (path === "/api/health/readiness") {
-        return response(
-          healthPayload([
-            { name: "database", status: "degraded", detail: "connection failed" },
-          ]),
-        );
-      }
-      if (path === "/dashboard") return redirect("/auth/google?next=%2Fdashboard");
-      if (path === "/onboarding") return redirect("/auth/google?next=%2Fonboarding");
-      return new Response(null, { status: 404 });
-    },
-  });
-
-  assert.equal(result.ok, false);
-  assert.equal(
-    result.checks.find((check) => check.name === "health.degraded")?.status,
-    "fail",
-  );
-});
-
-test("production app smoke verifies a signed-in completed workspace session", async () => {
   const cookie = "sb-access-token=fake; sb-refresh-token=fake";
   const result = await runProductionAppSmoke({
     origin,
@@ -200,12 +217,21 @@ test("production app smoke verifies a signed-in completed workspace session", as
       const path = new URL(String(url)).pathname;
       const requestCookie = new Headers(init?.headers).get("cookie");
       const signedIn = requestCookie === cookie;
-      if (!signedIn) {
-        const protectedResponse = protectedAuthResponse(path);
-        if (protectedResponse) return protectedResponse;
-      }
+      const protectedResponse = protectedAuthResponse(path);
+      if (protectedResponse) return protectedResponse;
       if (path === "/") return landingPage();
-      if (path === "/api/health/readiness") return response(healthPayload());
+      if (path === "/api/health") {
+        return response(healthPayload());
+      }
+      if (path === "/api/health/readiness") {
+        return signedIn
+          ? response(
+              healthPayload([
+                { name: "database", status: "degraded", detail: "connection failed" },
+              ]),
+            )
+          : response({ error: "authentication required" }, { status: 401 });
+      }
       if (path === "/dashboard") {
         return signedIn
           ? new Response("<main>Brief</main>", {
@@ -231,7 +257,67 @@ test("production app smoke verifies a signed-in completed workspace session", as
         return signedIn
           ? response({
               workspace_id: "00000000-0000-4000-8000-000000000001",
-              tools: ["product.readiness.get"],
+              tools: ["bombsell_brief_get"],
+            })
+          : response({ workspace_id: null, tools: [] }, { status: 401 });
+      }
+      return new Response(null, { status: 404 });
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(
+    result.checks.find((check) => check.name === "health.degraded")?.status,
+    "fail",
+  );
+});
+
+test("production app smoke verifies a signed-in completed workspace session", async () => {
+  const cookie = "sb-access-token=fake; sb-refresh-token=fake";
+  const result = await runProductionAppSmoke({
+    origin,
+    authCookieHeader: cookie,
+    fetchImpl: async (url, init) => {
+      const path = new URL(String(url)).pathname;
+      const requestCookie = new Headers(init?.headers).get("cookie");
+      const signedIn = requestCookie === cookie;
+      if (!signedIn) {
+        const protectedResponse = protectedAuthResponse(path);
+        if (protectedResponse) return protectedResponse;
+      }
+      if (path === "/") return landingPage();
+      if (path === "/api/health") return response(healthPayload());
+      if (path === "/api/health/readiness") {
+        return signedIn
+          ? response(healthPayload())
+          : response({ error: "authentication required" }, { status: 401 });
+      }
+      if (path === "/dashboard") {
+        return signedIn
+          ? new Response("<main>Brief</main>", {
+              status: 200,
+              headers: { "Content-Type": "text/html" },
+            })
+          : redirect("/auth/google?next=%2Fdashboard");
+      }
+      if (path === "/onboarding") {
+        return signedIn
+          ? redirect("/dashboard")
+          : redirect("/auth/google?next=%2Fonboarding");
+      }
+      if (path === "/dashboard/health") {
+        return signedIn
+          ? new Response("<main>Health</main>", {
+              status: 200,
+              headers: { "Content-Type": "text/html" },
+            })
+          : redirect("/auth/google?next=%2Fdashboard%2Fhealth");
+      }
+      if (path === "/api/mcp") {
+        return signedIn
+          ? response({
+              workspace_id: "00000000-0000-4000-8000-000000000001",
+              tools: ["bombsell_brief_get"],
             })
           : response({ workspace_id: null, tools: [] }, { status: 401 });
       }
@@ -256,6 +342,10 @@ test("production app smoke verifies a signed-in completed workspace session", as
     result.checks.find((check) => check.name === "auth.mcp.manifest")?.status,
     "ok",
   );
+  assert.equal(
+    result.checks.find((check) => check.name === "health.ready")?.status,
+    "ok",
+  );
 });
 
 test("production app smoke fails when a completed session still sees onboarding", async () => {
@@ -267,6 +357,7 @@ test("production app smoke fails when a completed session still sees onboarding"
       const protectedResponse = protectedAuthResponse(path);
       if (protectedResponse) return protectedResponse;
       if (path === "/") return landingPage();
+      if (path === "/api/health") return response(healthPayload());
       if (path === "/api/health/readiness") return response(healthPayload());
       if (path === "/dashboard") return new Response("<main>Brief</main>", { status: 200 });
       if (path === "/onboarding") {
@@ -276,7 +367,7 @@ test("production app smoke fails when a completed session still sees onboarding"
       if (path === "/api/mcp") {
         return response({
           workspace_id: "00000000-0000-4000-8000-000000000001",
-          tools: ["product.readiness.get"],
+          tools: ["bombsell_brief_get"],
         });
       }
       return new Response(null, { status: 404 });
@@ -300,13 +391,16 @@ test("production app smoke can verify MCP readiness discovery with a bearer toke
       const protectedResponse = protectedAuthResponse(path);
       if (protectedResponse) return protectedResponse;
       if (path === "/") return landingPage();
-      if (path === "/api/health/readiness") return response(healthPayload());
+      if (path === "/api/health") return response(healthPayload());
+      if (path === "/api/health/readiness") {
+        return response({ error: "authentication required" }, { status: 401 });
+      }
       if (path === "/dashboard") return redirect("/auth/google?next=%2Fdashboard");
       if (path === "/onboarding") return redirect("/auth/google?next=%2Fonboarding");
       if (path === "/api/mcp" && authorization === "Bearer supabase-access-token") {
         return response({
           workspace_id: "00000000-0000-4000-8000-000000000001",
-          tools: ["product.readiness.get"],
+          tools: ["bombsell_brief_get"],
         });
       }
       return new Response(null, { status: 404 });
@@ -330,7 +424,10 @@ test("production app smoke fails when Outlook OAuth starts without a workspace s
     fetchImpl: async (url) => {
       const path = new URL(String(url)).pathname;
       if (path === "/") return landingPage();
-      if (path === "/api/health/readiness") return response(healthPayload());
+      if (path === "/api/health") return response(healthPayload());
+      if (path === "/api/health/readiness") {
+        return response({ error: "authentication required" }, { status: 401 });
+      }
       if (path === "/dashboard") return redirect("/auth/google?next=%2Fdashboard");
       if (path === "/onboarding") return redirect("/auth/google?next=%2Fonboarding");
       if (path === "/api/auth/outlook") {
@@ -356,7 +453,10 @@ test("production app smoke fails when LinkedIn OAuth exposes provider setup befo
     fetchImpl: async (url) => {
       const path = new URL(String(url)).pathname;
       if (path === "/") return landingPage();
-      if (path === "/api/health/readiness") return response(healthPayload());
+      if (path === "/api/health") return response(healthPayload());
+      if (path === "/api/health/readiness") {
+        return response({ error: "authentication required" }, { status: 401 });
+      }
       if (path === "/dashboard") return redirect("/auth/google?next=%2Fdashboard");
       if (path === "/onboarding") return redirect("/auth/google?next=%2Fonboarding");
       if (path === "/api/auth/outlook") {

@@ -27,25 +27,25 @@ should sync to CRM" from one tool surface.
 
 ## MCP Tool Contract
 
-- `bombsell.brief.get`: last-day and last-week qualified signals, outreach,
+- `bombsell_brief_get`: last-day and last-week qualified signals, outreach,
   replies, meetings, and next action.
-- `bombsell.signals.list_qualified`: hot Signals with account, score, reasons,
+- `bombsell_signals_list_qualified`: hot Signals with account, score, reasons,
   verified contacts, LinkedIn profiles, and next handoff.
-- `bombsell.contact_lanes.get`: groups contacts into verified email, LinkedIn
+- `bombsell_contact_lanes_get`: groups contacts into verified email, LinkedIn
   ready, draft ready, needs resolution, needs fit review, and blocked by fit.
-- `bombsell.outreach.prepare`: creates judged drafts through the existing Agent
+- `bombsell_outreach_prepare`: creates judged drafts through the existing Agent
   workflow, never sends directly.
-- `bombsell.outreach.list_sent`: sent emails and DMs with contact, signal, and
+- `bombsell_outreach_list_sent`: sent emails and DMs with contact, signal, and
   proof links.
-- `bombsell.draft.get`: full sent draft or review draft by message id.
-- `bombsell.approvals.list` and `bombsell.approvals.decide`: approval gates for
+- `bombsell_draft_get`: full sent draft or review draft by message id.
+- `bombsell_approvals_list` and `bombsell_approvals_decide`: approval gates for
   reviewable work.
-- `bombsell.crm_handoff.queue`: packages CRM-ready qualified contacts with
+- `bombsell_crm_handoff_queue`: packages CRM-ready qualified contacts with
   signal proof, verified email or LinkedIn data, outreach context, outcomes, and
   webhook delivery status when a CRM destination URL is configured.
-- `bombsell.integrations.list`: connected channels, visitor-intent intake, MCP,
+- `bombsell_integrations_list`: connected channels, visitor-intent intake, MCP,
   and CRM handoff readiness.
-- `bombsell.learning.get`: recent reply and meeting learning.
+- `bombsell_learning_get`: recent reply and meeting learning.
 
 ## Guardrails
 
@@ -62,12 +62,12 @@ should sync to CRM" from one tool surface.
 ## Launch Workflow
 
 1. User installs plugin and signs into a Bombsell workspace.
-2. Claude Code calls `bombsell.brief.get` and summarizes yesterday/last week.
-3. If there are hot contacts, Claude Code calls `bombsell.contact_lanes.get`.
+2. Claude Code calls `bombsell_brief_get` and summarizes yesterday/last week.
+3. If there are hot contacts, Claude Code calls `bombsell_contact_lanes_get`.
 4. If drafts are missing, Claude Code asks permission and calls
-   `bombsell.outreach.prepare`.
+   `bombsell_outreach_prepare`.
 5. If CRM is connected, Claude Code asks permission and calls
-   `bombsell.crm_handoff.queue`.
+   `bombsell_crm_handoff_queue`.
 6. Claude Code links the operator back to Agent for approvals and sent proof.
 
 ## Build Steps

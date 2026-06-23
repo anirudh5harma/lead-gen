@@ -1,5 +1,6 @@
 import type { LLMClient } from "../agents/llm/index.ts";
 import { createDeepSeekClientFromEnv } from "../agents/llm/index.ts";
+import { normalizePublicHttpUrl } from "../../lib/network/public-url.ts";
 
 const WEBSITE_SCRAPE_TIMEOUT_MS = 15_000;
 const DIRECT_FETCH_TIMEOUT_MS = 10_000;
@@ -27,19 +28,7 @@ export interface AnalyzeCompanyWebsiteOptions {
 }
 
 export function normalizeCompanyWebsiteUrl(raw: unknown): string | null {
-  if (typeof raw !== "string") return null;
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-  try {
-    const url = new URL(withProtocol);
-    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
-    if (!url.hostname.includes(".") || url.hostname === "localhost") return null;
-    url.hash = "";
-    return url.toString().replace(/\/$/, "");
-  } catch {
-    return null;
-  }
+  return normalizePublicHttpUrl(raw);
 }
 
 export async function analyzeCompanyWebsite(

@@ -46,6 +46,7 @@ export interface OutlookSubscriptionRepairSummary {
 interface OutlookAccountTarget {
   id: string;
   workspace_id: string;
+  created_at?: string;
 }
 
 /**
@@ -206,18 +207,44 @@ async function listSubscriptionTargets(
 ): Promise<OutlookAccountTarget[]> {
   const limit = Math.max(1, Math.min(1_000, Math.trunc(input.limit ?? 500)));
   const { rows } = await pool.query<OutlookAccountTarget>(
-    `select id, workspace_id
-       from channel_accounts
-      where workspace_id = $1
-        and kind = 'oauth_outlook'
-        and status = 'connected'
-        and ($2::uuid is null or id = $2)
-        and (
-          $2::uuid is not null
-          or properties -> 'outlook_subscription' is null
-          or (properties -> 'outlook_subscription' ->> 'expirationDateTime')::timestamptz
-               <= now() + ($3::text || ' milliseconds')::interval
-        )
+    `with ranked_targets as (
+       select id,
+              workspace_id,
+              created_at,
+              row_number() over (
+                partition by coalesce(
+                  nullif(lower(properties ->> 'mailbox_email'), ''),
+                  nullif(lower(display_name), ''),
+                  id::text
+                )
+                order by case
+                           when properties -> 'outlook_subscription' is not null
+                             and properties -> 'outlook_subscription' ->> 'clientState' is not null
+                             and properties -> 'outlook_subscription' ->> 'lifecycleNotificationUrl' is not null
+                             and (properties -> 'outlook_subscription' ->> 'expirationDateTime')::timestamptz
+                                   > now() + ($3::text || ' milliseconds')::interval
+                           then 0
+                           else 1
+                         end,
+                         updated_at desc,
+                         created_at desc,
+                         id desc
+              ) as account_rank
+         from channel_accounts
+        where workspace_id = $1
+          and kind = 'oauth_outlook'
+          and status = 'connected'
+          and ($2::uuid is null or id = $2)
+          and (
+            $2::uuid is not null
+            or properties -> 'outlook_subscription' is null
+            or (properties -> 'outlook_subscription' ->> 'expirationDateTime')::timestamptz
+                 <= now() + ($3::text || ' milliseconds')::interval
+          )
+     )
+     select id, workspace_id, created_at::text as created_at
+       from ranked_targets
+      where account_rank = 1
       order by created_at asc
       limit $4`,
     [input.workspace_id, input.channel_account_id ?? null, renewBeforeMs, limit],

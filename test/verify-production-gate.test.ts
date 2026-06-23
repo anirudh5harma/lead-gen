@@ -5,6 +5,7 @@ import {
   classifyFlyWorkerHostGate,
   classifyOutlookGate,
   classifySharedXGate,
+  classifyWorkspaceIsolationGate,
   classifyWorkerHostGate,
   summarizeProductionGate,
 } from "../scripts/verify-production-gate.ts";
@@ -13,6 +14,7 @@ import type { FlyWorkerHostProbeResult } from "../scripts/fly-worker-host.ts";
 import type { OutlookReadinessResult } from "../scripts/verify-outlook-readiness.ts";
 import type { RestateEcsHealthResult } from "../scripts/verify-restate-ecs-health.ts";
 import type { SharedXReadinessResult } from "../scripts/verify-shared-x-readiness.ts";
+import type { WorkspaceIsolationResult } from "../scripts/verify-workspace-isolation.ts";
 
 function healthyFlyWorkerHost(): FlyWorkerHostProbeResult {
   return {
@@ -112,6 +114,45 @@ function healthySharedX(): SharedXReadinessResult {
       { label: "shared-x: rule pack configured", status: "ok", detail: "12 enabled pooled X rule(s)" },
       { label: "shared-x: monthly budget", status: "ok", detail: "Projected $2.92/mo against cap $10.00/mo" },
     ],
+  };
+}
+
+function healthyWorkspaceIsolation(): WorkspaceIsolationResult {
+  return {
+    ok: true,
+    steps: [
+      {
+        label: "workspace isolation: unique auth emails",
+        status: "ok",
+        detail: "3 auth user(s), 3 distinct email(s)",
+      },
+      {
+        label: "workspace isolation: shared default workspace retired",
+        status: "ok",
+        detail: "No accepted non-owner members remain on the legacy default workspace",
+      },
+      {
+        label: "workspace isolation: legacy users migrated",
+        status: "ok",
+        detail: "Every confirmed user has a non-default accepted workspace",
+      },
+      {
+        label: "workspace isolation: shared non-default workspaces",
+        status: "ok",
+        detail: "No shared non-default workspaces detected",
+      },
+    ],
+    snapshot: {
+      duplicateEmails: [],
+      sharedDefaultWorkspace: {
+        accepted_members: 1,
+        non_owner_members: 0,
+      },
+      legacyUsersNeedingMigration: [],
+      totalUsers: 3,
+      distinctEmails: 3,
+      sharedNonDefaultWorkspaces: 0,
+    },
   };
 }
 
@@ -297,6 +338,60 @@ test("production gate classifies missing Outlook reply subscription as fail", ()
   assert.match(decision.next, /Repair Outlook subscription/);
 });
 
+test("production gate blocks launch when legacy users still share the default workspace", () => {
+  const isolation = healthyWorkspaceIsolation();
+  isolation.ok = false;
+  isolation.steps = isolation.steps.map((step) =>
+    step.label === "workspace isolation: shared default workspace retired"
+      ? {
+          ...step,
+          status: "fail",
+          detail: "11 accepted member(s) still sit on default; 10 need migration",
+        }
+      : step.label === "workspace isolation: legacy users migrated"
+        ? {
+            ...step,
+            status: "fail",
+            detail: "friend@example.com, second@example.com",
+          }
+        : step,
+  );
+
+  const decision = classifyWorkspaceIsolationGate(isolation);
+
+  assert.equal(decision.status, "fail");
+  assert.match(decision.next, /Migrate legacy users off the shared default workspace/);
+});
+
+test("production gate classifies missing workspace isolation database access as external", () => {
+  const isolation: WorkspaceIsolationResult = {
+    ok: false,
+    steps: [
+      {
+        label: "workspace isolation: database configured",
+        status: "fail",
+        detail: "DATABASE_URL is required to inspect auth identities and workspace memberships",
+      },
+    ],
+    snapshot: {
+      duplicateEmails: [],
+      sharedDefaultWorkspace: {
+        accepted_members: 0,
+        non_owner_members: 0,
+      },
+      legacyUsersNeedingMigration: [],
+      totalUsers: 0,
+      distinctEmails: 0,
+      sharedNonDefaultWorkspaces: 0,
+    },
+  };
+
+  const decision = classifyWorkspaceIsolationGate(isolation);
+
+  assert.equal(decision.status, "external");
+  assert.match(decision.next, /verify:workspace-isolation/);
+});
+
 test("production gate is operator-ok but not launch-ready for known blockers", () => {
   const restate = healthyRestate();
   restate.ok = false;
@@ -319,12 +414,13 @@ test("production gate is operator-ok but not launch-ready for known blockers", (
     outlook: healthyOutlook(),
     sharedX: healthySharedX(),
     ses,
+    workspaceIsolation: healthyWorkspaceIsolation(),
   });
 
   assert.equal(result.ok, true);
   assert.equal(result.launchReady, false);
   assert.deepEqual(
     result.decisions.map((decision) => decision.status),
-    ["wait", "ok", "ok", "external"],
+    ["wait", "ok", "ok", "external", "ok"],
   );
 });

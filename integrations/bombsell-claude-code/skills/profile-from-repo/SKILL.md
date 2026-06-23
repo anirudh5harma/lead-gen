@@ -14,7 +14,7 @@ Use this skill when the user wants Bombsell to learn from the current repository
    - package metadata and integrations
    - changelog or launch notes
 2. Build a concise `repo_context` with evidence-backed facts only.
-3. Call `bombsell.profile.propose_from_context` with any fields you can infer:
+3. Call `bombsell_profile_propose_from_context` with any fields you can infer:
    - `company_name`
    - `website_url`
    - `industry`

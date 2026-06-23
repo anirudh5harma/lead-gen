@@ -52,9 +52,9 @@ native CRM OAuth remains next.
 - Profile and Agent output destinations now expose CRM sync as available for
   qualified-contact handoff through Bombsell's MCP/API tools.
 - External agents and automation layers can pull qualified signals and contact
-  lanes through `bombsell.signals.list_qualified` and
-  `bombsell.contacts.list_lanes`.
-- External agents can now call `bombsell.crm_handoff.queue` to emit typed
+  lanes through `bombsell_signals_list_qualified` and
+  `bombsell_contact_lanes_get`.
+- External agents can now call `bombsell_crm_handoff_queue` to emit typed
   `crm.handoff.queued` events containing signal proof, verified email or
   LinkedIn profile data, judged/sent outreach context, and reply/meeting
   outcomes for CRM delivery.

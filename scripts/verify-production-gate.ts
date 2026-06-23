@@ -7,6 +7,7 @@
  * worker are the launch-critical production path.
  */
 
+import fs from "node:fs";
 import { pathToFileURL } from "node:url";
 import {
   runAwsSesReadinessProbe,
@@ -29,6 +30,10 @@ import {
   runSharedXReadinessProbe,
   type SharedXReadinessResult,
 } from "./verify-shared-x-readiness.ts";
+import {
+  runWorkspaceIsolationProbe,
+  type WorkspaceIsolationResult,
+} from "./verify-workspace-isolation.ts";
 
 export type ProductionGateStatus = "ok" | "wait" | "external" | "fail";
 
@@ -171,6 +176,7 @@ export function summarizeProductionGate(input: {
   outlook: OutlookReadinessResult;
   ses: AwsSesReadinessResult;
   sharedX: SharedXReadinessResult;
+  workspaceIsolation: WorkspaceIsolationResult;
 }): ProductionGateResult {
   const decisions = [
     classifyWorkerHostGate({
@@ -180,6 +186,7 @@ export function summarizeProductionGate(input: {
     classifyOutlookGate(input.outlook),
     classifySharedXGate(input.sharedX),
     classifyAwsSesGate(input.ses),
+    classifyWorkspaceIsolationGate(input.workspaceIsolation),
   ];
   return {
     ok: decisions.every((decision) => decision.status !== "fail"),
@@ -189,6 +196,7 @@ export function summarizeProductionGate(input: {
 }
 
 async function main(): Promise<void> {
+  loadDotenvLocal();
   const result = summarizeProductionGate({
     workerHost: await runFlyWorkerHostProbe(resolveFlyWorkerHostProbeOptions(process.env)),
     legacyEcs: shouldRunAwsEcsLegacyGate(process.env)
@@ -199,6 +207,7 @@ async function main(): Promise<void> {
     ses: shouldRunAwsSesGate(process.env)
       ? await runAwsSesReadinessProbe()
       : skippedAwsSesReadiness(),
+    workspaceIsolation: await runWorkspaceIsolationProbe(),
   });
 
   console.log("Production gate");
@@ -263,6 +272,41 @@ export function classifyOutlookGate(
       `${step.label}${step.detail ? `: ${step.detail}` : ""}`
     ).join(" | "),
     next: "Repair Outlook subscription/account state before sending customer outbound through Microsoft Graph.",
+  };
+}
+
+export function classifyWorkspaceIsolationGate(
+  result: WorkspaceIsolationResult,
+): ProductionGateDecision {
+  const database = result.steps.find((step) =>
+    step.label === "workspace isolation: database configured" && step.status === "fail"
+  );
+  if (database) {
+    return {
+      name: "Workspace isolation",
+      status: "external",
+      detail: database.detail ?? "Production database was not available for the workspace isolation probe.",
+      next: "Run verify:production-gate with DATABASE_URL loaded, or run npm run verify:workspace-isolation from an environment that can inspect production auth/workspace state.",
+    };
+  }
+
+  if (result.ok) {
+    return {
+      name: "Workspace isolation",
+      status: "ok",
+      detail: "Confirmed users are isolated off the legacy shared default workspace.",
+      next: "Safe to keep monitoring the tenancy audit with npm run verify:workspace-isolation.",
+    };
+  }
+
+  const failed = result.steps.filter((step) => step.status === "fail");
+  return {
+    name: "Workspace isolation",
+    status: "fail",
+    detail: failed.map((step) =>
+      `${step.label}${step.detail ? `: ${step.detail}` : ""}`
+    ).join(" | "),
+    next: "Migrate legacy users off the shared default workspace before treating production tenancy as go-live ready.",
   };
 }
 
@@ -345,6 +389,20 @@ function skippedAwsSesReadiness(): AwsSesReadinessResult {
       },
     ],
   };
+}
+
+function loadDotenvLocal(): void {
+  const path = ".env.local";
+  if (!fs.existsSync(path)) return;
+  const text = fs.readFileSync(path, "utf8");
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (!match) continue;
+    const [, key, value] = match;
+    if (process.env[key] == null) process.env[key] = value;
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

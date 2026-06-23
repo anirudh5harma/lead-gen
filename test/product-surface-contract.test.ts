@@ -1232,8 +1232,8 @@ test("Profile exposes profile, channels, advanced setup, and workspace autonomy 
   assert.match(settings, /token\.token_hash\.slice\(0, 10\)/);
   assert.match(settings, /mcp_oauth_tokens t/);
   assert.match(settings, /t\.revoked_at is null/);
-  assert.match(outputDestinations, /bombsell\.brief\.get/);
-  assert.match(outputDestinations, /bombsell\.outreach\.list_sent/);
+  assert.match(outputDestinations, /BOMBSELL_MCP_TOOL_NAMES\.briefGet/);
+  assert.match(outputDestinations, /BOMBSELL_MCP_TOOL_NAMES\.outreachListSent/);
   assert.match(outputDestinations, /Automation intake/);
   assert.match(outputDestinations, /\/api\/webhooks\/signals/);
   assert.match(outputDestinations, /Visitor de-anonymization/);
@@ -1245,8 +1245,8 @@ test("Profile exposes profile, channels, advanced setup, and workspace autonomy 
   assert.match(settings, /configureVisitorIntentSourceAction/);
   assert.match(actions, /export async function configureVisitorIntentSourceAction/);
   assert.match(actions, /provider: "bombsell_script"/);
-  assert.match(actions, /website_url: websiteUrl \|\| undefined/);
-  assert.match(actions, /company_domain: companyDomain \|\| undefined/);
+  assert.match(actions, /website_url: websiteUrl \?\? undefined/);
+  assert.match(actions, /company_domain: companyDomain \?\? undefined/);
   assert.match(settings, /visitorIntentSource: ProfileVisitorIntentSource \| null/);
   assert.match(settings, /source=\{state\.visitorIntentSource\}/);
   assert.match(settings, /in \('bombsell_script','rb2b','clearbit','factors','warmly','generic'\)/);
@@ -1276,8 +1276,8 @@ test("Profile exposes profile, channels, advanced setup, and workspace autonomy 
   assert.match(settings, /Next destination classes/);
   assert.match(outputDestinations, /CRM sync/);
   assert.match(outputDestinations, /href: "\/dashboard\/profile#crm-sync"/);
-  assert.match(outputDestinations, /bombsell\.contacts\.list_lanes/);
-  assert.match(outputDestinations, /bombsell\.crm_handoff\.queue/);
+  assert.match(outputDestinations, /BOMBSELL_MCP_TOOL_NAMES\.contactLanesGet/);
+  assert.match(outputDestinations, /BOMBSELL_MCP_TOOL_NAMES\.crmHandoffQueue/);
   assert.match(outputDestinations, /crm\.destination\.configured/);
   assert.match(outputDestinations, /crm\.handoff\.webhook\.delivered/);
   assert.match(outputDestinations, /crm\.handoff\.webhook\.failed/);
@@ -1314,8 +1314,8 @@ test("Profile exposes profile, channels, advanced setup, and workspace autonomy 
   assert.match(settings, /name="crm_sync_mode"/);
   assert.match(settings, /Save CRM handoff/);
   assert.match(settings, /Handoff contract/);
-  assert.match(settings, /bombsell\.signals\.list_qualified/);
-  assert.match(settings, /bombsell\.crm_handoff\.queue/);
+  assert.match(settings, /bombsell_signals_list_qualified/);
+  assert.match(settings, /bombsell_crm_handoff_queue/);
   assert.match(settings, /crm\.destination\.configured/);
   assert.match(outputDestinations, /Outreach tool sync/);
   assert.match(outputDestinations, /Team alerts/);

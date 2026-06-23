@@ -10,6 +10,7 @@ import {
 import { getRequestAuthIdentity } from "@/lib/auth";
 import { googleAuthPath } from "@/lib/auth/next";
 import {
+  canUseWorkspaceOps,
   getActiveWorkspaceSession,
   setActiveWorkspaceCookie,
 } from "@/lib/workspace";
@@ -33,6 +34,12 @@ export async function POST(request: Request): Promise<Response> {
   const workspace = await getActiveWorkspaceSession();
   if (!workspace) {
     return Response.json({ error: "No active workspace." }, { status: 400 });
+  }
+  if (!canUseWorkspaceOps(workspace)) {
+    return Response.json(
+      { error: "Workspace billing access requires owner or admin role." },
+      { status: 403 },
+    );
   }
   // Persist the owner email so trial/billing reminders have a recipient.
   if (identity.email) {
@@ -95,6 +102,11 @@ export async function GET(request: Request): Promise<Response> {
       user_id: identity.id,
       role: "owner",
     };
+  } else if (!canUseWorkspaceOps(workspace)) {
+    return Response.json(
+      { error: "Workspace billing access requires owner or admin role." },
+      { status: 403 },
+    );
   }
 
   try {

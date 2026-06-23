@@ -57,6 +57,22 @@ test("authCallbackOrigin honors APP_ORIGIN away from local development", () => {
   );
 });
 
+test("authCallbackOrigin ignores forwarded host spoofing in production", () => {
+  assert.equal(
+    authCallbackOrigin({
+      appOrigin: undefined,
+      headers: new Headers({
+        host: "internal.service",
+        "x-forwarded-host": "evil.example",
+        "x-forwarded-proto": "https",
+      }),
+      nodeEnv: "production",
+      requestUrl: "https://www.bombsell.com/auth/google?next=%2Fdashboard",
+    }),
+    "https://www.bombsell.com",
+  );
+});
+
 test("onboardingPathForWebsite normalizes company URLs for auth handoff", () => {
   assert.equal(
     onboardingPathForWebsite("acme.com"),

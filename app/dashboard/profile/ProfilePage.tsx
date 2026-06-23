@@ -1831,7 +1831,7 @@ function CrmHandoffSetupPanel({ account }: { account: ProfileCrmAccount | null }
             />
           </div>
           <p className="text-xs leading-5 text-[var(--color-text-3)]">
-            Use `bombsell.crm_handoff.queue` for qualified-contact handoff now.
+            Use `bombsell_crm_handoff_queue` for qualified-contact handoff now.
             If a webhook URL is configured, Bombsell posts the proof package and
             records delivery or failure as typed CRM handoff events.
           </p>
@@ -1928,9 +1928,9 @@ function CrmHandoffSetupPanel({ account }: { account: ProfileCrmAccount | null }
         </span>
         <div className="mt-2 flex flex-wrap gap-1.5">
           {[
-            "bombsell.signals.list_qualified",
-            "bombsell.contacts.list_lanes",
-            "bombsell.crm_handoff.queue",
+            "bombsell_signals_list_qualified",
+            "bombsell_contact_lanes_get",
+            "bombsell_crm_handoff_queue",
             "crm.destination.configured",
             "crm.handoff.webhook.delivered",
             "crm.handoff.webhook.failed",

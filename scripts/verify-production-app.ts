@@ -52,7 +52,12 @@ export async function runProductionAppSmoke(
   const bearerToken = normalizeOptional(opts.bearerToken) ?? defaultBearerToken();
   const checks: ProductionAppSmokeCheck[] = [];
 
-  await checkHealth(origin, fetchImpl, checks);
+  await checkHealth(
+    origin,
+    { authCookieHeader, bearerToken },
+    fetchImpl,
+    checks,
+  );
   await checkPublicEntry(origin, fetchImpl, checks);
   await checkRedirect(
     origin,
@@ -250,12 +255,12 @@ async function checkAuthenticatedMcpManifest(
     ? payload.tools.filter((tool): tool is string => typeof tool === "string")
     : [];
   const hasWorkspace = typeof payload.workspace_id === "string" && payload.workspace_id.length > 0;
-  const hasReadinessTool = tools.includes("product.readiness.get");
+  const hasBriefTool = tools.includes("bombsell_brief_get");
   checks.push({
     name: "auth.mcp.manifest",
-    status: hasWorkspace && hasReadinessTool ? "ok" : "fail",
-    detail: `workspace=${hasWorkspace ? "present" : "missing"} product.readiness.get=${
-      hasReadinessTool ? "present" : "missing"
+    status: hasWorkspace && hasBriefTool ? "ok" : "fail",
+    detail: `workspace=${hasWorkspace ? "present" : "missing"} bombsell_brief_get=${
+      hasBriefTool ? "present" : "missing"
     }`,
   });
 }
@@ -323,12 +328,16 @@ async function checkPublicEntry(
 
 async function checkHealth(
   origin: string,
+  auth: {
+    authCookieHeader: string | null;
+    bearerToken: string | null;
+  },
   fetchImpl: typeof fetch,
   checks: ProductionAppSmokeCheck[],
 ): Promise<void> {
   let response: Response;
   try {
-    response = await fetchImpl(`${origin}/api/health/readiness`, {
+    response = await fetchImpl(`${origin}/api/health`, {
       headers: { Accept: "application/json" },
     });
   } catch (err) {
@@ -342,7 +351,7 @@ async function checkHealth(
 
   const healthStatusAllowed = response.ok || response.status === 503;
   checks.push({
-    name: "health.reachable",
+    name: "health.liveness",
     status: healthStatusAllowed ? "ok" : "fail",
     detail: `HTTP ${response.status}`,
   });
@@ -361,12 +370,66 @@ async function checkHealth(
   }
 
   checks.push({
-    name: "health.service",
+    name: "health.liveness.service",
     status: payload.service === "bombsell-product" ? "ok" : "fail",
     detail: payload.service ?? "missing service name",
   });
 
-  const healthChecks = payload.checks ?? [];
+  checks.push({
+    name: "health.liveness.ready",
+    status: payload.ready === true && payload.status === "ok" ? "ok" : "fail",
+    detail: `status=${payload.status ?? "missing"} ready=${String(payload.ready)}`,
+  });
+
+  const readinessHeaders: Record<string, string> = { Accept: "application/json" };
+  if (auth.authCookieHeader) {
+    readinessHeaders.Cookie = auth.authCookieHeader;
+  }
+
+  let readinessResponse: Response;
+  try {
+    readinessResponse = await fetchImpl(`${origin}/api/health/readiness`, {
+      headers: readinessHeaders,
+    });
+  } catch (err) {
+    checks.push({
+      name: "health.readiness.reachable",
+      status: "fail",
+      detail: err instanceof Error ? err.message : String(err),
+    });
+    return;
+  }
+
+  if (!auth.authCookieHeader) {
+    checks.push({
+      name: "health.readiness.protected",
+      status: readinessResponse.status === 401 ? "ok" : "fail",
+      detail: `HTTP ${readinessResponse.status}`,
+    });
+    return;
+  }
+
+  const readinessStatusAllowed = readinessResponse.ok || readinessResponse.status === 503;
+  checks.push({
+    name: "health.readiness.reachable",
+    status: readinessStatusAllowed ? "ok" : "fail",
+    detail: `HTTP ${readinessResponse.status}`,
+  });
+  if (!readinessStatusAllowed) return;
+
+  let readinessPayload: ProductHealthPayload;
+  try {
+    readinessPayload = await readinessResponse.json() as ProductHealthPayload;
+  } catch {
+    checks.push({
+      name: "health.readiness.json",
+      status: "fail",
+      detail: "response was not valid JSON",
+    });
+    return;
+  }
+
+  const healthChecks = readinessPayload.checks ?? [];
   for (const required of REQUIRED_HEALTH_CHECKS) {
     const item = healthChecks.find((check) => check.name === required);
     checks.push({
@@ -401,8 +464,8 @@ async function checkHealth(
 
   checks.push({
     name: "health.ready",
-    status: payload.ready === true && payload.status === "ok" ? "ok" : "fail",
-    detail: `status=${payload.status ?? "missing"} ready=${String(payload.ready)}`,
+    status: readinessPayload.ready === true && readinessPayload.status === "ok" ? "ok" : "fail",
+    detail: `status=${readinessPayload.status ?? "missing"} ready=${String(readinessPayload.ready)}`,
   });
 }
 

@@ -42,7 +42,9 @@ export async function GET(request: Request) {
     });
   }
 
-  return Response.json(createMcpManifest(auth.workspace_id), { headers: corsHeaders() });
+  return Response.json(createMcpManifest(auth.workspace_id, auth.scopes), {
+    headers: corsHeaders(),
+  });
 }
 
 export async function POST(request: Request) {
@@ -81,6 +83,7 @@ async function handleMcpRequest(request: Request): Promise<Response> {
   const server = createBombsellMcpServer({
     workspaceId: auth.workspace_id,
     userId: auth.user_id,
+    scopes: auth.scopes,
     serverInfo: { name: "bombsell-mcp", version: "pivot-v2" },
   });
   const transport = new WebStandardStreamableHTTPServerTransport({

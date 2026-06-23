@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { findCompletedOnboardingForAuthIdentity } from "@/lib/auth/onboarding";
-import { googleAuthPath, postAuthDestination, safeNextPath } from "@/lib/auth/next";
+import {
+  authCallbackOrigin,
+  googleAuthPath,
+  postAuthDestination,
+  safeNextPath,
+} from "@/lib/auth/next";
 import { resolvePostAuthUserId } from "@/lib/auth/post-auth";
 import { hasVerifiedEmail, type AuthVerifiedEmailUser } from "@/lib/auth/verified-email";
 import {
@@ -59,12 +64,13 @@ export async function GET(request: Request) {
       ? await findCompletedOnboardingAfterIdentityReconciliation(userId, authUser)
       : null;
     const destinationPath = postAuthDestination(next, Boolean(completed));
-    const forwardedHost = request.headers.get("x-forwarded-host");
-    const forwardedProto = request.headers.get("x-forwarded-proto") ?? "https";
-    const destination =
-      process.env.NODE_ENV === "development" || !forwardedHost
-        ? new URL(destinationPath, origin)
-        : new URL(destinationPath, `${forwardedProto}://${forwardedHost}`);
+    const destination = new URL(
+      destinationPath,
+      authCallbackOrigin({
+        headers: request.headers,
+        requestUrl: request.url,
+      }),
+    );
     const response = NextResponse.redirect(destination);
     applySupabaseCookieCapture(response, supabaseCookies);
     if (completed) {

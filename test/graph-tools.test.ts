@@ -14,6 +14,10 @@ import {
   _resetGraphToolsRegistration,
 } from "../core/graph/tools.ts";
 import { createBombsellMcpServer } from "../core/mcp/server.ts";
+import {
+  registerProductTools,
+  _resetProductToolsRegistration,
+} from "../core/product/tools.ts";
 
 async function seedWorkspace(pool: Pool): Promise<string> {
   const ws = randomUUID();
@@ -27,6 +31,7 @@ async function seedWorkspace(pool: Pool): Promise<string> {
 beforeEach(() => {
   _resetToolRegistry();
   _resetGraphToolsRegistration();
+  _resetProductToolsRegistration();
 });
 
 afterEach(async () => {
@@ -150,8 +155,8 @@ test("graph tools: input validation rejects malformed payloads", async (t) => {
   }
 });
 
-test("mcp server: exposes the registered graph tools", () => {
-  registerGraphTools();
+test("mcp server: builds the focused Bombsell external surface", () => {
+  registerProductTools();
   const server = createBombsellMcpServer({
     workspaceId: randomUUID(),
   });

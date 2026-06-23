@@ -1,12 +1,16 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
+  getTool,
   invokeTool,
-  listTools,
   type ToolContext,
   type ToolDefinition,
 } from "../agents/tools/index.ts";
 import { BOMBSELL_MCP_INSTRUCTIONS } from "./instructions.ts";
+import {
+  getBombsellMcpSurfaceTools,
+  type BombsellMcpSurfaceTool,
+} from "./tool-surface.ts";
 
 /**
  * MCP server envelope. Exposes the agent fabric's Tool registry over the
@@ -32,6 +36,8 @@ export interface CreateBombsellMcpServerOptions {
   /** Optional filter — exclude tools by name or kind. */
   exposeKinds?: Array<"read" | "write" | "external">;
   excludeTools?: string[];
+  /** Optional OAuth scopes used to narrow the exposed MCP surface. */
+  scopes?: string[];
   /** Server metadata. */
   serverInfo?: { name?: string; version?: string };
   /** Optional override for clients that need a narrower MCP instruction set. */
@@ -70,17 +76,34 @@ export function createBombsellMcpServer(
     rep_id: opts.repId,
   };
 
-  const tools = listTools().filter(
-    (t) => allowedKinds.includes(t.kind) && !excluded.has(t.name),
-  );
+  const tools = getBombsellMcpSurfaceTools(opts.scopes)
+    .map((surface) => {
+      const tool = getTool(surface.internalName);
+      if (!tool) {
+        throw new Error(
+          `MCP surface tool '${surface.name}' is mapped to an unregistered internal tool '${surface.internalName}'.`,
+        );
+      }
+      return { surface, tool };
+    })
+    .filter(
+      ({ surface, tool }) =>
+        allowedKinds.includes(tool.kind) &&
+        !excluded.has(surface.name) &&
+        !excluded.has(surface.internalName) &&
+        !excluded.has(tool.name),
+    );
 
-  for (const tool of tools) registerToolOnServer(server, tool, baseCtx);
+  for (const { surface, tool } of tools) {
+    registerToolOnServer(server, surface, tool, baseCtx);
+  }
 
   return server;
 }
 
 function registerToolOnServer(
   server: McpServer,
+  surface: BombsellMcpSurfaceTool,
   tool: ToolDefinition,
   baseCtx: ToolContext,
 ): void {
@@ -105,14 +128,14 @@ function registerToolOnServer(
         : { readOnlyHint: false, openWorldHint: false };
 
   server.registerTool(
-    tool.name,
+    surface.name,
     {
       description: tool.description,
       inputSchema: tool.input.shape,
       annotations,
     },
     async (args) => {
-      const result = await invokeTool(tool.name, args, baseCtx);
+      const result = await invokeTool(surface.internalName, args, baseCtx);
       return {
         content: [
           {

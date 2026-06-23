@@ -15,6 +15,7 @@ import {
 test("auth cookies expire after three days", () => {
   assert.equal(AUTH_SESSION_MAX_AGE_SECONDS, 60 * 60 * 24 * 3);
   assert.equal(authSessionCookieOptions().maxAge, AUTH_SESSION_MAX_AGE_SECONDS);
+  assert.equal(authSessionCookieOptions().httpOnly, true);
   assert.match(
     readFileSync("lib/workspace.ts", "utf8"),
     /maxAge: AUTH_SESSION_MAX_AGE_SECONDS/,
@@ -35,6 +36,7 @@ test("Supabase cookie capture applies auth cookies and cache headers to redirect
 
   assert.match(response.headers.get("set-cookie") ?? "", /sb-test-auth-token=session/);
   assert.match(response.headers.get("set-cookie") ?? "", /Max-Age=259200/);
+  assert.match(response.headers.get("set-cookie") ?? "", /HttpOnly/i);
   assert.equal(response.headers.get("cache-control"), "private, no-cache, no-store");
 });
 

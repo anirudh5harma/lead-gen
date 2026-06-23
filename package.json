@@ -44,6 +44,8 @@
     "verify:agent-observability": "node --experimental-strip-types scripts/verify-agent-observability.ts",
     "verify:aws-ses": "node --experimental-strip-types scripts/verify-aws-ses.ts",
     "verify:ses": "node --experimental-strip-types scripts/verify-ses.ts",
+    "verify:workspace-isolation": "node --experimental-strip-types scripts/verify-workspace-isolation.ts",
+    "repair:legacy-default-workspace": "node --experimental-strip-types scripts/repair-legacy-default-workspace.ts",
     "backfill:default-signal-sources": "node --experimental-strip-types scripts/backfill-default-signal-sources.ts",
     "backfill:exa-social-signal-sources": "node --experimental-strip-types scripts/backfill-exa-social-signal-sources.ts",
     "backfill:shared-x-signal-source": "node --experimental-strip-types scripts/backfill-shared-x-signal-source.ts",

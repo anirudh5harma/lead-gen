@@ -541,7 +541,7 @@ recommended action.
 
 MCP tools needed:
 
-- `bombsell.brief.get`
+- `bombsell_brief_get`
 
 ### `/bombsell:profile-from-repo`
 
@@ -551,7 +551,7 @@ points, integration assumptions, and signal-source recommendations.
 
 MCP tools needed:
 
-- `bombsell.profile.propose_from_context`
+- `bombsell_profile_propose_from_context`
 
 Safety:
 
@@ -566,8 +566,8 @@ outreach.
 
 MCP tools needed:
 
-- `bombsell.launch.check`
-- `bombsell.integrations.list`
+- `bombsell_launch_check`
+- `bombsell_integrations_list`
 
 ### `/bombsell:signal-review`
 
@@ -576,8 +576,8 @@ contacts, fit review gaps, and draft readiness.
 
 MCP tools needed:
 
-- `bombsell.signals.list_qualified`
-- `bombsell.contact_lanes.get`
+- `bombsell_signals_list_qualified`
+- `bombsell_contact_lanes_get`
 
 ### `/bombsell:prepare-outreach`
 
@@ -587,9 +587,9 @@ approval records, but it should not approve sends by itself.
 
 MCP tools needed:
 
-- `bombsell.signals.list_qualified`
-- `bombsell.outreach.prepare`
-- `bombsell.approvals.list`
+- `bombsell_signals_list_qualified`
+- `bombsell_outreach_prepare`
+- `bombsell_approvals_list`
 
 Safety:
 
@@ -605,8 +605,8 @@ signals, channels, and Agent positioning are working.
 
 MCP tools needed:
 
-- `bombsell.learning.get`
-- `bombsell.outreach.list_sent`
+- `bombsell_learning_get`
+- `bombsell_outreach_list_sent`
 
 ## Agents
 
@@ -694,18 +694,18 @@ read-only and prepare-only flow.
    Existing `product.*` tools are architecture-friendly, but plugin users need a
    smaller task vocabulary. Add wrapper tools that call the existing registry:
 
-   - `bombsell.brief.get` (landed: read-only)
-   - `bombsell.profile.propose_from_context` (landed: proposal-only)
-   - `bombsell.launch.check` (landed: read-only)
-   - `bombsell.signals.list_qualified` (landed: read-only)
-   - `bombsell.contact_lanes.get` (landed: read-only)
-   - `bombsell.integrations.list` (landed: read-only)
-   - `bombsell.outreach.prepare` (landed: prepare-only; never sends directly)
-   - `bombsell.outreach.list_sent` (landed: read-only)
-   - `bombsell.draft.get` (landed: read-only)
-   - `bombsell.approvals.list` (landed: read-only)
-   - `bombsell.approvals.decide` (landed: explicit approval-backed write)
-   - `bombsell.learning.get` (landed: read-only)
+   - `bombsell_brief_get` (landed: read-only)
+   - `bombsell_profile_propose_from_context` (landed: proposal-only)
+   - `bombsell_launch_check` (landed: read-only)
+   - `bombsell_signals_list_qualified` (landed: read-only)
+   - `bombsell_contact_lanes_get` (landed: read-only)
+   - `bombsell_integrations_list` (landed: read-only)
+   - `bombsell_outreach_prepare` (landed: prepare-only; never sends directly)
+   - `bombsell_outreach_list_sent` (landed: read-only)
+   - `bombsell_draft_get` (landed: read-only)
+   - `bombsell_approvals_list` (landed: read-only)
+   - `bombsell_approvals_decide` (landed: explicit approval-backed write)
+   - `bombsell_learning_get` (landed: read-only)
 
    These wrappers must remain derived views over the five primitives, not a new
    product model.

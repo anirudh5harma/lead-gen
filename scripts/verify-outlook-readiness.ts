@@ -31,7 +31,6 @@ export interface OutlookReadinessProbeOptions {
 }
 
 interface OutlookAggregateRow {
-  total_outlook: string | number;
   connected_outlook: string | number;
   active_subscriptions: string | number;
   needs_reauth_outlook: string | number;
@@ -63,39 +62,45 @@ export async function runOutlookReadinessProbe(
   try {
     steps.push({ label: "outlook: database configured", status: "ok" });
     const { rows } = await pool.query<OutlookAggregateRow>(`
+      with relevant_accounts as (
+        select *,
+               coalesce(
+                 nullif(lower(properties ->> 'mailbox_email'), ''),
+                 nullif(lower(display_name), ''),
+                 id::text
+               ) as outlook_mailbox_key
+          from channel_accounts
+         where kind in ('oauth_outlook', 'email_domain')
+      ),
+      outlook_mailboxes as (
+        select outlook_mailbox_key,
+               bool_or(status = 'connected') as has_connected,
+               bool_or(
+                 status = 'connected'
+                 and properties -> 'outlook_subscription' is not null
+                 and properties -> 'outlook_subscription' ->> 'clientState' is not null
+                 and properties -> 'outlook_subscription' ->> 'lifecycleNotificationUrl' is not null
+                 and (properties -> 'outlook_subscription' ->> 'expirationDateTime')::timestamptz
+                       > now() + interval '15 minutes'
+               ) as has_active_subscription,
+               bool_or(status = 'needs_reauth') as has_needs_reauth,
+               bool_or(status = 'connected' and last_error is not null) as has_connected_error
+          from relevant_accounts
+         where kind = 'oauth_outlook'
+         group by outlook_mailbox_key
+      )
       select
-        count(*) filter (where kind = 'oauth_outlook') as total_outlook,
-        count(*) filter (
-          where kind = 'oauth_outlook'
-            and status = 'connected'
-        ) as connected_outlook,
-        count(*) filter (
-          where kind = 'oauth_outlook'
-            and status = 'connected'
-            and properties -> 'outlook_subscription' is not null
-            and properties -> 'outlook_subscription' ->> 'clientState' is not null
-            and properties -> 'outlook_subscription' ->> 'lifecycleNotificationUrl' is not null
-            and (properties -> 'outlook_subscription' ->> 'expirationDateTime')::timestamptz
-                  > now() + interval '15 minutes'
-        ) as active_subscriptions,
-        count(*) filter (
-          where kind = 'oauth_outlook'
-            and status = 'needs_reauth'
-        ) as needs_reauth_outlook,
-        count(*) filter (
-          where kind = 'oauth_outlook'
-            and status = 'connected'
-            and last_error is not null
-        ) as errored_connected,
+        (select count(*) from outlook_mailboxes where has_connected) as connected_outlook,
+        (select count(*) from outlook_mailboxes where has_active_subscription) as active_subscriptions,
+        (select count(*) from outlook_mailboxes where has_needs_reauth and not has_connected) as needs_reauth_outlook,
+        (select count(*) from outlook_mailboxes where has_connected_error) as errored_connected,
         count(*) filter (
           where kind = 'email_domain'
             and status = 'connected'
         ) as connected_managed_domains
-      from channel_accounts
-      where kind in ('oauth_outlook', 'email_domain')
+      from relevant_accounts
     `);
     const aggregate = rows[0] ?? {
-      total_outlook: 0,
       connected_outlook: 0,
       active_subscriptions: 0,
       needs_reauth_outlook: 0,

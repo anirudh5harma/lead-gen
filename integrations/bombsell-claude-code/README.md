@@ -97,17 +97,17 @@ Browser PKCE consent and token issuance are implemented at `/api/mcp/oauth/autho
 
 This plugin expects the Bombsell MCP manifest to expose:
 
-- `bombsell.brief.get`
-- `bombsell.profile.propose_from_context`
-- `bombsell.launch.check`
-- `bombsell.signals.list_qualified`
-- `bombsell.contact_lanes.get`
-- `bombsell.integrations.list`
-- `bombsell.outreach.prepare`
-- `bombsell.outreach.list_sent`
-- `bombsell.draft.get`
-- `bombsell.approvals.list`
-- `bombsell.approvals.decide`
-- `bombsell.learning.get`
+- `bombsell_brief_get`
+- `bombsell_profile_propose_from_context`
+- `bombsell_launch_check`
+- `bombsell_signals_list_qualified`
+- `bombsell_contact_lanes_get`
+- `bombsell_integrations_list`
+- `bombsell_outreach_prepare`
+- `bombsell_outreach_list_sent`
+- `bombsell_draft_get`
+- `bombsell_approvals_list`
+- `bombsell_approvals_decide`
+- `bombsell_learning_get`
 
 The wrapper tools are derived from Bombsell's existing product registry; they are not a separate product API.

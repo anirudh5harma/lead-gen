@@ -1,5 +1,5 @@
 import { getPortalUrl } from "@/core/billing/index.ts";
-import { getActiveWorkspaceSession } from "@/lib/workspace";
+import { canUseWorkspaceOps, getActiveWorkspaceSession } from "@/lib/workspace";
 import { getPool } from "@/core/substrate/storage/index.ts";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +14,12 @@ export async function POST(request: Request): Promise<Response> {
   const workspace = await getActiveWorkspaceSession();
   if (!workspace) {
     return Response.json({ error: "Authentication required." }, { status: 401 });
+  }
+  if (!canUseWorkspaceOps(workspace)) {
+    return Response.json(
+      { error: "Workspace billing access requires owner or admin role." },
+      { status: 403 },
+    );
   }
 
   const { rows } = await getPool().query<{ dodo_customer_id: string | null }>(

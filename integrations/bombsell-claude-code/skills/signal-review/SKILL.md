@@ -8,8 +8,8 @@ Use this skill when the user wants to know which qualified signals can become em
 
 ## Steps
 
-1. Call `bombsell.signals.list_qualified`.
-2. Call `bombsell.contact_lanes.get`.
+1. Call `bombsell_signals_list_qualified`.
+2. Call `bombsell_contact_lanes_get`.
 3. Summarize:
    - qualified signal count
    - verified-email lane

@@ -215,6 +215,8 @@ function labelForScope(scope: string): string {
       return "Read sent email and LinkedIn outreach.";
     case "outreach:prepare":
       return "Prepare outreach drafts for review.";
+    case "crm:write":
+      return "Queue CRM handoff packages with proof.";
     case "approvals:read":
       return "Read pending approvals.";
     case "approvals:write":
