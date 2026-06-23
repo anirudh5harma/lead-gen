@@ -4,6 +4,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import BrandIcon from '@/components/BrandIcon'
 import { googleAuthPath, PRODUCT_HOME_PATH } from '@/lib/auth/next'
+import { PendingNavLink } from '@/components/marketing/PendingCta'
 
 export const FOUNDER_CALL_URL = 'https://cal.com/anirudh5harma/15min'
 export const CONTACT_EMAIL = 'team@bombsell.com'
@@ -61,19 +62,19 @@ export function MarketingNav() {
         </nav>
 
         <div className="flex items-center gap-2">
-          <Link
+          <PendingNavLink
             href={googleAuthPath(PRODUCT_HOME_PATH)}
+            leading={<BrandIcon name="google" size={14} />}
             className="inline-flex h-12 items-center gap-1.5 rounded-full bg-[var(--color-ink-0)]/85 px-5 text-[13.5px] font-semibold tracking-[-0.01em] text-[var(--color-text-1)] backdrop-blur-md ring-1 ring-[var(--color-line-1)] transition-colors hover:bg-[var(--color-ink-0)]"
           >
-            <BrandIcon name="google" size={14} />
             Log in
-          </Link>
-          <Link
+          </PendingNavLink>
+          <PendingNavLink
             href="/auth/start"
             className="hidden h-12 items-center gap-1.5 rounded-full bg-[var(--color-cta-bg)] px-5 text-[13.5px] font-semibold tracking-[-0.01em] text-[var(--color-cta-text)] transition-transform hover:bg-[var(--color-cta-hover)] active:scale-[0.98] sm:inline-flex"
           >
             Start free
-          </Link>
+          </PendingNavLink>
         </div>
       </div>
     </header>

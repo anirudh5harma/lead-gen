@@ -45,7 +45,7 @@ test("assistant orchestrator executes read tools and resumes the loop", async ()
             id: "call_1",
             type: "function",
             function: {
-              name: "metrics.get",
+              name: "metrics_get",
               arguments: "{\"metric\":\"reply_rate\",\"window\":\"7d\"}",
             },
           },
@@ -94,7 +94,7 @@ test("assistant orchestrator executes read tools and resumes the loop", async ()
     }),
   );
 
-  assert.equal(executedToolName, "metrics.get");
+  assert.equal(executedToolName, "metrics_get");
   assert.deepEqual(events, [
     {
       type: "card",

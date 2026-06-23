@@ -16,10 +16,11 @@ afterEach(async () => {
 
 test("assistant query surface exposes only curated tool names", () => {
   const names = assistantQueryToolSpecs().map((tool) => tool.function.name);
-  assert.ok(names.includes("metrics.get"));
-  assert.ok(names.includes("entities.find"));
-  assert.ok(names.includes("entities.get"));
-  assert.ok(names.includes("signals.list"));
+  assert.ok(names.includes("metrics_get"));
+  assert.ok(names.includes("entities_find"));
+  assert.ok(names.includes("entities_get"));
+  assert.ok(names.includes("signals_list"));
+  assert.ok(names.every((name) => /^[a-zA-Z0-9_-]+$/.test(name)));
   assert.ok(!names.some((name) => /upsert|delete/.test(name)));
   assert.ok(!names.includes("graph.companies.upsert"));
   assert.ok(!names.includes("graph.persons.delete"));
@@ -36,17 +37,17 @@ test("assistant query surface scopes aggregate metrics by window", async () => {
   } as never);
 
   const today = await dispatchAssistantQueryTool({
-    toolName: "metrics.get",
+    toolName: "metrics_get",
     arguments: { metric: "companies_targeted", window: "today" },
     ctx: { workspace_id: WORKSPACE_ID, user_id: USER_ID },
   });
   const thirtyDays = await dispatchAssistantQueryTool({
-    toolName: "metrics.get",
+    toolName: "metrics_get",
     arguments: { metric: "companies_targeted", window: "30d" },
     ctx: { workspace_id: WORKSPACE_ID, user_id: USER_ID },
   });
   const allTime = await dispatchAssistantQueryTool({
-    toolName: "metrics.get",
+    toolName: "metrics_get",
     arguments: { metric: "companies_targeted", window: "all" },
     ctx: { workspace_id: WORKSPACE_ID, user_id: USER_ID },
   });
@@ -63,16 +64,16 @@ test("assistant query surface rejects invalid arguments", () => {
   assert.throws(
     () =>
       validateAssistantQueryInvocation({
-        toolName: "metrics.get",
+        toolName: "metrics_get",
         arguments: { metric: "reply_rate", window: "90d" },
       }),
-    /Invalid arguments for metrics\.get/i,
+    /Invalid arguments for metrics_get/i,
   );
 
   assert.throws(
     () =>
       validateAssistantQueryInvocation({
-        toolName: "entities.find",
+        toolName: "entities_find",
         arguments: { entity_type: "person" },
       }),
     /person lookups require email, linkedin_url, or company_id/i,

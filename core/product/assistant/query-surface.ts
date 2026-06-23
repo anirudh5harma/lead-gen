@@ -436,7 +436,7 @@ async function executeEntitiesGet(
 
 const READ_TOOL_DEFS: AssistantQueryToolDefinition[] = [
   {
-    name: "metrics.get",
+    name: "metrics_get",
     description:
       "Read governed workspace metrics for reply rate, outreach volume, meetings, qualified signals, and companies targeted over a defined window.",
     inputSchema: MetricsGetInputSchema,
@@ -460,7 +460,7 @@ const READ_TOOL_DEFS: AssistantQueryToolDefinition[] = [
     execute: executeMetricsGet,
   },
   {
-    name: "entities.find",
+    name: "entities_find",
     description:
       "Search read-only workspace graph entities: companies by name/domain, people by email/LinkedIn/company, or sources by kind.",
     inputSchema: EntitiesFindInputSchema,
@@ -499,7 +499,7 @@ const READ_TOOL_DEFS: AssistantQueryToolDefinition[] = [
     execute: executeEntitiesFind,
   },
   {
-    name: "entities.get",
+    name: "entities_get",
     description:
       "Fetch one company, person, or source from the workspace graph by id.",
     inputSchema: EntitiesGetInputSchema,
@@ -518,7 +518,7 @@ const READ_TOOL_DEFS: AssistantQueryToolDefinition[] = [
     execute: executeEntitiesGet,
   },
   {
-    name: "signals.list",
+    name: "signals_list",
     description:
       "List qualified signals, verified contacts, and draft readiness from the current signal workbench.",
     inputSchema: SignalsListInputSchema,
@@ -539,7 +539,7 @@ const READ_TOOL_DEFS: AssistantQueryToolDefinition[] = [
     },
   },
   {
-    name: "conversation.proof",
+    name: "conversation_proof",
     description:
       "Load the exact proof trace for one Conversation, including signal, drafts, replies, and meeting evidence.",
     inputSchema: ConversationProofInputSchema,
@@ -561,7 +561,7 @@ const READ_TOOL_DEFS: AssistantQueryToolDefinition[] = [
     },
   },
   {
-    name: "meeting.prep",
+    name: "meeting_prep",
     description:
       "Generate source-backed meeting prep for one Conversation without dispatching outreach.",
     inputSchema: MeetingPrepInputSchema,
@@ -583,7 +583,7 @@ const READ_TOOL_DEFS: AssistantQueryToolDefinition[] = [
     },
   },
   {
-    name: "workspace.context",
+    name: "workspace_context",
     description:
       "Load prompt-ready workspace context across profile, signals, approvals, conversations, and outcomes.",
     inputSchema: EmptyInputSchema,
@@ -598,7 +598,7 @@ const READ_TOOL_DEFS: AssistantQueryToolDefinition[] = [
     },
   },
   {
-    name: "company_brain.recall",
+    name: "company_brain_recall",
     description:
       "Recall the shared company brain: profile facts, signals, outcomes, playbooks, and meeting prep memory.",
     inputSchema: EmptyInputSchema,

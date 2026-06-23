@@ -39,7 +39,7 @@ test("deepseek client: complete returns tool calls and forwards tool specs", asy
                   id: "call_123",
                   type: "function",
                   function: {
-                    name: "metrics.get",
+                    name: "metrics_get",
                     arguments: "{\"metric\":\"reply_rate\",\"window\":\"7d\"}",
                   },
                 },
@@ -59,7 +59,7 @@ test("deepseek client: complete returns tool calls and forwards tool specs", asy
       {
         type: "function",
         function: {
-          name: "metrics.get",
+          name: "metrics_get",
           description: "Read metrics",
           parameters: {
             type: "object",
@@ -80,7 +80,7 @@ test("deepseek client: complete returns tool calls and forwards tool specs", asy
   assert.equal(sentBody?.tool_choice, "auto");
   assert.equal(response.finish_reason, "tool_calls");
   assert.equal(response.tool_calls?.[0]?.id, "call_123");
-  assert.equal(response.tool_calls?.[0]?.function.name, "metrics.get");
+  assert.equal(response.tool_calls?.[0]?.function.name, "metrics_get");
 });
 
 test("deepseek client: streamComplete reassembles content and fragmented tool calls", async () => {
@@ -91,8 +91,8 @@ test("deepseek client: streamComplete reassembles content and fragmented tool ca
       sseResponse([
         "data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\n\n",
         "data: {\"choices\":[{\"delta\":{\"content\":\"lo \"}}]}\n\n",
-        "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_\",\"type\":\"function\",\"function\":{\"name\":\"metrics\",\"arguments\":\"{\\\"met\"}}]}}]}\n\n",
-        "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"123\",\"function\":{\"name\":\".get\",\"arguments\":\"ric\\\":\\\"reply_rate\\\",\\\"window\\\":\\\"7d\\\"}\"}}]}}]}\n\n",
+        "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_\",\"type\":\"function\",\"function\":{\"name\":\"metrics_\",\"arguments\":\"{\\\"met\"}}]}}]}\n\n",
+        "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"123\",\"function\":{\"name\":\"get\",\"arguments\":\"ric\\\":\\\"reply_rate\\\",\\\"window\\\":\\\"7d\\\"}\"}}]}}]}\n\n",
         "data: {\"choices\":[{\"finish_reason\":\"tool_calls\"}]}\n\n",
         "data: [DONE]\n\n",
       ]),
@@ -105,7 +105,7 @@ test("deepseek client: streamComplete reassembles content and fragmented tool ca
       {
         type: "function",
         function: {
-          name: "metrics.get",
+          name: "metrics_get",
           description: "Read metrics",
           parameters: {
             type: "object",
@@ -128,13 +128,13 @@ test("deepseek client: streamComplete reassembles content and fragmented tool ca
     .at(-1)?.tool_calls;
   assert.deepEqual(finalToolCalls, [
     {
-      id: "call_123",
-      type: "function",
-      function: {
-        name: "metrics.get",
-        arguments: "{\"metric\":\"reply_rate\",\"window\":\"7d\"}",
+        id: "call_123",
+        type: "function",
+        function: {
+          name: "metrics_get",
+          arguments: "{\"metric\":\"reply_rate\",\"window\":\"7d\"}",
+        },
       },
-    },
   ]);
   assert.equal(chunks.at(-1)?.finish_reason, "tool_calls");
 });

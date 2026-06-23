@@ -29,19 +29,19 @@ export function presentToolResult(
   result: Record<string, unknown>,
 ): AssistantCard[] {
   const normalizedToolName =
-    toolName === "signals.list"
+    toolName === "signals_list"
       ? "list_qualified_signals"
-      : toolName === "workspace.context"
+      : toolName === "workspace_context"
         ? "get_workspace_context"
-        : toolName === "company_brain.recall"
+        : toolName === "company_brain_recall"
           ? "recall_company_brain"
-          : toolName === "conversation.proof"
+          : toolName === "conversation_proof"
             ? "get_conversation_proof"
-            : toolName === "meeting.prep"
+            : toolName === "meeting_prep"
               ? "generate_meeting_prep"
               : toolName;
 
-  if (normalizedToolName === "metrics.get") {
+  if (normalizedToolName === "metrics_get") {
     const metric = asString(result.label) ?? asString(result.metric) ?? "Metric";
     const window = asString(result.window) ?? "selected window";
     const unit = asString(result.unit) ?? "count";
@@ -68,7 +68,7 @@ export function presentToolResult(
     ];
   }
 
-  if (normalizedToolName === "entities.find") {
+  if (normalizedToolName === "entities_find") {
     const entityType = asString(result.entity_type) ?? "entity";
     const count = asNumber(result.count) ?? 0;
     const items = Array.isArray(result.items) ? result.items : [];
@@ -98,7 +98,7 @@ export function presentToolResult(
     ];
   }
 
-  if (normalizedToolName === "entities.get") {
+  if (normalizedToolName === "entities_get") {
     const entityType = asString(result.entity_type) ?? "entity";
     const entity =
       result.entity && typeof result.entity === "object"

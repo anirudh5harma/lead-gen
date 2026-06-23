@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import Icon from '@/components/Icon'
+import { PendingFormSubmit } from '@/components/marketing/PendingCta'
 import ScrollReveal from '@/components/ui/ScrollReveal'
 import { MarketingNav, MarketingFooter, FOUNDER_CALL_URL } from '@/components/marketing/MarketingChrome'
 import { googleAuthPath } from '@/lib/auth/next'
@@ -156,10 +157,12 @@ export default function Home() {
                     className="h-12 w-full rounded-full border border-[var(--color-input-border)] bg-[var(--color-ink-0)] pl-11 pr-4 text-[14px] tracking-[-0.01em] text-[var(--color-text-1)] outline-none transition-colors placeholder:text-[var(--color-text-3)] focus:border-[var(--color-text-1)]"
                   />
                 </div>
-                <button type="submit" className="btn-solid whitespace-nowrap">
+                <PendingFormSubmit
+                  className="btn-solid whitespace-nowrap"
+                  trailing={<Icon name="arrow_forward" size={15} />}
+                >
                   Start free
-                  <Icon name="arrow_forward" size={15} />
-                </button>
+                </PendingFormSubmit>
               </form>
             </ScrollReveal>
             <ScrollReveal delay={0.45}>

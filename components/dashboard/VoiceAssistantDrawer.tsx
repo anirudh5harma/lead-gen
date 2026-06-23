@@ -100,7 +100,6 @@ export default function VoiceAssistantDrawer() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [holdActive, setHoldActive] = useState(false);
   const [micState, setMicState] = useState<MicState>("unknown");
-  const [micConnecting, setMicConnecting] = useState(false);
 
   const micRef = useRef<AssistantTranscriptionConnection | null>(null);
   const entriesRef = useRef<TimelineEntry[]>([]);
@@ -258,7 +257,6 @@ export default function VoiceAssistantDrawer() {
   async function ensureMic(): Promise<AssistantTranscriptionConnection> {
     if (micRef.current) return micRef.current;
 
-    setMicConnecting(true);
     setErrorMessage(null);
     try {
       const connection = await connectAssistantTranscription({
@@ -279,8 +277,6 @@ export default function VoiceAssistantDrawer() {
     } catch (error) {
       setMicState("blocked");
       throw error;
-    } finally {
-      setMicConnecting(false);
     }
   }
 
@@ -422,14 +418,6 @@ export default function VoiceAssistantDrawer() {
     return () => teardown();
   }, []);
 
-  const sessionLabel = assistantBusy
-    ? "Working"
-    : micState === "ready"
-      ? "Voice ready"
-      : micConnecting
-        ? "Connecting"
-        : "Ready";
-
   const voiceLabel = holdActive ? "Release to send" : "Hold to talk";
 
   return (
@@ -492,39 +480,6 @@ export default function VoiceAssistantDrawer() {
             >
               <Icon name="close" size={16} />
             </button>
-          </div>
-
-          <div className="mt-4 grid gap-2 sm:grid-cols-3">
-            <div className="rounded-[16px] border border-[var(--color-line-1)] bg-white/76 px-3.5 py-3">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-[var(--color-text-4)]">
-                Session
-              </p>
-              <p className="mt-1.5 text-[14px] font-semibold tracking-[-0.02em] text-[var(--color-text-1)]">
-                {sessionLabel}
-              </p>
-            </div>
-            <div className="rounded-[16px] border border-[var(--color-line-1)] bg-white/76 px-3.5 py-3">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-[var(--color-text-4)]">
-                Voice
-              </p>
-              <p className="mt-1.5 text-[14px] font-semibold tracking-[-0.02em] text-[var(--color-text-1)]">
-                {micState === "ready"
-                  ? holdActive
-                    ? "Listening"
-                    : "Armed"
-                  : micState === "blocked"
-                    ? "Text fallback"
-                    : "Tap to enable"}
-              </p>
-            </div>
-            <div className="rounded-[16px] border border-[var(--color-line-1)] bg-white/76 px-3.5 py-3">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-[var(--color-text-4)]">
-                Brain
-              </p>
-              <p className="mt-1.5 text-[14px] font-semibold tracking-[-0.02em] text-[var(--color-text-1)]">
-                DeepSeek + data
-              </p>
-            </div>
           </div>
         </header>
 
