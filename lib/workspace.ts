@@ -3,7 +3,10 @@ import { cache } from "react";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { AUTH_SESSION_MAX_AGE_SECONDS } from "@/lib/auth/session-cookie";
 import { getRequestUserId, validUuid } from "@/lib/auth";
-import { activeWorkspaceLookup } from "@/lib/workspace-selection";
+import {
+  activeWorkspaceLookup,
+  excludeLegacySharedDefaultWorkspace,
+} from "@/lib/workspace-selection";
 import type { WorkspaceRole } from "@/lib/workspace-access";
 
 export interface ActiveWorkspace {
@@ -85,6 +88,7 @@ export const listWorkspaces = cache(async (): Promise<ActiveWorkspace[]> => {
       where wm.user_id = $1
         and wm.accepted_at is not null
         and w.archived_at is null
+        and ${excludeLegacySharedDefaultWorkspace("w", "wm")}
       order by w.created_at desc`,
     [userId],
   );

@@ -21,3 +21,11 @@ test("active workspace lookup uses newest accepted workspace when no selection e
   assert.doesNotMatch(lookup.sql, /\$2/);
   assert.match(lookup.sql, /order by\s+w\.created_at desc, w\.id desc/);
 });
+
+test("active workspace lookup excludes the legacy shared default workspace for non-owner members", () => {
+  const lookup = activeWorkspaceLookup(USER_ID, null);
+
+  assert.match(lookup.sql, /w\.slug = 'default'/);
+  assert.match(lookup.sql, /wm\.role <> 'owner'/);
+  assert.match(lookup.sql, /legacy_wm\.workspace_id = w\.id/);
+});

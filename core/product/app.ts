@@ -129,12 +129,11 @@ import {
   createDryRunLinkedInTransport,
   createHttpLinkedInTransport,
   createLinkedInProviderAuthorizationProjection,
-  createNativeLinkedInChannel,
+  createPostgresLinkedInChannel,
   resolveLinkedInProviderAuthUrl,
   createUnconfiguredLinkedInTransport,
   type LinkedInChannel,
   type LinkedInChannelName,
-  type LinkedInSessionAccount,
   type LinkedInTransport,
 } from "../channels/linkedin/index.ts";
 import { createMessageLifecycleProjection } from "../channels/message-lifecycle.ts";
@@ -219,6 +218,7 @@ import {
   createProductSubstrate,
   type ProductSubstrateMode,
 } from "./substrate.ts";
+import { excludeLegacySharedDefaultWorkspace } from "../../lib/workspace-selection.ts";
 import {
   buildCampaignOutcomeLearningExemplar,
   campaignOutcomePatternKey,
@@ -1614,6 +1614,7 @@ export async function findFirstProductWorkspaceForUser(
      where wm.user_id = $1
        and wm.accepted_at is not null
        and w.archived_at is null
+       and ${excludeLegacySharedDefaultWorkspace("w", "wm")}
      order by w.created_at asc, w.id asc
      limit 1`,
     [user_id],
@@ -1836,6 +1837,7 @@ export async function reconcileWorkspaceMembershipsForAuthIdentity(
         and wm.user_id <> $1
         and wm.accepted_at is not null
         and w.archived_at is null
+        and ${excludeLegacySharedDefaultWorkspace("w", "wm")}
         and not exists (
           select 1
             from workspace_members current_member
@@ -4935,7 +4937,11 @@ export async function generateProductMeetingPrep(
       kind: outcome.kind,
       occurred_at: outcome.occurred_at,
     })),
-    calendar: await resolveMeetingPrepCalendar(engine, session.workspace_id),
+    calendar: await resolveMeetingPrepCalendar(
+      engine,
+      session.workspace_id,
+      session.user_id,
+    ),
   });
   const meeting_prep_id = randomUUID();
   const generatedBucket = note.generated_at.slice(0, 13);
@@ -8446,7 +8452,7 @@ export async function getProductOutlookCalendarAvailability(
 ): Promise<OutlookCalendarAvailability> {
   const engine = await getProductEngine();
   await assertProductWorkspaceAccess(session, engine.pool);
-  return resolveMeetingPrepCalendar(engine, session.workspace_id);
+  return resolveMeetingPrepCalendar(engine, session.workspace_id, session.user_id);
 }
 
 export async function configureEmailAccount(
@@ -9874,6 +9880,7 @@ function createProductOutlookSender(
 async function resolveMeetingPrepCalendar(
   engine: ProductEngine,
   workspace_id: string,
+  user_id: string,
 ): Promise<OutlookCalendarAvailability> {
   const outlook = createProductOutlookSender(engine.pool, engine.bus);
   if (!outlook) {
@@ -9890,6 +9897,7 @@ async function resolveMeetingPrepCalendar(
     pool: engine.pool,
     accessTokens: outlook,
     workspace_id,
+    user_id,
   });
 }
 
@@ -10334,40 +10342,21 @@ function createDatabaseBackedEmailChannel(
     pool,
     transport,
     outlook: bus ? createProductOutlookSender(pool, bus) : undefined,
+    resolveConnectedAccountUserId: (workspace_id) =>
+      getWorkflowUserId(pool, workspace_id),
   });
 }
 
 async function createDatabaseBackedLinkedInChannel(
   pool: Pool,
-  workspace_id: string,
+  _workspace_id: string,
   action: LinkedInChannelName,
 ): Promise<LinkedInChannel> {
-  const { rows } = await pool.query<{
-    id: string;
-    display_name: string;
-    kind: "linkedin_session" | "linkedin_oauth";
-    status: LinkedInSessionAccount["status"];
-    daily_cap: number | null;
-    daily_used: number | null;
-  }>(
-    `select id, display_name, kind::text as kind, status::text as status,
-            daily_cap, daily_used
-       from channel_accounts
-      where workspace_id = $1
-        and kind in ('linkedin_session','linkedin_oauth')
-      order by last_used_at nulls first, created_at asc`,
-    [workspace_id],
-  );
-  return createNativeLinkedInChannel({
-    action,
-    accounts: rows.map((row) => ({
-      id: row.id,
-      display_name: row.display_name,
-      kind: row.kind,
-      status: row.status,
-      daily_cap: Math.max(0, Math.trunc(row.daily_cap ?? 0)),
-      daily_used: Math.max(0, Math.trunc(row.daily_used ?? 0)),
-    })),
+  return createPostgresLinkedInChannel({
+    pool,
+    defaultAction: action,
+    resolveConnectedAccountUserId: (workspace_id) =>
+      getWorkflowUserId(pool, workspace_id),
     transport: createProductLinkedInTransport(),
   });
 }

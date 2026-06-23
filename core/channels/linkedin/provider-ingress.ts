@@ -45,10 +45,11 @@ export async function projectLinkedInProviderAuthorization(
 
   const result = await pool.query(
     `insert into channel_accounts (
-       id, workspace_id, kind, display_name, status, daily_cap, daily_used, properties
-     ) values ($1, $2, $3::channel_account_kind, $4, 'connected', $5, 0, $6::jsonb)
+       id, workspace_id, user_id, kind, display_name, status, daily_cap, daily_used, properties
+     ) values ($1, $2, $3, $4::channel_account_kind, $5, 'connected', $6, 0, $7::jsonb)
      on conflict (id) do update
-       set display_name = excluded.display_name,
+       set user_id = excluded.user_id,
+           display_name = excluded.display_name,
            status = 'connected',
            last_error = null,
            daily_cap = coalesce(excluded.daily_cap, channel_accounts.daily_cap),
@@ -58,6 +59,7 @@ export async function projectLinkedInProviderAuthorization(
     [
       payload.channel_account_id,
       event.workspace_id,
+      payload.user_id ?? null,
       payload.kind,
       payload.display_name,
       payload.daily_cap ?? null,

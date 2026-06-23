@@ -1,5 +1,6 @@
 import type { Pool } from "pg";
 import { createNativeLinkedInChannel } from "./dry-run.ts";
+import { repairUserConnectedChannelAccountOwners } from "../account-ownership.ts";
 import type {
   LinkedInChannel,
   LinkedInChannelName,
@@ -11,6 +12,9 @@ export interface PostgresLinkedInChannelOptions {
   pool: Pool;
   transport: LinkedInTransport;
   defaultAction?: LinkedInChannelName;
+  resolveConnectedAccountUserId?: (
+    workspace_id: string,
+  ) => Promise<string | null>;
   now?: () => Date;
 }
 
@@ -23,7 +27,14 @@ export function createPostgresLinkedInChannel(
 
     async send(conversation, draft, ctx) {
       const action = linkedInActionFromDraft(draft.channel) ?? defaultAction;
-      const accounts = await loadLinkedInAccounts(opts.pool, ctx.workspace_id);
+      const connectedAccountUserId = opts.resolveConnectedAccountUserId
+        ? await opts.resolveConnectedAccountUserId(ctx.workspace_id)
+        : null;
+      const accounts = await loadLinkedInAccounts(
+        opts.pool,
+        ctx.workspace_id,
+        connectedAccountUserId,
+      );
       return createNativeLinkedInChannel({
         action,
         accounts,
@@ -37,7 +48,10 @@ export function createPostgresLinkedInChannel(
 async function loadLinkedInAccounts(
   pool: Pool,
   workspaceId: string,
+  connectedAccountUserId: string | null,
 ): Promise<LinkedInSessionAccount[]> {
+  if (!connectedAccountUserId) return [];
+  await repairUserConnectedChannelAccountOwners(pool, workspaceId);
   const { rows } = await pool.query<{
     id: string;
     display_name: string;
@@ -50,9 +64,10 @@ async function loadLinkedInAccounts(
             daily_cap, daily_used
        from channel_accounts
       where workspace_id = $1
+        and user_id = $2
         and kind in ('linkedin_session','linkedin_oauth')
       order by last_used_at nulls first, created_at asc`,
-    [workspaceId],
+    [workspaceId, connectedAccountUserId],
   );
   return rows.map((row) => ({
     id: row.id,

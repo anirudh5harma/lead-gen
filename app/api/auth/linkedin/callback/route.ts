@@ -58,6 +58,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       idempotency_key: `linkedin-authorization:${channelAccountId}`,
       payload: {
         channel_account_id: channelAccountId,
+        user_id: state.user_id,
         kind,
         display_name: displayName,
         provider_account_id: providerAccountId,

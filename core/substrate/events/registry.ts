@@ -744,6 +744,7 @@ const OutlookNotificationReceived = z.object({
 
 const OutlookAuthorizationReceived = z.object({
   channel_account_id: z.string().uuid(),
+  user_id: z.string().uuid().optional(),
   display_name: z.string().min(1),
   daily_cap: z.number().int().min(0),
   encrypted_credentials: z.object({
@@ -1053,6 +1054,7 @@ const ChannelAccountErrored = z.object({
 
 const LinkedInAccountAuthorizationReceived = z.object({
   channel_account_id: z.string().uuid(),
+  user_id: z.string().uuid().optional(),
   kind: z.enum(["linkedin_session", "linkedin_oauth"]),
   display_name: z.string().min(1),
   provider_account_id: z.string().min(1),

@@ -2,6 +2,7 @@ import type { Pool } from "pg";
 import { reconcileWorkspaceMembershipsForAuthIdentity } from "../../core/product/app.ts";
 import { getPool } from "../../core/substrate/storage/index.ts";
 import type { RequestAuthIdentity } from "../auth.ts";
+import { excludeLegacySharedDefaultWorkspace } from "../workspace-selection.ts";
 
 export interface CompletedOnboarding {
   workspace_id: string;
@@ -51,11 +52,12 @@ export async function findCompletedOnboardingForUser(
          exists (
            select 1 from plays p where p.workspace_id = w.id
          ) as has_play
-       from workspace_members wm
-       join workspaces w on w.id = wm.workspace_id
-      where wm.user_id = $1
-        and wm.accepted_at is not null
-        and w.archived_at is null
+      from workspace_members wm
+      join workspaces w on w.id = wm.workspace_id
+     where wm.user_id = $1
+       and wm.accepted_at is not null
+       and w.archived_at is null
+       and ${excludeLegacySharedDefaultWorkspace("w", "wm")}
      )
      select
        workspace_id,

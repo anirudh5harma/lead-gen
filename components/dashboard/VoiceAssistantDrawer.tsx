@@ -50,13 +50,6 @@ interface ConfirmationEntry {
 
 type TimelineEntry = MessageEntry | CardEntry | ConfirmationEntry;
 
-const STARTERS = [
-  "What's our reply rate this week?",
-  "Which companies have we targeted so far?",
-  "What's today's work?",
-  "What are the top qualified signals?",
-] as const;
-
 const HISTORY_LIMIT = 12;
 
 function createId(prefix: string): string {
@@ -491,29 +484,10 @@ export default function VoiceAssistantDrawer() {
           ) : null}
 
           {entries.length === 0 ? (
-            <div className="grid gap-4">
-              <div className="assistant-entry rounded-[20px] border border-[var(--color-line-1)] bg-white/84 p-5 shadow-[0_10px_32px_rgba(16,24,27,0.05)]">
-                <p className="text-[15px] font-semibold tracking-[-0.02em] text-[var(--color-text-1)]">
-                  Try a live operating question
-                </p>
-                <p className="mt-2 text-[13.5px] leading-[1.6] text-[var(--color-text-3)]">
-                  The assistant reads your live metrics and pulls qualitative
-                  evidence from the knowledge graph, company memory, and
-                  conversation proof.
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {STARTERS.map((starter) => (
-                    <button
-                      key={starter}
-                      type="button"
-                      onClick={() => void streamTurn(starter, "text")}
-                      className="rounded-full border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3.5 py-2 text-left text-[12.5px] font-medium tracking-[-0.01em] text-[var(--color-text-2)] transition hover:border-[var(--color-line-2)] hover:text-[var(--color-text-1)]"
-                    >
-                      {starter}
-                    </button>
-                  ))}
-                </div>
-              </div>
+            <div className="px-1 py-1 text-[13.5px] leading-[1.6] text-[var(--color-text-3)]">
+              The assistant reads your live metrics and pulls qualitative
+              evidence from the knowledge graph, company memory, and
+              conversation proof.
             </div>
           ) : (
             <div className="grid gap-3">

@@ -629,3 +629,27 @@ test("product surface: resolves first accepted workspace membership", async (t) 
     await resetPool();
   }
 });
+
+test("product surface: ignores the legacy shared default workspace for non-owner members", async () => {
+  const user_id = "00000000-0000-4000-8000-00000000beef";
+  const personalWorkspaceId = randomUUID();
+  let seenSql = "";
+  let seenParams: string[] = [];
+
+  const pool = {
+    query: async (sql: string, params: string[]) => {
+      seenSql = sql;
+      seenParams = params;
+      return { rows: [{ id: personalWorkspaceId }] };
+    },
+  } as never;
+
+  assert.equal(
+    await findFirstProductWorkspaceForUser(user_id, pool),
+    personalWorkspaceId,
+  );
+  assert.deepEqual(seenParams, [user_id]);
+  assert.match(seenSql, /w\.slug = 'default'/);
+  assert.match(seenSql, /wm\.role <> 'owner'/);
+  assert.match(seenSql, /legacy_wm\.workspace_id = w\.id/);
+});

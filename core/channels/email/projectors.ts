@@ -216,13 +216,14 @@ export async function projectOutlookAuthorization(
   }
   const result = await pool.query(
     `insert into channel_accounts (
-       id, workspace_id, kind, display_name, status,
+       id, workspace_id, user_id, kind, display_name, status,
        daily_cap, credentials, properties
      ) values (
-       $1, $2, 'oauth_outlook', $3, 'connected',
-       $4, $5::jsonb, $6::jsonb
+       $1, $2, $3, 'oauth_outlook', $4, 'connected',
+       $5, $6::jsonb, $7::jsonb
      )
      on conflict (id) do update set
+       user_id = excluded.user_id,
        display_name = excluded.display_name,
        status = 'connected',
        daily_cap = excluded.daily_cap,
@@ -236,6 +237,7 @@ export async function projectOutlookAuthorization(
     [
       payload.channel_account_id,
       workspaceId,
+      payload.user_id ?? null,
       payload.display_name,
       payload.daily_cap,
       JSON.stringify(payload.encrypted_credentials),

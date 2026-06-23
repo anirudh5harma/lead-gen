@@ -128,10 +128,12 @@ const emailChannel = createPostgresOwnedDomainEmailChannel({
   pool,
   transport: createOptionalResendEmailTransport(),
   outlook,
+  resolveConnectedAccountUserId: workflowUserId,
 });
 const linkedinChannel = createPostgresLinkedInChannel({
   pool,
   transport: createProductLinkedInTransport(),
+  resolveConnectedAccountUserId: workflowUserId,
 });
 
 const workflows = [

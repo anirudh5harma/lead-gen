@@ -5,6 +5,7 @@ import {
   findCompletedOnboardingForUser,
 } from "../lib/auth/onboarding.ts";
 import type { Pool } from "pg";
+import { setupPg } from "./_pg.ts";
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 
@@ -181,4 +182,29 @@ test("completed onboarding does not repair unverified auth identities", async ()
   );
 
   assert.equal(reconciled, false);
+});
+
+test("completed onboarding ignores the legacy shared default workspace for non-owner members", async (t) => {
+  const fx = await setupPg("auth_onboarding_legacy_default");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  try {
+    const defaultWorkspaceId = "22222222-2222-4222-8222-222222222222";
+    const ownerId = "33333333-3333-4333-8333-333333333333";
+    await fx.pool.query(
+      `insert into workspaces (id, slug, name, settings)
+       values ($1, 'default', 'Default Workspace', '{}'::jsonb)`,
+      [defaultWorkspaceId],
+    );
+    await fx.pool.query(
+      `insert into workspace_members (workspace_id, user_id, role, accepted_at)
+       values ($1, $2, 'member', now()),
+              ($1, $3, 'owner', now())`,
+      [defaultWorkspaceId, USER_ID, ownerId],
+    );
+
+    assert.equal(await findCompletedOnboardingForUser(USER_ID, fx.pool), null);
+  } finally {
+    await fx.close();
+  }
 });

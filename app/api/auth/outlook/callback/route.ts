@@ -159,7 +159,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       "outlook";
     const pool = getPool();
     const channelAccountId =
-      (await findExistingOutlookAccountId(pool, state.workspace_id, {
+      (await findExistingOutlookAccountId(pool, state.workspace_id, state.user_id, {
         ms_user_id: me.id,
         mailbox_email: mailboxEmail,
         display_name: displayName,
@@ -186,6 +186,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       idempotency_key: `outlook-authorization:${channelAccountId}:${state.nonce}`,
       payload: {
         channel_account_id: channelAccountId,
+        user_id: state.user_id,
         display_name: displayName,
         daily_cap: Number(process.env.OUTLOOK_DEFAULT_DAILY_CAP ?? 25),
         encrypted_credentials: credentials,
@@ -226,6 +227,7 @@ export async function GET(req: NextRequest): Promise<Response> {
 export async function findExistingOutlookAccountId(
   pool: Pool,
   workspace_id: string,
+  user_id: string,
   identity: OutlookAccountIdentity,
 ): Promise<string | null> {
   const mailboxEmail = identity.mailbox_email?.trim().toLowerCase() || null;
@@ -247,6 +249,10 @@ export async function findExistingOutlookAccountId(
           or ($4::text is not null and lower(display_name) = $4)
         )
       order by case
+                 when channel_accounts.user_id = $5 then 0
+                 else 1
+               end,
+               case
                  when properties ->> 'ms_user_id' = $2 then 0
                  when $3::text is not null
                    and coalesce(
@@ -263,7 +269,7 @@ export async function findExistingOutlookAccountId(
                updated_at desc,
                created_at asc
       limit 1`,
-    [workspace_id, identity.ms_user_id, mailboxEmail, displayName],
+    [workspace_id, identity.ms_user_id, mailboxEmail, displayName, user_id],
   );
   return rows[0]?.id ?? null;
 }

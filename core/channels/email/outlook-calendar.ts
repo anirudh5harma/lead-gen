@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import { repairUserConnectedChannelAccountOwners } from "../account-ownership.ts";
 import type { OutlookAccessTokenProvider } from "./adapters/outlook.ts";
 
 const GET_SCHEDULE_ENDPOINT =
@@ -26,6 +27,7 @@ export interface OutlookCalendarAvailabilityOptions {
   pool: Pool;
   accessTokens: OutlookAccessTokenProvider | null | undefined;
   workspace_id: string;
+  user_id: string;
   now?: Date;
   fetchImpl?: typeof fetch;
   maxSuggestions?: number;
@@ -55,7 +57,12 @@ export async function getOutlookCalendarAvailability(
   if (!opts.accessTokens) {
     return unavailable("calendar_not_configured");
   }
-  const account = await loadOutlookCalendarAccount(opts.pool, opts.workspace_id);
+  await repairUserConnectedChannelAccountOwners(opts.pool, opts.workspace_id);
+  const account = await loadOutlookCalendarAccount(
+    opts.pool,
+    opts.workspace_id,
+    opts.user_id,
+  );
   if (!account) return unavailable("no_connected_calendar");
 
   let accessToken: string;
@@ -154,16 +161,18 @@ export function suggestOutlookMeetingTimes(input: {
 async function loadOutlookCalendarAccount(
   pool: Pool,
   workspace_id: string,
+  user_id: string,
 ): Promise<OutlookCalendarAccountRow | null> {
   const { rows } = await pool.query<OutlookCalendarAccountRow>(
     `select id, display_name
        from channel_accounts
       where workspace_id = $1
+        and user_id = $2
         and kind = 'oauth_outlook'
         and status = 'connected'
       order by last_used_at nulls first, created_at asc
       limit 1`,
-    [workspace_id],
+    [workspace_id, user_id],
   );
   return rows[0] ?? null;
 }

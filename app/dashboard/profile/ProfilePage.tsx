@@ -20,6 +20,7 @@ import {
   buildOutputDestinations,
   type OutputDestination,
 } from "@/core/product/output-destinations.ts";
+import { repairUserConnectedChannelAccountOwners } from "@/core/channels/account-ownership.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getWorkspaceBillingState } from "@/core/billing/index.ts";
 import PlanSection from "@/components/dashboard/PlanSection";
@@ -282,6 +283,7 @@ function isMissingMcpOauthSchema(error: unknown): boolean {
 
 async function loadProfileState(workspaceId: string, userId: string): Promise<ProfileState> {
   const pool = getPool();
+  await repairUserConnectedChannelAccountOwners(pool, workspaceId);
   const emptyState = emptyProfileState();
   const [
     settings,
@@ -349,6 +351,7 @@ async function loadProfileState(workspaceId: string, userId: string): Promise<Pr
                     ) as account_rank
                from channel_accounts
               where workspace_id = $1
+                and user_id = $2
                 and kind = 'oauth_outlook'
            )
            select id, display_name, status, daily_cap, last_error, properties, updated_at
@@ -356,7 +359,7 @@ async function loadProfileState(workspaceId: string, userId: string): Promise<Pr
             where account_rank = 1
             order by updated_at desc
             limit 1`,
-          [workspaceId],
+          [workspaceId, userId],
         );
         return rows[0] ?? null;
       },
@@ -375,12 +378,13 @@ async function loadProfileState(workspaceId: string, userId: string): Promise<Pr
                   updated_at
              from channel_accounts
             where workspace_id = $1
+              and user_id = $2
               and kind in ('linkedin_session','linkedin_oauth')
             order by case when status = 'connected' then 0 else 1 end,
                      updated_at desc,
                      created_at desc
             limit 2`,
-          [workspaceId],
+          [workspaceId, userId],
         )
       ).rows,
     ),

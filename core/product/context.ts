@@ -585,7 +585,7 @@ export function formatChannelReadiness(accounts: readonly ContextChannelAccount[
         account.kind.startsWith("linkedin_") && account.provider_status
           ? ` provider=${account.provider_status}`
           : "";
-      return `- ${line(account.display_name)} kind=${account.kind} status=${account.status} used=${account.daily_used}/${cap}${provider}`;
+      return `- ${line(channelAccountLabel(account))} kind=${account.kind} status=${account.status} used=${account.daily_used}/${cap}${provider}`;
     }),
   );
 }
@@ -596,9 +596,17 @@ export function formatEmailDeliverability(accounts: readonly ContextChannelAccou
       .filter((account) => account.kind === "email_domain" || account.kind === "oauth_outlook")
       .map(
         (account) =>
-          `- ${line(account.display_name)} status=${account.status} domain=${account.domain ?? "-"} warmup=${account.warmup_state ?? "-"} cap=${account.daily_used}/${account.current_daily_cap ?? account.daily_cap ?? "-"} bounce24h=${account.bounce_rate_24h ?? "-"}`,
+          `- ${line(channelAccountLabel(account))} status=${account.status} domain=${account.domain ?? "-"} warmup=${account.warmup_state ?? "-"} cap=${account.daily_used}/${account.current_daily_cap ?? account.daily_cap ?? "-"} bounce24h=${account.bounce_rate_24h ?? "-"}`,
       ),
   );
+}
+
+function channelAccountLabel(account: ContextChannelAccount): string {
+  if (account.kind === "oauth_outlook") return "Outlook account";
+  if (account.kind === "linkedin_session" || account.kind === "linkedin_oauth") {
+    return "LinkedIn account";
+  }
+  return account.display_name;
 }
 
 function line(value: unknown): string {

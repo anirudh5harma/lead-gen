@@ -11,6 +11,7 @@ import type {
   EmailTransport,
 } from "./types.ts";
 import type { OutlookSender } from "./adapters/outlook.ts";
+import { repairUserConnectedChannelAccountOwners } from "../account-ownership.ts";
 
 type DomainWarmupState =
   | "unverified"
@@ -67,6 +68,9 @@ export interface PostgresOwnedDomainEmailChannelOptions {
   pool: Pool;
   transport?: EmailTransport;
   outlook?: OutlookSender;
+  resolveConnectedAccountUserId?: (
+    workspace_id: string,
+  ) => Promise<string | null>;
   now?: () => Date;
   bounceRateLimit?: number;
   complaintRateLimit?: number;
@@ -275,10 +279,14 @@ async function reserveAccount(
   opts: {
     includeOwnedDomain: boolean;
     includeOutlook: boolean;
+    connectedAccountUserId: string | null;
     bounceRateLimit: number;
     complaintRateLimit: number;
   },
 ): Promise<ReservationDecision> {
+  if (opts.includeOutlook) {
+    await repairUserConnectedChannelAccountOwners(client, workspace_id);
+  }
   const { rows } = await client.query<AccountCandidate>(
     `select ca.id,
             ca.display_name,
@@ -297,14 +305,19 @@ async function reserveAccount(
          on sd.channel_account_id = ca.id
       where ca.workspace_id = $1
         and (
-          ($2::boolean and ca.kind = 'oauth_outlook')
+          ($2::boolean and ca.kind = 'oauth_outlook' and ca.user_id = $4)
           or ($3::boolean and ca.kind = 'email_domain')
         )
       order by case when ca.kind = 'oauth_outlook' then 0 else 1 end,
                ca.last_used_at nulls first,
                ca.created_at asc
       for update of ca`,
-    [workspace_id, opts.includeOutlook, opts.includeOwnedDomain],
+    [
+      workspace_id,
+      opts.includeOutlook && opts.connectedAccountUserId !== null,
+      opts.includeOwnedDomain,
+      opts.connectedAccountUserId,
+    ],
   );
 
   let fallback: ReservationDecision = { defer_reason: "no_connected_email_account" };
@@ -403,9 +416,13 @@ export function createPostgresOwnedDomainEmailChannel(
           if (recipientFrequency) {
             reservation = recipientFrequency;
           } else {
+            const connectedAccountUserId = opts.resolveConnectedAccountUserId
+              ? await opts.resolveConnectedAccountUserId(conversation.workspace_id)
+              : null;
             reservation = await reserveAccount(client, conversation.workspace_id, nowDate, {
               includeOwnedDomain: Boolean(opts.transport),
               includeOutlook: Boolean(opts.outlook),
+              connectedAccountUserId,
               bounceRateLimit,
               complaintRateLimit,
             });

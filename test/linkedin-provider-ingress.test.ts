@@ -60,6 +60,7 @@ test("LinkedIn provider authorization creates account and emits connected lifecy
   const workspace_id = randomUUID();
   const channel_account_id = randomUUID();
   const event_id = randomUUID();
+  const user_id = randomUUID();
 
   await projectLinkedInProviderAuthorization(pool, bus as never, {
     id: event_id,
@@ -74,6 +75,7 @@ test("LinkedIn provider authorization creates account and emits connected lifecy
     occurred_at: "2026-06-02T10:00:00.000Z",
     payload: {
       channel_account_id,
+      user_id,
       kind: "linkedin_oauth",
       display_name: "Founder LinkedIn",
       provider_account_id: "provider-acct-1",
@@ -86,10 +88,11 @@ test("LinkedIn provider authorization creates account and emits connected lifecy
   assert.match(calls[0]!.sql, /insert into channel_accounts/);
   assert.equal(calls[0]!.values?.[0], channel_account_id);
   assert.equal(calls[0]!.values?.[1], workspace_id);
-  assert.equal(calls[0]!.values?.[2], "linkedin_oauth");
-  assert.equal(calls[0]!.values?.[3], "Founder LinkedIn");
-  assert.equal(calls[0]!.values?.[4], 15);
-  assert.deepEqual(JSON.parse(String(calls[0]!.values?.[5])), {
+  assert.equal(calls[0]!.values?.[2], user_id);
+  assert.equal(calls[0]!.values?.[3], "linkedin_oauth");
+  assert.equal(calls[0]!.values?.[4], "Founder LinkedIn");
+  assert.equal(calls[0]!.values?.[5], 15);
+  assert.deepEqual(JSON.parse(String(calls[0]!.values?.[6])), {
     provider_workspace: "workspace-1",
     provider: "linkedin",
     provider_account_id: "provider-acct-1",

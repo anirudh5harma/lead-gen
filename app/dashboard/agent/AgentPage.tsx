@@ -115,6 +115,7 @@ interface AgentOutreachRow {
   eval_score: string | null;
   eval_passed: boolean | null;
   channel_account_name: string | null;
+  channel_account_kind: string | null;
   channel_account_status: string | null;
   sent_at: Date | null;
   created_at: Date;
@@ -1274,6 +1275,7 @@ async function loadAgentOutreachSummary(
                 else m.eval_passed
               end as eval_passed,
               ca.display_name as channel_account_name,
+              ca.kind::text as channel_account_kind,
               ca.status::text as channel_account_status,
               m.sent_at,
               m.created_at,
@@ -6625,6 +6627,10 @@ function ContactHandlePill({
 
 function OutreachAccountPill({ message }: { message: AgentOutreachRow }) {
   const connected = message.channel_account_status === "connected";
+  const label = genericMessageChannelAccountLabel(
+    message.channel_account_kind,
+    message.channel_account_name,
+  );
   return (
     <span
       className={
@@ -6634,19 +6640,28 @@ function OutreachAccountPill({ message }: { message: AgentOutreachRow }) {
           : "bg-[var(--color-ink-2)] text-[var(--color-text-3)]")
       }
       title={
-        message.channel_account_name
-          ? `Sent through ${message.channel_account_name}`
+        label
+          ? `Sent through ${label}`
           : "No connected account provenance was recorded for this message."
       }
     >
       <Icon name="account_tree" size={13} />
       <span className="truncate">
-        {message.channel_account_name
-          ? `Via ${message.channel_account_name}`
-          : "Account not recorded"}
+        {label ? `Via ${label}` : "Account not recorded"}
       </span>
     </span>
   );
+}
+
+function genericMessageChannelAccountLabel(
+  kind: string | null,
+  fallback: string | null,
+): string | null {
+  if (kind === "oauth_outlook") return "Outlook account";
+  if (kind === "linkedin_session" || kind === "linkedin_oauth") {
+    return "LinkedIn account";
+  }
+  return fallback;
 }
 
 function OutreachQualityPill({ message }: { message: AgentOutreachRow }) {
@@ -7093,11 +7108,21 @@ function channelConnection(
   }
   return {
     connected: channel.status === "connected",
-    label: channel.display_name,
+    label: genericChannelLabel(channel.kind, channel.status === "connected"),
     status: channel.status,
     dailyCap: channel.daily_cap,
     href,
   };
+}
+
+function genericChannelLabel(kind: string, connected: boolean): string {
+  if (kind === "oauth_outlook") {
+    return connected ? "Outlook connected" : "Connect Outlook";
+  }
+  if (kind === "linkedin_session" || kind === "linkedin_oauth") {
+    return connected ? "LinkedIn connected" : "Connect LinkedIn";
+  }
+  return connected ? "Channel connected" : "Connect channel";
 }
 
 function firstChannelPolicy(
