@@ -130,6 +130,10 @@ test("product env: .env.example tracks every manifest key", () => {
   assert.deepEqual(missing, []);
 });
 
+// Ambient OS/runtime variables that are not product configuration and are
+// intentionally excluded from the PRODUCT_ENV_VARS manifest.
+const AMBIENT_ENV_ALLOWLIST = new Set(["HOME"]);
+
 test("product env: runtime process.env keys are tracked in the manifest", () => {
   const documented = new Set(PRODUCT_ENV_VARS.map((item) => item.name));
   const used = new Set<string>();
@@ -140,7 +144,9 @@ test("product env: runtime process.env keys are tracked in the manifest", () => 
     }
   }
 
-  const missing = [...used].filter((name) => !documented.has(name)).sort();
+  const missing = [...used]
+    .filter((name) => !documented.has(name) && !AMBIENT_ENV_ALLOWLIST.has(name))
+    .sort();
   assert.deepEqual(missing, []);
 });
 
