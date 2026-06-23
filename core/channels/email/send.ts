@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import type { EventBus } from "../../substrate/events/index.ts";
 import { getWorkspaceBillingState } from "../../billing/index.ts";
+import { getWorkspaceActivationState } from "../../product/activation-state.ts";
 import { projectMessageLifecycleEvent } from "../message-lifecycle.ts";
 import {
   checkFrequencyCap,
@@ -90,6 +91,23 @@ async function sendEmail(
       status: "deferred",
       message_id: opts.message_id,
       reason,
+    };
+  }
+
+  const activation = await getWorkspaceActivationState(pool, opts.workspace_id);
+  if (!activation.product_ready) {
+    await emitDeferred(
+      deps,
+      opts,
+      "website_required",
+      activation.website_set
+        ? "company description required before sending"
+        : "company website and description required before sending",
+    );
+    return {
+      status: "deferred",
+      message_id: opts.message_id,
+      reason: "website_required",
     };
   }
 

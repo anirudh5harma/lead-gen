@@ -55,6 +55,7 @@ export interface EmailDraft {
 export type DeferReason =
   | "not_judged"
   | "judge_failed"
+  | "website_required"
   | "trial_frozen"
   | "daily_cap_reached"
   | "domain_frozen"

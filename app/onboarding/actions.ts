@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
-  createProductWorkspaceForUser,
+  getOrCreateProductWorkspaceForUser,
   runWorkspaceActivationSetup,
   runWorkspaceSignalIngestion,
   verifiedProductWorkspaceSession,
@@ -25,6 +25,7 @@ export interface OnboardingActionState {
 }
 
 const POST_ONBOARDING_PATH = "/dashboard/profile#channels";
+const POST_ONBOARDING_WEBSITE_PENDING_PATH = "/dashboard/profile#profile";
 
 function value(formData: FormData, key: string): string {
   return String(formData.get(key) ?? "").trim();
@@ -47,7 +48,7 @@ async function requireOnboardingSession(
     await setActiveWorkspaceCookie(completed.workspace_id);
     redirect(PRODUCT_HOME_PATH);
   }
-  const workspace = await createProductWorkspaceForUser(
+  const workspace = await getOrCreateProductWorkspaceForUser(
     {
       name: workspaceName,
       slug: workspaceName,
@@ -62,8 +63,7 @@ async function requireOnboardingSession(
 }
 
 export async function createActivationSetupAction(formData: FormData) {
-  await createActivationSetup(formData);
-  redirect(POST_ONBOARDING_PATH);
+  redirectAfterActivationSetup(await createActivationSetup(formData));
 }
 
 export async function createActivationSetupFormAction(
@@ -71,7 +71,7 @@ export async function createActivationSetupFormAction(
   formData: FormData,
 ): Promise<OnboardingActionState> {
   try {
-    await createActivationSetup(formData);
+    redirectAfterActivationSetup(await createActivationSetup(formData));
   } catch (error) {
     if (isNextRedirectError(error)) throw error;
     return {
@@ -81,7 +81,7 @@ export async function createActivationSetupFormAction(
           : "Could not create the workspace. Try again.",
     };
   }
-  redirect(POST_ONBOARDING_PATH);
+  return { error: null };
 }
 
 export async function createProfileAndAggregatorAction(formData: FormData) {
@@ -100,11 +100,31 @@ function isNextRedirectError(error: unknown): boolean {
   return String((error as { digest?: unknown }).digest).startsWith("NEXT_REDIRECT;");
 }
 
-async function createActivationSetup(formData: FormData): Promise<void> {
+function redirectAfterActivationSetup(path: string): never {
+  if (path === POST_ONBOARDING_PATH) {
+    redirect(POST_ONBOARDING_PATH);
+  }
+  if (path === POST_ONBOARDING_WEBSITE_PENDING_PATH) {
+    redirect(POST_ONBOARDING_WEBSITE_PENDING_PATH);
+  }
+  redirect(path);
+}
+
+async function createActivationSetup(formData: FormData): Promise<string> {
+  const intent = value(formData, "onboarding_intent");
+  const skipWebsite = intent === "skip_website";
   const websiteUrl = normalizeCompanyWebsiteUrl(value(formData, "website_url"));
+  const companyHint = value(formData, "company_name");
+  if (skipWebsite) {
+    const companyName = companyHint || "Bombsell Workspace";
+    await requireOnboardingSession(`${companyName} GTM`);
+    revalidatePath("/dashboard");
+    revalidatePath("/dashboard/profile");
+    return POST_ONBOARDING_WEBSITE_PENDING_PATH;
+  }
+
   if (!websiteUrl) throw new Error("Enter a valid company website.");
 
-  const companyHint = value(formData, "company_name");
   const companyName = companyHint || companyNameFromWebsiteUrl(websiteUrl);
   const session = await requireOnboardingSession(`${companyName} GTM`);
   await runWorkspaceActivationSetup(
@@ -144,6 +164,7 @@ async function createActivationSetup(formData: FormData): Promise<void> {
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/profile");
   revalidatePath("/dashboard/agent");
+  return POST_ONBOARDING_PATH;
 }
 
 function companyNameFromWebsiteUrl(websiteUrl: string): string {

@@ -27,7 +27,10 @@ test("launch readiness: blocks launch until setup and one channel are ready", ()
       suspended_linkedin: 0,
       disconnected_linkedin: 0,
     },
-    { now: new Date("2026-06-15T10:00:00.000Z") },
+    {
+      activation: { website_set: true, description_set: true, product_ready: true },
+      now: new Date("2026-06-15T10:00:00.000Z"),
+    },
   );
 
   assert.equal(readiness.workspace_id, workspace_id);
@@ -101,6 +104,7 @@ test("launch readiness: requires both channels when a Play needs both", () => {
       disconnected_linkedin: 0,
     },
     {
+      activation: { website_set: true, description_set: true, product_ready: true },
       required_channel: "both",
       now: new Date("2026-06-15T10:00:00.000Z"),
     },
@@ -131,7 +135,10 @@ test("launch readiness: one healthy outreach channel can satisfy default launch"
       suspended_linkedin: 0,
       disconnected_linkedin: 0,
     },
-    { now: new Date("2026-06-15T10:00:00.000Z") },
+    {
+      activation: { website_set: true, description_set: true, product_ready: true },
+      now: new Date("2026-06-15T10:00:00.000Z"),
+    },
   );
 
   assert.equal(readiness.status, "ready");
@@ -169,10 +176,57 @@ test("launch readiness: connected Outlook without active subscription asks for s
   assert.equal(outlook?.action?.label, "Review Outlook sync");
 });
 
+test("launch readiness: blocks on workspace profile until website + description exist", () => {
+  const ready = {
+    workspace_profiles: 1,
+    enabled_icps: 1,
+    active_reps: 1,
+    enabled_sources: 1,
+    active_plays: 1,
+    connected_outlook: 1,
+    active_outlook_subscriptions: 1,
+    needs_reauth_outlook: 0,
+    errored_outlook: 0,
+    connected_linkedin: 0,
+    rate_limited_linkedin: 0,
+    needs_reauth_linkedin: 0,
+    suspended_linkedin: 0,
+    disconnected_linkedin: 0,
+  };
+  const now = new Date("2026-06-15T10:00:00.000Z");
+
+  // Website set but no description yet → still blocked on the profile gate.
+  const partial = buildWorkspaceLaunchReadiness(randomUUID(), ready, {
+    activation: { website_set: true, description_set: false, product_ready: false },
+    now,
+  });
+  assert.equal(partial.status, "blocked");
+  assert.equal(partial.next_action, "configure_profile");
+  assert.ok(partial.blockers.includes("workspace_profile"));
+
+  // Website + description → profile gate clears and launch is ready.
+  const productReady = buildWorkspaceLaunchReadiness(randomUUID(), ready, {
+    activation: { website_set: true, description_set: true, product_ready: true },
+    now,
+  });
+  assert.equal(productReady.launch_ready, true);
+  assert.ok(!productReady.blockers.includes("workspace_profile"));
+});
+
 test("launch readiness: loader uses the workspace-scoped launch query", async () => {
   let sql = "";
   const pool = {
     async query<T>(query: string) {
+      // The launch loader also reads workspace activation state from
+      // graph_companies; return a product-ready company for that query.
+      if (query.includes("as website_url")) {
+        return {
+          rows: [{
+            website_url: "https://acme.test",
+            description: "Acme builds GTM tooling.",
+          }] as T[],
+        };
+      }
       sql = query;
       return {
         rows: [{

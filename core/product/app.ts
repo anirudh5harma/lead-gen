@@ -138,6 +138,7 @@ import {
   type LinkedInTransport,
 } from "../channels/linkedin/index.ts";
 import { createMessageLifecycleProjection } from "../channels/message-lifecycle.ts";
+export { getWorkspaceActivationState } from "./activation-state.ts";
 import { createReplyLifecycleProjection } from "../channels/reply-lifecycle.ts";
 import {
   createRssSignalIngestionWorkflow,
@@ -1683,6 +1684,53 @@ export async function createProductWorkspaceForUser(
     }
   }
   throw new Error("Could not create a unique workspace slug");
+}
+
+export async function getOrCreateProductWorkspaceForUser(
+  input: { name: string; slug?: string },
+  user_id: string,
+  pool = getPool(),
+): Promise<ProductWorkspace> {
+  const existingId = await findFirstProductWorkspaceForUser(user_id, pool);
+  if (existingId) {
+    const { rows } = await pool.query<ProductWorkspace>(
+      `select id, slug::text as slug, name
+         from workspaces
+        where id = $1
+        limit 1`,
+      [existingId],
+    );
+    if (rows[0]) return rows[0];
+  }
+
+  const lockClient = await pool.connect();
+  try {
+    await lockClient.query(
+      `select pg_advisory_lock(hashtextextended($1, 0))`,
+      [`product-onboarding-workspace:${user_id}`],
+    );
+    const guardedId = await findFirstProductWorkspaceForUser(user_id, pool);
+    if (guardedId) {
+      const { rows } = await pool.query<ProductWorkspace>(
+        `select id, slug::text as slug, name
+           from workspaces
+          where id = $1
+          limit 1`,
+        [guardedId],
+      );
+      if (rows[0]) return rows[0];
+    }
+    return createProductWorkspaceForUser(input, user_id, pool);
+  } finally {
+    try {
+      await lockClient.query(
+        `select pg_advisory_unlock(hashtextextended($1, 0))`,
+        [`product-onboarding-workspace:${user_id}`],
+      );
+    } finally {
+      lockClient.release();
+    }
+  }
 }
 
 async function projectWorkspaceCreated(

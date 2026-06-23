@@ -7,9 +7,12 @@ import {
   configureWorkspaceCompanyProfile,
   configureWorkspaceEmailAccount,
   getProductCompanyProfile,
+  getOrCreateProductWorkspaceForUser,
+  getWorkspaceActivationState,
   resetProductEngineForTests,
 } from "../core/product/app.ts";
 import { resetPool, setPool } from "../core/substrate/storage/index.ts";
+import { findCompletedOnboardingForUser } from "../lib/auth/onboarding.ts";
 import { setupPg } from "./_pg.ts";
 
 test("product bootstrap emits typed events for seeded primitives", async (t) => {
@@ -303,6 +306,14 @@ test("workspace company profile edits replace scraped defaults", async (t) => {
     assert.equal(profile?.company_name, "Acme Revenue");
     assert.equal(profile?.industry, null);
     assert.equal(profile?.description, "User-written profile for founder-led GTM.");
+    assert.deepEqual(
+      await getWorkspaceActivationState(fx.pool, boot.workspace_id),
+      {
+        website_set: true,
+        description_set: true,
+        product_ready: true,
+      },
+    );
 
     const row = await fx.pool.query<{
       properties: Record<string, unknown>;
@@ -367,6 +378,101 @@ test("workspace company profile edits replace scraped defaults", async (t) => {
     );
     const cleared = await getProductCompanyProfile(fx.pool, session);
     assert.equal(cleared?.description, null);
+    assert.deepEqual(
+      await getWorkspaceActivationState(fx.pool, boot.workspace_id),
+      {
+        website_set: true,
+        description_set: false,
+        product_ready: false,
+      },
+    );
+  } finally {
+    await resetProductEngineForTests();
+    await fx.close();
+    await resetPool();
+  }
+});
+
+test("website-pending onboarding completes without creating a company profile", async (t) => {
+  const fx = await setupPg("product_onboarding_pending");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  setPool(fx.pool);
+  try {
+    const userId = randomUUID();
+    const workspace = await getOrCreateProductWorkspaceForUser(
+      { name: "Website Pending GTM" },
+      userId,
+      fx.pool,
+    );
+
+    const completed = await findCompletedOnboardingForUser(userId, fx.pool);
+    assert.deepEqual(completed, {
+      workspace_id: workspace.id,
+      completion_source: "accepted_workspace",
+    });
+    assert.deepEqual(
+      await getWorkspaceActivationState(fx.pool, workspace.id),
+      {
+        website_set: false,
+        description_set: false,
+        product_ready: false,
+      },
+    );
+
+    const profiles = await fx.pool.query<{ count: string }>(
+      `select count(*)::text as count
+         from graph_companies
+        where workspace_id = $1
+          and properties->>'profile_role' = 'workspace_company'`,
+      [workspace.id],
+    );
+    assert.equal(profiles.rows[0]?.count, "0");
+  } finally {
+    await resetProductEngineForTests();
+    await fx.close();
+    await resetPool();
+  }
+});
+
+test("website-pending onboarding deduplicates concurrent workspace creation for one user", async (t) => {
+  const fx = await setupPg("product_onboarding_dedup");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  setPool(fx.pool);
+  try {
+    const userId = randomUUID();
+    const [first, second] = await Promise.all([
+      getOrCreateProductWorkspaceForUser(
+        { name: "Concurrent GTM" },
+        userId,
+        fx.pool,
+      ),
+      getOrCreateProductWorkspaceForUser(
+        { name: "Concurrent GTM" },
+        userId,
+        fx.pool,
+      ),
+    ]);
+    assert.equal(first.id, second.id);
+
+    const memberships = await fx.pool.query<{ count: string }>(
+      `select count(*)::text as count
+         from workspace_members
+        where user_id = $1
+          and accepted_at is not null`,
+      [userId],
+    );
+    assert.equal(memberships.rows[0]?.count, "1");
+
+    const events = await fx.pool.query<{ count: string }>(
+      `select count(*)::text as count
+         from events
+        where workspace_id = $1
+          and event_type = 'workspace.created'`,
+      [first.id],
+    );
+    assert.equal(events.rows[0]?.count, "1");
   } finally {
     await resetProductEngineForTests();
     await fx.close();

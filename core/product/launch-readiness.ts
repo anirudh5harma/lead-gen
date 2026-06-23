@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import { getWorkspaceActivationState } from "./activation-state.ts";
 
 export type LaunchReadinessStatus = "ready" | "needs_attention" | "blocked";
 export type LaunchReadinessRequiredChannel = "any" | "email" | "linkedin" | "both";
@@ -73,7 +74,8 @@ export async function loadWorkspaceLaunchReadiness(
   opts: { required_channel?: LaunchReadinessRequiredChannel; now?: Date } = {},
 ): Promise<WorkspaceLaunchReadiness> {
   const required_channel = opts.required_channel ?? "any";
-  const { rows } = await pool.query<LaunchReadinessRow>(
+  const [{ rows }, activation] = await Promise.all([
+    pool.query<LaunchReadinessRow>(
     `with outlook_accounts as (
        select coalesce(
                 nullif(lower(properties ->> 'mailbox_email'), ''),
@@ -143,12 +145,15 @@ export async function loadWorkspaceLaunchReadiness(
           where workspace_id = $1
             and kind in ('linkedin_session','linkedin_oauth')
             and status = 'disconnected') as disconnected_linkedin`,
-    [workspace_id],
-  );
+      [workspace_id],
+    ),
+    getWorkspaceActivationState(pool, workspace_id),
+  ]);
   return buildWorkspaceLaunchReadiness(
     workspace_id,
     rows[0] ?? emptyLaunchReadinessRow(),
     {
+      activation,
       required_channel,
       now: opts.now,
     },
@@ -158,9 +163,18 @@ export async function loadWorkspaceLaunchReadiness(
 export function buildWorkspaceLaunchReadiness(
   workspace_id: string,
   row: LaunchReadinessRow,
-  opts: { required_channel?: LaunchReadinessRequiredChannel; now?: Date } = {},
+  opts: {
+    activation?: { website_set: boolean; description_set: boolean; product_ready: boolean };
+    required_channel?: LaunchReadinessRequiredChannel;
+    now?: Date;
+  } = {},
 ): WorkspaceLaunchReadiness {
   const required_channel = opts.required_channel ?? "any";
+  const activation = opts.activation ?? {
+    website_set: false,
+    description_set: false,
+    product_ready: false,
+  };
   const counts = {
     workspaceProfiles: numericCount(row.workspace_profiles),
     enabledIcps: numericCount(row.enabled_icps),
@@ -183,15 +197,7 @@ export function buildWorkspaceLaunchReadiness(
     counts.erroredOutlook === 0;
   const linkedInReady = counts.connectedLinkedIn > 0;
   const checks: LaunchReadinessCheck[] = [
-    countCheck({
-      id: "workspace_profile",
-      label: "Profile",
-      primitive: "Signal",
-      count: counts.workspaceProfiles,
-      detailReady: "Company profile is available for matching and personalization.",
-      detailBlocked: "No workspace company profile is available from the website setup.",
-      action: action("Configure profile", ["product.company.profile.configure"], "/dashboard/profile#profile"),
-    }),
+    workspaceProfileCheck(activation),
     countCheck({
       id: "icp",
       label: "Buyer fit",
@@ -265,6 +271,37 @@ export function buildWorkspaceLaunchReadiness(
     checks,
     blockers,
     warnings,
+  };
+}
+
+function workspaceProfileCheck(activation: {
+  website_set: boolean;
+  description_set: boolean;
+  product_ready: boolean;
+}): LaunchReadinessCheck {
+  let detail =
+    "Add the company website and description in Profile before activation can launch.";
+  if (activation.website_set && !activation.description_set) {
+    detail =
+      "The company website is saved, but Profile still needs a company description before activation can launch.";
+  }
+  return {
+    id: "workspace_profile",
+    label: "Profile",
+    primitive: "Signal",
+    status: activation.product_ready ? "ready" : "blocked",
+    required: true,
+    detail: activation.product_ready
+      ? "Company website and description are available for matching and personalization."
+      : detail,
+    count: activation.product_ready ? 1 : 0,
+    action: activation.product_ready
+      ? null
+      : action(
+          "Configure profile",
+          ["product.company.profile.configure"],
+          "/dashboard/profile#profile",
+        ),
   };
 }
 

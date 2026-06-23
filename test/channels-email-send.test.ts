@@ -21,12 +21,32 @@ interface Seeded {
   counterparty_person_id: string;
 }
 
-async function seed(pool: Pool): Promise<Seeded> {
+async function seed(
+  pool: Pool,
+  opts: { productReady?: boolean } = {},
+): Promise<Seeded> {
+  const productReady = opts.productReady ?? true;
   const workspace_id = randomUUID();
   await pool.query(
     `insert into workspaces (id, slug, name) values ($1, $2, $3)`,
     [workspace_id, `ws-${workspace_id.slice(0, 8)}`, "ws"],
   );
+  if (productReady) {
+    await pool.query(
+      `insert into graph_companies (id, workspace_id, name, description, properties, provenance)
+       values ($1, $2, 'Acme', 'Acme sells workflow software to GTM teams.', $3::jsonb, $4::jsonb)`,
+      [
+        randomUUID(),
+        workspace_id,
+        JSON.stringify({
+          profile_role: "workspace_company",
+          website_url: "https://acme.example",
+          profile_source: "manual",
+        }),
+        JSON.stringify({ source: "manual" }),
+      ],
+    );
+  }
   const counterparty_person_id = randomUUID();
   await pool.query(
     `insert into graph_persons (id, workspace_id, full_name, emails)
@@ -175,6 +195,58 @@ test("email channel: refuses to send without a passing draft.judged event", asyn
     });
     assert.equal(result.status, "deferred");
     if (result.status === "deferred") assert.equal(result.reason, "not_judged");
+    assert.equal(ses.calls, 0);
+  } finally {
+    await pgBus.close();
+    await fx.close();
+  }
+});
+
+test("email channel: defers on website_required when the workspace profile is incomplete", async (t) => {
+  const fx = await setupPg("em_website_required");
+  if (!fx) return t.skip("DATABASE_URL not set");
+  const pgBus = await createPostgresEventBus({
+    pool: fx.pool,
+    listenConnectionString: process.env.DATABASE_URL,
+  });
+  try {
+    const seeded = await seed(fx.pool, { productReady: false });
+    const { channel_account_id, sending_domain_id } = await seedOwnedDomainAccount(
+      fx.pool,
+      seeded.workspace_id,
+    );
+    const message_id = await createMessageRow(fx.pool, {
+      workspace_id: seeded.workspace_id,
+      conversation_id: seeded.conversation_id,
+      channel: "email",
+      subject: "Hi",
+      body_text: "Just saying hi.",
+    });
+    await pgBus.publish({
+      workspace_id: seeded.workspace_id,
+      event_type: "draft.judged",
+      source: "agent",
+      payload: { message_id, eval_score: 0.9, passed: true },
+    });
+
+    const ses = spySes();
+    const outlook = spyOutlook();
+    const channel = createEmailChannel({ pool: fx.pool, bus: pgBus, ses, outlook });
+
+    const result = await channel.send({
+      ...seeded,
+      message_id,
+      channel_account_id,
+      sub_channel: "owned_domain",
+      sending_domain_id,
+      draft: {
+        to: { email: "anne@example.com", name: "Anne" },
+        subject: "Hi",
+        body_text: "Just saying hi.",
+      },
+    });
+    assert.equal(result.status, "deferred");
+    if (result.status === "deferred") assert.equal(result.reason, "website_required");
     assert.equal(ses.calls, 0);
   } finally {
     await pgBus.close();

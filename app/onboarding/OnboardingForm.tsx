@@ -33,6 +33,11 @@ export default function OnboardingForm({
           outreach posture from the site. Add extra context only when it will
           sharpen the first run.
         </p>
+        <p className="mt-2 text-xs leading-5 text-[var(--color-text-4)]">
+          No website yet is okay. You can finish signup now, then add the site
+          and a company description in Profile before outreach and activation
+          unlock.
+        </p>
       </div>
       <div className="grid gap-3 md:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
         <Field
@@ -175,15 +180,29 @@ export default function OnboardingForm({
           <span>{state.error}</span>
         </p>
       ) : null}
-      <PendingSubmitButton
-        pending={pending}
-        pendingLabel="Building Profile"
-        icon="arrow_forward"
-        iconSize={18}
-        className="btn-solid mt-1 w-full justify-center"
-      >
-        Launch agent
-      </PendingSubmitButton>
+      <div className="mt-1 grid gap-3">
+        <PendingSubmitButton
+          pending={pending}
+          pendingLabel="Building Profile"
+          icon="arrow_forward"
+          iconSize={18}
+          className="btn-solid w-full justify-center"
+          name="onboarding_intent"
+          value="activate"
+        >
+          Launch agent
+        </PendingSubmitButton>
+        <PendingSubmitButton
+          pending={pending}
+          pendingLabel="Opening dashboard"
+          className="btn-ghost w-full justify-center"
+          name="onboarding_intent"
+          value="skip_website"
+          formNoValidate
+        >
+          I don&apos;t have a website yet
+        </PendingSubmitButton>
+      </div>
     </form>
   );
 }

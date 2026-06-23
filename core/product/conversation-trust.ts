@@ -536,6 +536,8 @@ const deliverabilityReasons = new Set([
 
 function friendlyDeferReason(reason: string): string {
   const known: Record<string, string> = {
+    website_required:
+      "the workspace needs a company website and description before sending",
     deliverability_cap_zero: "sending domain is not warmed yet",
     deliverability_cap_exhausted: "today's warmed sending capacity is exhausted",
     daily_cap_reached: "the channel daily cap is reached",

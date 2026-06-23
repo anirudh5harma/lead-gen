@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
+  getProductCompanyProfile,
   approveWorkflowApproval,
   configureActivationSetup,
   configureWorkspaceCrmDestination,
@@ -28,6 +29,10 @@ import {
   verifiedProductWorkspaceSession,
   type ProductWorkspaceSession,
 } from "@/core/product/app";
+import {
+  analyzeCompanyWebsite,
+  normalizeCompanyWebsiteUrl,
+} from "@/core/product/company-profile";
 import { getRequestUserId } from "@/lib/auth";
 import {
   getActiveWorkspaceSession,
@@ -715,13 +720,33 @@ export async function editCompanyProfileAction(formData: FormData) {
     );
   }
   try {
+    const pool = getPool();
+    const existingProfile = await getProductCompanyProfile(pool, session);
+    const normalizedWebsite = normalizeCompanyWebsiteUrl(website_url);
+    if (!normalizedWebsite) {
+      redirectWithToast(returnTo, "Enter a valid company website.", "error");
+    }
+    const currentWebsite = normalizeCompanyWebsiteUrl(existingProfile?.website_url);
+    const submittedDescription = value(formData, "description");
+    const shouldRefreshFromWebsite =
+      normalizedWebsite !== currentWebsite ||
+      !(existingProfile?.description ?? "").trim();
+    const extractedProfile = shouldRefreshFromWebsite
+      ? await analyzeCompanyWebsite({
+          websiteUrl: normalizedWebsite,
+          companyHint: company_name,
+        })
+      : null;
+    const finalDescription =
+      submittedDescription || extractedProfile?.description || null;
+
     await configureWorkspaceCompanyProfile(
       {
         company_name,
-        website_url,
-        industry: value(formData, "industry") || null,
+        website_url: normalizedWebsite,
+        industry: value(formData, "industry") || extractedProfile?.industry || null,
         size_bucket: value(formData, "company_size") || null,
-        description: value(formData, "description") || null,
+        description: finalDescription,
         value_proposition: value(formData, "value_proposition") || null,
         customer_pain_points: value(formData, "customer_pain_points") || null,
         target_titles: value(formData, "target_titles") || null,
@@ -745,18 +770,24 @@ export async function editCompanyProfileAction(formData: FormData) {
           formData,
           "prevent_team_contact_duplication",
         ),
-        profile_source: "manual",
+        profile_source: submittedDescription
+          ? "manual"
+          : extractedProfile?.source ?? "manual",
       },
       session,
     );
-    const sourceCheckStarted = await startAgentSourceCheck(session);
+    const sourceCheckStarted = finalDescription
+      ? await startAgentSourceCheck(session)
+      : false;
     revalidateProductPaths();
     redirectWithToast(
       returnTo,
-      sourceCheckStarted
-        ? "Company profile saved. Agent is checking sources."
-        : "Company profile saved. Source check did not start yet.",
-      sourceCheckStarted ? "success" : "error",
+      finalDescription
+        ? sourceCheckStarted
+          ? "Company profile saved. Agent is checking sources."
+          : "Company profile saved. Source check did not start yet."
+        : "Company profile saved. Add a company description to activate outreach.",
+      finalDescription && !sourceCheckStarted ? "error" : "success",
     );
   } catch (error) {
     if (error instanceof Error && /valid website_url/i.test(error.message)) {

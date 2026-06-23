@@ -2244,6 +2244,12 @@ function CompanyProfileForm({
           required
         />
       </div>
+      <p className="text-xs leading-5 text-[var(--color-text-4)]">
+        Outreach and agent activation stay blocked until Profile has both the
+        company website and a company description. Saving a new website will try
+        to generate the description from the site; you can always write the
+        description manually here if the scrape misses.
+      </p>
       <TextArea
         name="description"
         label="What you sell"
