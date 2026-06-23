@@ -481,7 +481,7 @@ async function loadBriefHotContacts(workspaceId: string): Promise<BriefHotContac
   return dedupeHotContacts(rows).slice(0, 5);
 }
 
-function dedupeHotContacts(contacts: BriefHotContact[]): BriefHotContact[] {
+export function dedupeHotContacts(contacts: BriefHotContact[]): BriefHotContact[] {
   const seenIds = new Set<string>();
   const seenEmails = new Set<string>();
   const seenCompanies = new Set<string>();

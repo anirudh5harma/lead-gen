@@ -279,7 +279,7 @@ interface AgentReviewRow {
 // Collapse pending-review rows so a single contact/conversation surfaces once,
 // even if multiple pending approval gates exist for them. Rows are assumed to
 // arrive newest-first, so the first occurrence wins.
-function dedupeReviewRows(rows: AgentReviewRow[]): AgentReviewRow[] {
+export function dedupeReviewRows(rows: AgentReviewRow[]): AgentReviewRow[] {
   const seen = new Set<string>();
   const deduped: AgentReviewRow[] = [];
   for (const row of rows) {
