@@ -125,8 +125,14 @@ test("getWorkspaceBillingState derives tier/frozen/canceled", async () => {
     randomUUID(),
   );
   assert.deepEqual(
-    { tier: trialFrozen.tier, frozen: trialFrozen.frozen, entitled: trialFrozen.entitled },
-    { tier: "trial", frozen: true, entitled: false },
+    {
+      tier: trialFrozen.tier,
+      frozen: trialFrozen.frozen,
+      entitled: trialFrozen.entitled,
+      source: trialFrozen.source,
+      portal: trialFrozen.portal_available,
+    },
+    { tier: "trial", frozen: true, entitled: false, source: "trial", portal: false },
   );
 
   const proCanceled = await getWorkspaceBillingState(
@@ -138,6 +144,37 @@ test("getWorkspaceBillingState derives tier/frozen/canceled", async () => {
   assert.equal(proCanceled.tier, "pro");
   assert.equal(proCanceled.frozen, false);
   assert.equal(proCanceled.canceled, true);
+  assert.equal(proCanceled.source, "subscription");
+});
+
+test("getWorkspaceBillingState honors legacy billing overrides without exposing the portal", async () => {
+  const legacyPro = await getWorkspaceBillingState(
+    scriptedPool(() => [
+      {
+        trial_credits_remaining: 15,
+        trial_credits_total: 15,
+        subscription_status: "inactive",
+        subscription_renews_at: null,
+        dodo_customer_id: null,
+        subscription_external_id: null,
+        settings: {
+          billing_override: {
+            tier: "pro",
+            active: true,
+            source: "legacy_launch_plan",
+          },
+        },
+      },
+    ]),
+    randomUUID(),
+  );
+
+  assert.equal(legacyPro.tier, "pro");
+  assert.equal(legacyPro.entitled, true);
+  assert.equal(legacyPro.frozen, false);
+  assert.equal(legacyPro.source, "legacy_override");
+  assert.equal(legacyPro.portal_available, false);
+  assert.equal(legacyPro.subscription_status, "legacy_override");
 });
 
 test("reserveCredit: Pro is unlimited and unmetered", async () => {

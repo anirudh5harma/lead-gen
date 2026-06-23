@@ -28,6 +28,7 @@ export default function PlanSection({
   if (!billing) return null;
 
   const isPro = billing.tier === "pro";
+  const legacyPro = billing.source === "legacy_override";
   const usedPct = billing.credits_total
     ? Math.min(
         100,
@@ -65,14 +66,18 @@ export default function PlanSection({
                 : isPro
                   ? billing.canceled
                     ? `Cancels ${formatDate(billing.renews_at)}`
-                    : "Active"
+                    : legacyPro
+                      ? "Legacy access"
+                      : "Active"
                   : `${billing.credits_remaining} / ${billing.credits_total} credits`}
             </span>
           </div>
 
           {isPro ? (
             <p className="mt-1 text-sm leading-6 text-[var(--color-text-3)]">
-              {billing.canceled
+              {legacyPro
+                ? "Grandfathered Pro access from the pre-pivot Bombsell plan is active on this workspace."
+                : billing.canceled
                 ? `Unlimited sending stays on until ${formatDate(billing.renews_at)}. After that, outreach pauses until you resubscribe.`
                 : `Unlimited sending. Renews ${formatDate(billing.renews_at)}.`}
             </p>
@@ -98,7 +103,7 @@ export default function PlanSection({
           )}
 
           <div className="mt-4 flex flex-wrap gap-2">
-            {isPro ? (
+            {isPro && billing.portal_available ? (
               <UpgradeButton
                 endpoint="/api/billing/portal"
                 label="Manage / cancel subscription"
@@ -106,7 +111,7 @@ export default function PlanSection({
                 icon="settings"
                 variant="quiet"
               />
-            ) : (
+            ) : isPro ? null : (
               <UpgradeButton
                 endpoint="/api/billing/pro/checkout"
                 label="Upgrade to Pro"

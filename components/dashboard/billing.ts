@@ -12,6 +12,8 @@ export interface WorkspaceBillingState {
   subscription_status: string;
   renews_at: string | null;
   canceled: boolean;
+  source: "trial" | "subscription" | "legacy_override";
+  portal_available: boolean;
 }
 
 /** Show the low-credit nudge at or below this trial balance (but not frozen). */

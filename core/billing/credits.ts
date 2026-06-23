@@ -26,6 +26,8 @@ export interface WorkspaceBillingState {
   subscription_status: string;
   renews_at: string | null;
   canceled: boolean;
+  source: "trial" | "subscription" | "legacy_override";
+  portal_available: boolean;
 }
 
 interface EntitlementRow {
@@ -33,6 +35,14 @@ interface EntitlementRow {
   trial_credits_total: number;
   subscription_status: string | null;
   subscription_renews_at: Date | null;
+  dodo_customer_id?: string | null;
+  subscription_external_id?: string | null;
+  settings?: unknown;
+}
+
+interface BillingOverride {
+  tier: BillingTier;
+  active: boolean;
 }
 
 interface CreditMutationInput {
@@ -345,12 +355,30 @@ export async function getWorkspaceBillingState(
 ): Promise<WorkspaceBillingState> {
   const { rows } = await pool.query<EntitlementRow & { subscription_renews_at: Date | null }>(
     `select trial_credits_remaining, trial_credits_total,
-            subscription_status, subscription_renews_at
+            subscription_status, subscription_renews_at,
+            dodo_customer_id, subscription_external_id, settings
        from workspaces
       where id = $1`,
     [workspace_id],
   );
   const row = rows[0];
+  const override = parseBillingOverride(row?.settings);
+  if (override?.active && override.tier === "pro") {
+    const remaining = row?.trial_credits_remaining ?? TRIAL_CREDIT_GRANT;
+    const total = row?.trial_credits_total ?? TRIAL_CREDIT_GRANT;
+    return {
+      tier: "pro",
+      entitled: true,
+      frozen: false,
+      credits_remaining: remaining,
+      credits_total: total,
+      subscription_status: "legacy_override",
+      renews_at: null,
+      canceled: false,
+      source: "legacy_override",
+      portal_available: false,
+    };
+  }
   const status = row?.subscription_status ?? "inactive";
   const renewsAt = row?.subscription_renews_at ?? null;
   const pro = row
@@ -359,6 +387,9 @@ export async function getWorkspaceBillingState(
   const remaining = row?.trial_credits_remaining ?? 0;
   const total = row?.trial_credits_total ?? TRIAL_CREDIT_GRANT;
   const entitled = pro || remaining > 0;
+  const portalAvailable = Boolean(
+    row?.dodo_customer_id?.trim() || row?.subscription_external_id?.trim(),
+  );
   return {
     tier: pro ? "pro" : "trial",
     entitled,
@@ -368,5 +399,24 @@ export async function getWorkspaceBillingState(
     subscription_status: status,
     renews_at: renewsAt ? new Date(renewsAt).toISOString() : null,
     canceled: status === "canceled",
+    source: pro ? "subscription" : "trial",
+    portal_available: pro && portalAvailable,
+  };
+}
+
+function parseBillingOverride(settings: unknown): BillingOverride | null {
+  if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+    return null;
+  }
+  const override = (settings as Record<string, unknown>).billing_override;
+  if (!override || typeof override !== "object" || Array.isArray(override)) {
+    return null;
+  }
+  const tier = (override as Record<string, unknown>).tier;
+  if (tier !== "trial" && tier !== "pro") return null;
+  const active = (override as Record<string, unknown>).active;
+  return {
+    tier,
+    active: active !== false,
   };
 }

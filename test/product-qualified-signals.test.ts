@@ -311,6 +311,213 @@ test("qualified signals workbench treats LinkedIn profiles as outreach-ready con
   assert.equal(workbench.signals[0]?.outreach_draft?.body, "Saw your Apollo thread. Worth comparing notes?");
 });
 
+test("qualified signals workbench dedupes repeated contacts inside one signal", async () => {
+  const now = new Date("2026-06-12T10:00:00Z");
+  const pool = fakePool([
+    {
+      id: "00000000-0000-4000-8000-000000000120",
+      kind: "funding",
+      status: "matched",
+      title: "Acme raised a round",
+      content: null,
+      url: null,
+      match_score: "0.9100",
+      match_reason: "Funding signal.",
+      freshness_at: now,
+      ingested_at: now,
+      matched_at: now,
+      company_id: "00000000-0000-4000-8000-000000000220",
+      company_name: "Acme",
+      company_domain: "acme.example",
+      company_industry: null,
+      company_description: null,
+      contact_candidates: [
+        {
+          rank: 1,
+          person_id: "00000000-0000-4000-8000-000000000320",
+          full_name: "Nisha Rao",
+          title: "Founder",
+          score: 0.95,
+          reasons: ["executive_or_founder", "verified_email"],
+          emails: ["nisha@acme.example"],
+          linkedin_url: "https://linkedin.com/in/nisha-rao",
+          verification: { email_verified: true, email_status: "valid" },
+          provenance: { source: "hunter" },
+        },
+        {
+          rank: 2,
+          person_id: "00000000-0000-4000-8000-000000000321",
+          full_name: "Nisha Rao",
+          title: "Founder",
+          score: 0.95,
+          reasons: ["executive_or_founder", "verified_email"],
+          emails: ["nisha@acme.example"],
+          linkedin_url: "https://linkedin.com/in/nisha-rao",
+          verification: { email_verified: true, email_status: "valid" },
+          provenance: { source: "graph" },
+        },
+      ],
+      graph_candidates: [],
+      contact_channel: "email",
+      contact_defer_reason: null,
+      draft_conversation_id: null,
+      draft_message_id: null,
+      draft_channel: null,
+      draft_status: null,
+      draft_subject: null,
+      draft_body: null,
+      draft_eval_score: null,
+      draft_eval_passed: null,
+      draft_external_id: null,
+      draft_scheduled_at: null,
+      draft_sent_at: null,
+      draft_delivered_at: null,
+      draft_channel_event_type: null,
+      draft_channel_event_at: null,
+      draft_defer_reason: null,
+      draft_defer_detail: null,
+      draft_created_at: null,
+      pending_approval_id: null,
+    },
+  ]);
+
+  const workbench = await loadQualifiedSignalWorkbench(
+    pool,
+    "00000000-0000-4000-8000-000000000001",
+  );
+
+  assert.equal(workbench.signals[0]?.contacts.length, 1);
+  assert.equal(workbench.signals[0]?.contacts[0]?.full_name, "Nisha Rao");
+});
+
+test("qualified signals workbench keeps only the strongest repeated person/company lead", async () => {
+  const older = new Date("2026-06-10T10:00:00Z");
+  const newer = new Date("2026-06-12T10:00:00Z");
+  const pool = fakePool([
+    {
+      id: "00000000-0000-4000-8000-000000000130",
+      kind: "funding",
+      status: "matched",
+      title: "Older signal",
+      content: null,
+      url: null,
+      match_score: "0.7400",
+      match_reason: "Earlier signal.",
+      freshness_at: older,
+      ingested_at: older,
+      matched_at: older,
+      company_id: "00000000-0000-4000-8000-000000000230",
+      company_name: "Acme",
+      company_domain: "acme.example",
+      company_industry: null,
+      company_description: null,
+      account_intent_score: "0.6000",
+      account_signal_count: 2,
+      contact_candidates: [
+        {
+          rank: 1,
+          person_id: "00000000-0000-4000-8000-000000000330",
+          full_name: "Nisha Rao",
+          title: "Founder",
+          score: 0.8,
+          contact_fit_decision: "unsure",
+          reasons: ["executive_or_founder"],
+          emails: ["nisha@acme.example"],
+          linkedin_url: "https://linkedin.com/in/nisha-rao",
+          verification: { email_verified: true, email_status: "valid" },
+          provenance: { source: "hunter" },
+        },
+      ],
+      graph_candidates: [],
+      contact_channel: "email",
+      contact_defer_reason: null,
+      draft_conversation_id: null,
+      draft_message_id: null,
+      draft_channel: null,
+      draft_status: null,
+      draft_subject: null,
+      draft_body: null,
+      draft_eval_score: null,
+      draft_eval_passed: null,
+      draft_external_id: null,
+      draft_scheduled_at: null,
+      draft_sent_at: null,
+      draft_delivered_at: null,
+      draft_channel_event_type: null,
+      draft_channel_event_at: null,
+      draft_defer_reason: null,
+      draft_defer_detail: null,
+      draft_created_at: null,
+      pending_approval_id: null,
+    },
+    {
+      id: "00000000-0000-4000-8000-000000000131",
+      kind: "funding",
+      status: "matched",
+      title: "Newer stronger signal",
+      content: null,
+      url: null,
+      match_score: "0.9200",
+      match_reason: "Better signal.",
+      freshness_at: newer,
+      ingested_at: newer,
+      matched_at: newer,
+      company_id: "00000000-0000-4000-8000-000000000230",
+      company_name: "Acme",
+      company_domain: "acme.example",
+      company_industry: null,
+      company_description: null,
+      account_intent_score: "0.8500",
+      account_signal_count: 2,
+      contact_candidates: [
+        {
+          rank: 1,
+          person_id: "00000000-0000-4000-8000-000000000331",
+          full_name: "Nisha Rao",
+          title: "Founder",
+          score: 0.96,
+          contact_fit_decision: "fit",
+          reasons: ["executive_or_founder", "verified_email"],
+          emails: ["nisha@acme.example"],
+          linkedin_url: "https://linkedin.com/in/nisha-rao",
+          verification: { email_verified: true, email_status: "valid" },
+          provenance: { source: "graph" },
+        },
+      ],
+      graph_candidates: [],
+      contact_channel: "email",
+      contact_defer_reason: null,
+      draft_conversation_id: null,
+      draft_message_id: null,
+      draft_channel: null,
+      draft_status: null,
+      draft_subject: null,
+      draft_body: null,
+      draft_eval_score: null,
+      draft_eval_passed: null,
+      draft_external_id: null,
+      draft_scheduled_at: null,
+      draft_sent_at: null,
+      draft_delivered_at: null,
+      draft_channel_event_type: null,
+      draft_channel_event_at: null,
+      draft_defer_reason: null,
+      draft_defer_detail: null,
+      draft_created_at: null,
+      pending_approval_id: null,
+    },
+  ]);
+
+  const workbench = await loadQualifiedSignalWorkbench(
+    pool,
+    "00000000-0000-4000-8000-000000000001",
+  );
+
+  assert.equal(workbench.stats.qualified, 1);
+  assert.equal(workbench.signals[0]?.title, "Newer stronger signal");
+  assert.equal(workbench.signals[0]?.contacts[0]?.contact_fit_decision, "fit");
+});
+
 test("qualified signals workbench decodes HTML entities in displayed signal text", async () => {
   const now = new Date("2026-06-12T10:00:00Z");
   const pool = fakePool([

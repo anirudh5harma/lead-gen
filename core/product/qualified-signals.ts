@@ -573,10 +573,12 @@ export async function loadQualifiedSignalWorkbench(
   );
 
   const now = new Date();
-  const signals = rows
-    .sort((left, right) => compareQualifiedSignalRows(left, right, now))
-    .slice(0, limit)
-    .map(mapQualifiedSignalRow);
+  const signals = dedupeQualifiedSignals(
+    rows
+      .map(mapQualifiedSignalRow)
+      .sort((left, right) => compareQualifiedSignalItems(left, right, now)),
+  )
+    .slice(0, limit);
   return {
     signals,
     stats: {
@@ -614,46 +616,58 @@ function numericCount(value: string | number | null | undefined): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function compareQualifiedSignalRows(
-  left: QualifiedSignalRow,
-  right: QualifiedSignalRow,
+function compareQualifiedSignalItems(
+  left: QualifiedSignalItem,
+  right: QualifiedSignalItem,
   now: Date,
 ): number {
-  return accountIntentScore(right) - accountIntentScore(left) ||
+  return (right.account_intent_score ?? 0) - (left.account_intent_score ?? 0) ||
     qualifiedSignalBucket(left) - qualifiedSignalBucket(right) ||
+    primaryContactFitRank(left) - primaryContactFitRank(right) ||
+    primaryContactScore(right) - primaryContactScore(left) ||
     signalIntentScore(right, now) - signalIntentScore(left, now) ||
     right.freshness_at.getTime() - left.freshness_at.getTime() ||
     right.ingested_at.getTime() - left.ingested_at.getTime() ||
     left.id.localeCompare(right.id);
 }
 
-function qualifiedSignalBucket(row: QualifiedSignalRow): number {
-  const hasDraft = Boolean(row.draft_message_id);
-  const hasContacts =
-    parseJsonArray(row.contact_candidates).length > 0 ||
-    parseJsonArray(row.graph_candidates).length > 0;
+function qualifiedSignalBucket(signal: QualifiedSignalItem): number {
+  const hasDraft = Boolean(signal.outreach_draft);
+  const hasContacts = signal.contacts.length > 0;
   if (hasDraft && hasContacts) return 0;
   if (hasDraft) return 1;
   if (hasContacts) return 2;
   return 3;
 }
 
-function signalIntentScore(row: QualifiedSignalRow, now: Date): number {
+function signalIntentScore(signal: QualifiedSignalItem, now: Date): number {
   return scoreSignalIntent({
-    kind: signalKindOrNull(row.kind),
-    match_score: parseNumber(row.match_score),
-    freshness_at: row.freshness_at,
+    kind: signalKindOrNull(signal.kind),
+    match_score: signal.match_score,
+    freshness_at: signal.freshness_at,
   }, now).intent_score;
 }
 
-function accountIntentScore(row: QualifiedSignalRow): number {
-  return parseNumber(row.account_intent_score) ?? 0;
+function primaryContactFitRank(signal: QualifiedSignalItem): number {
+  const decision = signal.contacts[0]?.contact_fit_decision;
+  if (decision === "fit") return 0;
+  if (decision === "unsure") return 1;
+  if (decision === null) return 2;
+  if (decision === "not_fit") return 3;
+  return 4;
+}
+
+function primaryContactScore(signal: QualifiedSignalItem): number {
+  return signal.contacts[0]?.score ?? -1;
 }
 
 function mapQualifiedSignalRow(row: QualifiedSignalRow): QualifiedSignalItem {
   const resolvedContacts = normalizeContactCandidates(row.contact_candidates);
   const graphContacts = normalizeContactCandidates(row.graph_candidates);
-  const contacts = resolvedContacts.length > 0 ? resolvedContacts : graphContacts;
+  const contacts = dedupeQualifiedSignalContacts(
+    resolvedContacts.length > 0 ? resolvedContacts : graphContacts,
+    row.company_id ?? row.company_domain ?? row.company_name ?? null,
+  );
   const outreachDraft = row.draft_message_id && row.draft_conversation_id && row.draft_channel && row.draft_status && row.draft_created_at
     ? {
         conversation_id: row.draft_conversation_id,
@@ -774,6 +788,60 @@ export function normalizeContactCandidates(value: unknown): QualifiedSignalConta
   }).filter((contact) => contact.person_id || contact.full_name !== "Unknown person");
 }
 
+function dedupeQualifiedSignalContacts(
+  contacts: QualifiedSignalContact[],
+  companyKey: string | null,
+): QualifiedSignalContact[] {
+  const seen = new Set<string>();
+  const deduped: QualifiedSignalContact[] = [];
+  for (const contact of contacts) {
+    const key = qualifiedSignalContactKey(contact, companyKey);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(contact);
+  }
+  return deduped;
+}
+
+function dedupeQualifiedSignals(
+  signals: QualifiedSignalItem[],
+): QualifiedSignalItem[] {
+  const seen = new Set<string>();
+  const deduped: QualifiedSignalItem[] = [];
+  for (const signal of signals) {
+    const key = qualifiedSignalDedupKey(signal);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(signal);
+  }
+  return deduped;
+}
+
+function qualifiedSignalDedupKey(signal: QualifiedSignalItem): string {
+  const companyKey = signal.company.id ?? signal.company.domain ?? normalizeToken(signal.company.name);
+  const contact = signal.contacts[0];
+  if (!companyKey || !contact) return `signal:${signal.id}`;
+  const contactKey = qualifiedSignalContactKey(contact, companyKey);
+  return `company:${companyKey}|contact:${contactKey}`;
+}
+
+function qualifiedSignalContactKey(
+  contact: QualifiedSignalContact,
+  companyKey: string | null,
+): string {
+  const linkedIn = normalizeToken(contact.linkedin_url);
+  if (linkedIn) return `linkedin:${linkedIn}`;
+  const email = contact.emails.map(normalizeToken).find(Boolean);
+  if (email) return `email:${email}`;
+  const name = normalizeToken(contact.full_name);
+  const title = normalizeToken(contact.title);
+  return `name:${name}|title:${title}|company:${companyKey ?? "unknown"}`;
+}
+
+function normalizeToken(value: string | null | undefined): string {
+  return (value ?? "").trim().toLowerCase();
+}
+
 function contactFitDecision(
   value: unknown,
 ): QualifiedSignalContact["contact_fit_decision"] {
@@ -826,6 +894,10 @@ function parseNumber(value: string | null): number | null {
   if (!value) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function accountIntentScore(row: QualifiedSignalRow): number {
+  return parseNumber(row.account_intent_score) ?? 0;
 }
 
 function signalKindOrNull(value: string): SignalKind | null {
