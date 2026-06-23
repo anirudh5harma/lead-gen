@@ -3,6 +3,11 @@ export interface ActiveWorkspaceLookup {
   params: string[];
 }
 
+export interface WorkspaceAccessLookup {
+  sql: string;
+  params: string[];
+}
+
 export function excludeLegacySharedDefaultWorkspace(
   workspaceAlias: string,
   membershipAlias: string,
@@ -39,5 +44,23 @@ export function activeWorkspaceLookup(
         and ${excludeLegacySharedDefaultWorkspace("w", "wm")}
       order by ${selectedOrder} w.created_at desc, w.id desc
       limit 1`,
+  };
+}
+
+export function workspaceAccessLookup(
+  workspaceId: string,
+  userId: string,
+): WorkspaceAccessLookup {
+  return {
+    params: [workspaceId, userId],
+    sql: `select exists (
+       select 1
+         from workspace_members wm
+         join workspaces w on w.id = wm.workspace_id
+        where wm.workspace_id = $1
+          and wm.user_id = $2
+          and wm.accepted_at is not null
+          and ${excludeLegacySharedDefaultWorkspace("w", "wm")}
+     ) as ok`,
   };
 }

@@ -6,6 +6,7 @@ import { getRequestUserId, validUuid } from "@/lib/auth";
 import {
   activeWorkspaceLookup,
   excludeLegacySharedDefaultWorkspace,
+  workspaceAccessLookup,
 } from "@/lib/workspace-selection";
 import type { WorkspaceRole } from "@/lib/workspace-access";
 
@@ -37,13 +38,8 @@ export async function hasWorkspaceAccess(
   workspaceId: string,
   userId: string,
 ): Promise<boolean> {
-  const { rows } = await getPool().query<{ ok: boolean }>(
-    `select exists (
-       select 1 from workspace_members
-        where workspace_id = $1 and user_id = $2 and accepted_at is not null
-     ) as ok`,
-    [workspaceId, userId],
-  );
+  const lookup = workspaceAccessLookup(workspaceId, userId);
+  const { rows } = await getPool().query<{ ok: boolean }>(lookup.sql, lookup.params);
   return Boolean(rows[0]?.ok);
 }
 
