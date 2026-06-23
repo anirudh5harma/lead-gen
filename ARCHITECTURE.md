@@ -16,7 +16,9 @@ Content/AEO UX. See `docs/product-focus-prospecting-outbound-2026-06-12.md`.
 
 ---
 
-## Current Bombsell — 60-Second Snapshot
+## Pre-Pivot Bombsell — 60-Second Snapshot
+
+> Historical baseline (the starting point this pivot moved away from), kept for context. Current state differs: the durable workflow engine, typed event bus, and explicit knowledge graph have since landed, and the default LLM is now DeepSeek (V4 Flash) rather than Claude Sonnet. See "Redesign status" below for what is actually built today.
 
 Bombsell is a Next.js 16 + Supabase + Claude Sonnet 4.6 app. Two engines (outbound + content) orchestrated by an operator agent, 17 system agents with per-agent autonomy levels, OAuth-connected Gmail/Outlook with inbox rotation, enrichment waterfall (Apollo → FullEnrich → Hunter → ZeroBounce), signal ingestion from GDELT/HN/Product Hunt/RSS, content publishing via Typefully/Buffer/Ayrshare, MCP server for external agents, outcome-based credit ledger, agency-style workspaces. Async work runs on Vercel cron + DB-backed queues (`lead_delivery_queue`, `gtm_integration_outbox`). No durable workflow engine, no event bus, no native knowledge graph, agents are dispatched per-cron rather than long-running, prompts are inline in worker files.
 
@@ -177,24 +179,34 @@ The non-obvious bet is **Restate + MCP as the spine**. Together they make the sy
 11. **Memory as three explicit tiers** (episodic, semantic, procedural), not implicit in tables. Procedural memory is the moat — winning outreach per ICP+signal+stage compounds with every outcome.
 12. **"Show your work" observability is user-facing**, not buried in `agent_events`. Every send and post traceable end-to-end in two clicks.
 
-### What's missing today that the redesign treats as table-stakes
-- Durable workflow engine
-- Typed event bus
-- Explicit knowledge graph
-- Owned-domain sending infrastructure with warmup
-- Native LinkedIn/X engagement (beyond publishing)
-- Hot-path eval gating
-- Outcome → few-shot procedural memory loop
-- Per-workspace voice fingerprinting & drift detection
-- Replayable workflow forensics
-- Per-play / per-channel / per-volume autonomy granularity
-- Brand-voice and deliverability dashboards as user surfaces
+### Redesign status
+
+This list was originally "what's missing today." Most of the substrate has since
+landed; the table below reflects the current codebase, not the pre-implementation plan.
+
+**Landed**
+- Durable workflow engine — Restate runtime (`core/substrate/workflows/`).
+- Typed event bus — `core/substrate/events/` (registry + NATS/Postgres adapters).
+- Explicit knowledge graph — `core/graph/` (nodes, edges, vector index).
+- Owned-domain sending + warmup — `core/channels/email/{adapters/ses,warmup,domains}.ts`; the `owned_domain` sub-channel in `send.ts`. **Off by default**, opt-in via `MANAGED_OWNED_DOMAIN_EMAIL_ENABLED=1`; customer-connected Outlook is the default path. (Not removed.)
+- Hot-path eval gating — `send.ts` refuses to send without a prior passing `draft.judged` for the same message.
+- Outcome → few-shot procedural memory loop — `core/agents/memory/` (`postgres-procedural`, attribution); the writer role consumes procedural exemplars.
+- Per-workspace voice fingerprinting & drift detection — `core/agents/eval/voice.ts` flags drafts that drift from a Rep's canonical samples.
+- Per-Play × channel × volume autonomy — `PlayAutonomy` / Rep autonomy (`core/primitives/play.ts`, `rep.ts`).
+- Deliverability dashboard surface — `app/dashboard/deliverability/`.
+
+**Remaining gaps**
+- Native LinkedIn engagement — code exists (`core/channels/linkedin/`) but is gated "coming soon", not live.
+- Native X / Voice / Video channels — directories scaffolded, not implemented.
+- Plays authored in natural language via a **user surface** — the NL→Step-DAG compiler exists (`core/primitives/play.ts`); Plays are still authored in code (`core/plays/`).
+- Brand-voice as a dedicated **user dashboard** (the eval backend exists; the user-facing surface does not).
+- User-facing replayable workflow forensics (the durable journal exists; "show your work" in two clicks is partial).
 
 ---
 
 ## How to Verify This Design
 
-This document is the deliverable; there is no code to run. To pressure-test it before any implementation:
+This document started as a design deliverable; the design is now substantially implemented (see "Redesign status" above). The walkthroughs below remain the way to pressure-test the model against the five primitives as it evolves:
 
 1. **Walk three real plays end-to-end on paper**, using only the five primitives and the five layers: (a) Series A founder cold email triggered by a TechCrunch signal, (b) LinkedIn comment → DM → meeting on a podcast mention, (c) repurposing a top-performing X thread into three cold-email opening lines. If any step needs a concept outside the five primitives, the model is incomplete.
 2. **Map each current Bombsell cron** (`poll-signals`, `match`, `deliver-leads`, `enrich-contacts`, `send-automation`, etc.) to a Play in the new model. Any cron that does not collapse cleanly is a sign of either a missing primitive or a workflow that should not exist.
