@@ -6,6 +6,10 @@ import { ENVIRONMENT_KEY_NAMES } from "../core/config/env.ts";
 
 const root = join(import.meta.dirname, "..");
 
+// Ambient OS/runtime variables that are not part of the deployment contract
+// and are intentionally excluded from ENVIRONMENT_KEYS.
+const AMBIENT_ENV_ALLOWLIST = new Set(["HOME"]);
+
 function sourceFiles(path: string): string[] {
   return readdirSync(path).flatMap((entry) => {
     const full = join(path, entry);
@@ -40,6 +44,7 @@ test("runtime process.env reads are registered in the deployment contract", () =
     }
   }
   for (const key of referenced) {
+    if (AMBIENT_ENV_ALLOWLIST.has(key)) continue;
     assert.ok(ENVIRONMENT_KEY_NAMES.has(key), `${key} is read but not tracked`);
   }
 });
