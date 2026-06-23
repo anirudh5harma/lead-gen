@@ -7,6 +7,7 @@ import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspaceSessionForDashboard } from "@/lib/workspace";
 import { SurfaceSection } from "@/components/dashboard/SurfaceHero";
 import FirstSignalsLoading from "@/components/dashboard/FirstSignalsLoading";
+import RouteRefresh from "@/components/dashboard/RouteRefresh";
 import {
   generateMeetingPrepAction,
   prepareQualifiedSignalsAction,
@@ -1139,6 +1140,7 @@ function BriefView({
 
   return (
     <div className="space-y-7">
+      <RouteRefresh />
       <section className="overflow-hidden rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-6 sm:p-8">
         <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent)]">
           {today}
