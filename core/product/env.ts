@@ -315,6 +315,13 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     example: "whsec_...",
   },
   {
+    name: "TRANSACTIONAL_EMAIL_FROM",
+    requirement: "optional",
+    category: "channels",
+    description: "From address for transactional product email (trial/billing reminders) over Resend. Defaults to Bombsell <no-reply@mail.bombsell.com>.",
+    example: "Bombsell <no-reply@mail.bombsell.com>",
+  },
+  {
     name: "DODO_API_KEY",
     requirement: "production",
     category: "billing",

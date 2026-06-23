@@ -3,6 +3,10 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import type { Pool, PoolClient } from "pg";
 
+export const REQUIRED_MIGRATION_FILES = [
+  "044_trial_credits.sql",
+] as const;
+
 /**
  * Minimal Postgres migration runner. Reads *.sql files from a directory,
  * applies them in filename order (so the `001_`, `002_`, … prefix
@@ -40,6 +44,7 @@ export async function runMigrations(
   const files = (await readdir(opts.dir))
     .filter((f) => f.endsWith(".sql"))
     .sort();
+  assertRequiredMigrationFiles(files);
 
   const results: MigrationResult[] = [];
   for (const filename of files) {
@@ -116,6 +121,16 @@ async function loadApplied(pool: Pool): Promise<Map<string, string>> {
 
 function sha256(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");
+}
+
+function assertRequiredMigrationFiles(files: string[]): void {
+  for (const filename of REQUIRED_MIGRATION_FILES) {
+    if (!files.includes(filename)) {
+      throw new Error(
+        `Missing required migration '${filename}' from ${files.length} discovered SQL files`,
+      );
+    }
+  }
 }
 
 export class MigrationChecksumMismatchError extends Error {

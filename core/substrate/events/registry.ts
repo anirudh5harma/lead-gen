@@ -65,6 +65,43 @@ const WorkspaceBillingSubscriptionSynced = z.object({
   raw_status: z.string().min(1).nullable().optional(),
 });
 
+const WorkspaceTrialGranted = z.object({
+  workspace_id: z.string().uuid(),
+  credits_granted: z.number().int().positive(),
+  credits_remaining: z.number().int().nonnegative(),
+  credits_total: z.number().int().positive(),
+});
+
+const WorkspaceTrialLow = z.object({
+  workspace_id: z.string().uuid(),
+  credits_remaining: z.number().int().nonnegative(),
+  credits_total: z.number().int().positive(),
+});
+
+const WorkspaceTrialExhausted = z.object({
+  workspace_id: z.string().uuid(),
+  credits_remaining: z.number().int().min(0).max(0),
+  credits_total: z.number().int().positive(),
+  credits_exhausted_at: z.string().datetime(),
+});
+
+const WorkspaceOutreachFrozen = z.object({
+  workspace_id: z.string().uuid(),
+  reason: z.enum(["trial_exhausted", "subscription_inactive"]),
+  credits_remaining: z.number().int().nonnegative(),
+  subscription_status: z.string().min(1),
+  frozen_at: z.string().datetime(),
+});
+
+const WorkspaceOutreachResumed = z.object({
+  workspace_id: z.string().uuid(),
+  reason: z.enum(["subscription_activated", "subscription_recovered"]),
+  resumed_at: z.string().datetime(),
+  resumed_message_count: z.number().int().nonnegative(),
+  subscription_status: z.string().min(1),
+  renews_at: z.string().datetime().nullable().optional(),
+});
+
 const RepConfigured = z.object({
   rep_id: z.string().uuid(),
   name: z.string().min(1),
@@ -1697,6 +1734,11 @@ export const eventRegistry = {
   "workspace.activation.requested": WorkspaceActivationRequested,
   "workspace.configured": WorkspaceConfigured,
   "workspace.billing.subscription.synced": WorkspaceBillingSubscriptionSynced,
+  "workspace.trial.granted": WorkspaceTrialGranted,
+  "workspace.trial.low": WorkspaceTrialLow,
+  "workspace.trial.exhausted": WorkspaceTrialExhausted,
+  "workspace.outreach.frozen": WorkspaceOutreachFrozen,
+  "workspace.outreach.resumed": WorkspaceOutreachResumed,
   "rep.configured": RepConfigured,
   "rep.role.completed": RepRoleCompleted,
   "workspace.icp.configured": WorkspaceIcpConfigured,

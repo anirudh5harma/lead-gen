@@ -1,6 +1,8 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import type { GraphCompany, GraphPerson, SourceKind } from "../graph/types.ts";
+import { grantTrialCredits, TRIAL_CREDIT_GRANT } from "../billing/credits.ts";
+import { createTrialReminderProjection } from "../billing/trial-reminders.ts";
 import { upsertPerson } from "../graph/nodes/persons.ts";
 import {
   addCompanyExplicit,
@@ -1569,7 +1571,7 @@ export async function bootstrapWorkspace(
         owner_role: "owner",
       },
     });
-    await projectWorkspaceCreated(engine.pool, event);
+    await projectWorkspaceCreated(engine, event);
   } else if (ensureMembership) {
     await ensureWorkspaceMembership(engine, ws, user_id, "owner");
   }
@@ -1665,7 +1667,7 @@ export async function createProductWorkspaceForUser(
           owner_role: "owner",
         },
       });
-      await projectWorkspaceCreated(engine.pool, event);
+      await projectWorkspaceCreated(engine, event);
       return rows[0]!;
     } catch (error) {
       if (
@@ -1684,9 +1686,10 @@ export async function createProductWorkspaceForUser(
 }
 
 async function projectWorkspaceCreated(
-  pool: Pool,
+  engine: Pick<ProductEngine, "pool" | "bus">,
   event: PublishedEvent,
 ): Promise<void> {
+  const { pool, bus } = engine;
   const payload = event.payload as {
     workspace_id: string;
     created_by: string;
@@ -1719,6 +1722,24 @@ async function projectWorkspaceCreated(
        accepted_at = coalesce(workspace_members.accepted_at, excluded.accepted_at)`,
     [payload.workspace_id, payload.created_by, payload.owner_role ?? "owner"],
   );
+  // Provision the trial credit allotment. Idempotent — a replayed
+  // workspace.created does not re-grant.
+  const granted = await grantTrialCredits(pool, payload.workspace_id);
+  if (granted) {
+    await bus.publish({
+      workspace_id: payload.workspace_id,
+      event_type: "workspace.trial.granted",
+      source: "system",
+      producer_ref: "product.workspace.created",
+      idempotency_key: `workspace.trial.granted:${payload.workspace_id}`,
+      payload: {
+        workspace_id: payload.workspace_id,
+        credits_granted: TRIAL_CREDIT_GRANT,
+        credits_remaining: TRIAL_CREDIT_GRANT,
+        credits_total: TRIAL_CREDIT_GRANT,
+      },
+    });
+  }
 }
 
 async function projectWorkspaceConfigured(
@@ -8626,7 +8647,7 @@ function createProductEventProjections(
     {
       name: "workspace.created.v1",
       eventTypes: ["workspace.created"],
-      apply: (event) => projectWorkspaceCreated(engine.pool, event),
+      apply: (event) => projectWorkspaceCreated(engine, event),
     },
     {
       name: "workspace.member_accepted.v1",
@@ -8841,6 +8862,9 @@ function createProductEventProjections(
     createChannelAccountLifecycleProjection(engine.pool),
     createConversationLifecycleProjection(engine.pool),
     createMessageLifecycleProjection(engine.pool),
+    createTrialReminderProjection({
+      pool: engine.pool,
+    }),
     createReplyLifecycleProjection(engine.pool),
     createOutcomeLifecycleProjection(engine.pool),
     createOutcomeMemoryUpdateProjection({

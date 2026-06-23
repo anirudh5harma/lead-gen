@@ -10,12 +10,16 @@ import {
   listWorkspacesForDashboard,
   type ActiveWorkspace,
 } from "@/lib/workspace";
+import { getPool } from "@/core/substrate/storage/index.ts";
+import { getWorkspaceBillingState } from "@/core/billing/index.ts";
+import type { WorkspaceBillingState } from "@/components/dashboard/billing";
 
 type DashboardChromeState =
   | {
       kind: "ready";
       workspaceId: string;
       workspaces: ActiveWorkspace[];
+      billing: WorkspaceBillingState | null;
     }
   | { kind: "onboarding" }
   | { kind: "unavailable" };
@@ -48,6 +52,7 @@ export default async function DashboardLayout({
           id: workspace.id,
           name: workspace.name,
         }))}
+        billing={chrome.billing}
       >
         {children}
       </DashboardShell>
@@ -66,10 +71,18 @@ async function loadDashboardChrome(
       getActiveWorkspaceSessionForDashboard("layout"),
       listWorkspacesForDashboard("layout"),
     ]);
+    const workspaceId = active?.workspace.id ?? completed.workspace_id;
+    const billing = await getWorkspaceBillingState(getPool(), workspaceId).catch(
+      (err) => {
+        console.error("[dashboard/layout] failed to load billing state", err);
+        return null;
+      },
+    );
     return {
       kind: "ready",
-      workspaceId: active?.workspace.id ?? completed.workspace_id,
+      workspaceId,
       workspaces,
+      billing,
     };
   } catch (err) {
     console.error("[dashboard/layout] failed to load dashboard chrome", err);

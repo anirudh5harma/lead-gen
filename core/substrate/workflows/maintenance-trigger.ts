@@ -1,5 +1,6 @@
 import type { Pool } from "pg";
 import type { StartOptions, WorkflowRuntime } from "./types.ts";
+import { sendDueTrialWeekReminders } from "../../billing/trial-reminders.ts";
 
 interface WorkspacePollTarget {
   workspace_id: string;
@@ -40,6 +41,7 @@ export interface WorkspaceMaintenanceTriggerSummary {
   workspace_polls_started: number;
   warmup_sweeps_started: number;
   outlook_repairs_started: number;
+  trial_week_reminders_sent: number;
   failures: WorkspaceMaintenanceStartFailure[];
 }
 
@@ -60,6 +62,7 @@ export async function triggerDueWorkspaceMaintenance(
     workspace_polls_started: 0,
     warmup_sweeps_started: 0,
     outlook_repairs_started: 0,
+    trial_week_reminders_sent: 0,
     failures: [],
   };
 
@@ -140,6 +143,21 @@ export async function triggerDueWorkspaceMaintenance(
       input: { workspace_id: target.workspace_id },
     });
     if (started) summary.outlook_repairs_started += 1;
+  }
+
+  // Trial reminder sweep: workspaces exhausted >= 7 days ago, still not Pro,
+  // not yet reminded. Sends transactional email directly (no durable workflow).
+  try {
+    summary.trial_week_reminders_sent = await sendDueTrialWeekReminders({
+      pool: deps.pool,
+    });
+  } catch (err) {
+    summary.failures.push({
+      workflow_name: "trial_week_reminder_sweep",
+      execution_scope: "platform",
+      workspace_id: null,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   return summary;

@@ -46,6 +46,7 @@ test("migration runner: applies all foundation migrations and creates expected t
       "workspace_llm_usage",
       "event_projection_jobs",
       "rep_memory_procedural_applications",
+      "billing_credit_ledger",
     ];
     const { rows } = await fx.pool.query<{ table_name: string }>(
       `select table_name from information_schema.tables
@@ -122,4 +123,9 @@ test("migration runner: re-run on a clean DB is a no-op for applied files", asyn
   } finally {
     await fx.close();
   }
+});
+
+test("migration runner: registers the trial credits migration filename", async () => {
+  const { REQUIRED_MIGRATION_FILES } = await import("../db/runner.ts");
+  assert.ok(REQUIRED_MIGRATION_FILES.includes("044_trial_credits.sql"));
 });

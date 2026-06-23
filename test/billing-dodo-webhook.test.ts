@@ -15,9 +15,45 @@ const { handleDodoWebhookEvent } = await import(
 
 class FakePool {
   queries: Array<{ sql: string; params: unknown[] | undefined }> = [];
+  entitlementReads = 0;
 
   async query(sql: string, params?: unknown[]): Promise<QueryResult> {
     this.queries.push({ sql, params });
+    if (
+      /select subscription_status, subscription_renews_at/i.test(sql) ||
+      /select trial_credits_remaining, trial_credits_total,\s*subscription_status, subscription_renews_at/i
+        .test(sql)
+    ) {
+      this.entitlementReads += 1;
+      return {
+        command: "SELECT",
+        rowCount: 1,
+        oid: 0,
+        fields: [],
+        rows: [this.entitlementReads === 1
+          ? {
+            trial_credits_remaining: 15,
+            trial_credits_total: 15,
+            subscription_status: "inactive",
+            subscription_renews_at: null,
+          }
+          : {
+            trial_credits_remaining: 15,
+            trial_credits_total: 15,
+            subscription_status: "active",
+            subscription_renews_at: new Date("2026-07-20T00:00:00.000Z"),
+          }],
+      };
+    }
+    if (/select count\(\*\)::text as resumed from resumed/i.test(sql)) {
+      return {
+        command: "UPDATE",
+        rowCount: 1,
+        oid: 0,
+        fields: [],
+        rows: [{ resumed: "2" }],
+      };
+    }
     return {
       command: "UPDATE",
       rowCount: 1,
@@ -63,8 +99,19 @@ test("Dodo subscription.active publishes and projects Pro workspace billing stat
   );
 
   assert.equal(result.handled, true);
-  assert.equal(bus.published.length, 1);
+  // subscription.synced, then outreach.resumed (Pro activation resumes any
+  // trial-frozen outreach).
+  assert.equal(bus.published.length, 2);
   assert.equal(bus.published[0]?.event_type, "workspace.billing.subscription.synced");
+  assert.equal(bus.published[1]?.event_type, "workspace.outreach.resumed");
+  assert.deepEqual(bus.published[1]?.payload, {
+    workspace_id: workspaceId,
+    reason: "subscription_activated",
+    resumed_at: "2026-06-20T00:00:00.000Z",
+    resumed_message_count: 2,
+    subscription_status: "active",
+    renews_at: "2026-07-20T00:00:00.000Z",
+  });
   assert.deepEqual(bus.published[0]?.payload, {
     workspace_id: workspaceId,
     provider: "dodo",
@@ -96,4 +143,9 @@ test("Dodo subscription.active publishes and projects Pro workspace billing stat
     null,
     "2026-06-20T00:00:00.000Z",
   ]);
+
+  const resumeUpdate = pool.queries.find((q) =>
+    /update messages/i.test(q.sql) && /trial_frozen/i.test(q.sql)
+  );
+  assert.ok(resumeUpdate, "held trial-frozen messages should be marked for immediate retry");
 });

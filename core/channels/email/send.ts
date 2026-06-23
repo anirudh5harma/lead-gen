@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import type { EventBus } from "../../substrate/events/index.ts";
+import { getWorkspaceBillingState } from "../../billing/index.ts";
 import { projectMessageLifecycleEvent } from "../message-lifecycle.ts";
 import {
   checkFrequencyCap,
@@ -9,6 +10,7 @@ import {
   type FrequencyCapOptions,
 } from "./caps.ts";
 import { readEvalState } from "./eval-gate.ts";
+import { reserveCredit, refundCredit } from "../../billing/credits.ts";
 import {
   canSendVia,
   getSendingDomain,
@@ -193,6 +195,29 @@ async function sendEmail(
     };
   }
 
+  // 5b. Trial credit gate. Pro is unlimited; trial charges once per message_id.
+  const credit = await reserveCredit(pool, {
+    workspace_id: opts.workspace_id,
+    message_id: opts.message_id,
+    channel: "email",
+  });
+  if (!credit.ok) {
+    await refundSend(pool, account.id);
+    const billing = await getWorkspaceBillingState(pool, opts.workspace_id);
+    await emitDeferred(deps, opts, "trial_frozen", "trial credits exhausted");
+    await emitOutreachFrozen(
+      deps,
+      opts.workspace_id,
+      billing.credits_remaining,
+      billing.subscription_status,
+    );
+    return {
+      status: "deferred",
+      message_id: opts.message_id,
+      reason: "trial_frozen",
+    };
+  }
+
   // 6. Emit message.queued; the projector owns message row materialization.
   const queuedEvent = await bus.publish({
     workspace_id: opts.workspace_id,
@@ -246,6 +271,9 @@ async function sendEmail(
       },
     });
     await projectMessageLifecycleEvent(pool, sentEvent);
+
+    await emitCreditThresholdEvents(deps, opts.workspace_id, credit);
+
     return {
       status: "sent",
       message_id: opts.message_id,
@@ -254,6 +282,13 @@ async function sendEmail(
     };
   } catch (err) {
     await refundSend(pool, account.id);
+    if (credit.metered) {
+      await refundCredit(pool, {
+        workspace_id: opts.workspace_id,
+        message_id: opts.message_id,
+        channel: "email",
+      });
+    }
     const isTransient = isTransientProviderError(err);
     const reason: DeferReason = isTransient
       ? "provider_error_transient"
@@ -294,6 +329,98 @@ async function emitDeferred(
     },
   });
   await projectMessageLifecycleEvent(deps.pool, event);
+}
+
+async function emitCreditThresholdEvents(
+  deps: EmailChannelDeps,
+  workspace_id: string,
+  credit: {
+    metered: boolean;
+    remaining: number;
+    crossedLow?: boolean;
+    crossedZero?: boolean;
+  },
+): Promise<void> {
+  if (!credit.metered) return;
+  const billing = await getWorkspaceBillingState(deps.pool, workspace_id);
+  if (credit.crossedLow) {
+    await deps.bus.publish({
+      workspace_id,
+      event_type: "workspace.trial.low",
+      source: "system",
+      producer_ref: "channel:email:credit-gate",
+      idempotency_key: `workspace.trial.low:${workspace_id}:5`,
+      payload: {
+        workspace_id,
+        credits_remaining: credit.remaining,
+        credits_total: billing.credits_total,
+      },
+    });
+    return;
+  }
+  if (credit.crossedZero) {
+    const exhausted_at = await loadCreditsExhaustedAt(deps.pool, workspace_id);
+    await deps.bus.publish({
+      workspace_id,
+      event_type: "workspace.trial.exhausted",
+      source: "system",
+      producer_ref: "channel:email:credit-gate",
+      idempotency_key: `workspace.trial.exhausted:${workspace_id}:${exhausted_at ?? "none"}`,
+      payload: {
+        workspace_id,
+        credits_remaining: 0,
+        credits_total: billing.credits_total,
+        credits_exhausted_at: exhausted_at ?? new Date().toISOString(),
+      },
+    });
+    await emitOutreachFrozen(
+      deps,
+      workspace_id,
+      billing.credits_remaining,
+      billing.subscription_status,
+      exhausted_at,
+    );
+  }
+}
+
+async function loadCreditsExhaustedAt(
+  pool: Pool,
+  workspace_id: string,
+): Promise<string | null> {
+  const { rows } = await pool.query<{ credits_exhausted_at: Date | null }>(
+    `select credits_exhausted_at
+       from workspaces
+      where id = $1`,
+    [workspace_id],
+  );
+  return rows[0]?.credits_exhausted_at?.toISOString() ?? null;
+}
+
+async function emitOutreachFrozen(
+  deps: EmailChannelDeps,
+  workspace_id: string,
+  credits_remaining: number,
+  subscription_status: string,
+  frozen_at?: string | null,
+): Promise<void> {
+  const when =
+    frozen_at ??
+    await loadCreditsExhaustedAt(deps.pool, workspace_id) ??
+    new Date().toISOString();
+  await deps.bus.publish({
+    workspace_id,
+    event_type: "workspace.outreach.frozen",
+    source: "system",
+    producer_ref: "channel:email:credit-gate",
+    idempotency_key: `workspace.outreach.frozen:${workspace_id}:${when}`,
+    payload: {
+      workspace_id,
+      reason: "trial_exhausted",
+      credits_remaining,
+      subscription_status,
+      frozen_at: when,
+    },
+  });
 }
 
 async function loadConversation(

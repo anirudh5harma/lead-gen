@@ -27,10 +27,12 @@ function summary(
   return {
     triggered_at: "2026-06-16T12:00:00.000Z",
     platform_catalog_polls_started: 0,
+    platform_shared_polls_started: 0,
     platform_expiry_sweeps_started: 0,
     workspace_polls_started: 0,
     warmup_sweeps_started: 0,
     outlook_repairs_started: 0,
+    trial_week_reminders_sent: 0,
     failures: [],
     ...overrides,
   };

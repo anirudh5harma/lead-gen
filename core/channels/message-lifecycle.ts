@@ -257,7 +257,7 @@ async function projectMessageDeferred(
             end,
             channel_account_id = coalesce($5::uuid, channel_account_id),
             eval_notes = coalesce(eval_notes, '{}'::jsonb) || $3::jsonb,
-            properties = properties || $3::jsonb
+            properties = properties || $6::jsonb
       where id = $1
         and workspace_id = $2
         and direction = 'outbound'
@@ -268,6 +268,10 @@ async function projectMessageDeferred(
       JSON.stringify(notes),
       payload.channel,
       payload.channel_account_id ?? null,
+      JSON.stringify({
+        ...notes,
+        retry_after: payload.retry_after ?? null,
+      }),
     ],
   );
 }

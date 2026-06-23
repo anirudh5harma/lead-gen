@@ -21,6 +21,8 @@ import {
   type OutputDestination,
 } from "@/core/product/output-destinations.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
+import { getWorkspaceBillingState } from "@/core/billing/index.ts";
+import PlanSection from "@/components/dashboard/PlanSection";
 import { getRequestAuthIdentity } from "@/lib/auth";
 import type { RequestAuthIdentity } from "@/lib/auth";
 import { getActiveWorkspaceSessionForDashboard } from "@/lib/workspace";
@@ -710,6 +712,10 @@ export default async function ProfilePage() {
     ),
   ]);
   const identity = await getRequestAuthIdentity();
+  const billing = await getWorkspaceBillingState(
+    getPool(),
+    active.workspace.id,
+  ).catch(() => null);
   const mode = profileMode(state.settings, state.approvals);
   const formMode = mode === "review_only" ? "review_only" : "autonomous";
   const outlookLabel = state.outlookAccount
@@ -745,6 +751,12 @@ export default async function ProfilePage() {
           </div>
         }
       />
+
+      <div id="plan">
+        <SurfaceSection title="Plan & billing">
+          <PlanSection billing={billing} />
+        </SurfaceSection>
+      </div>
 
       <div id="profile">
         <SurfaceSection title="Company & ICP">

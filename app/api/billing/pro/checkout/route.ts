@@ -13,9 +13,61 @@ import {
   getActiveWorkspaceSession,
   setActiveWorkspaceCookie,
 } from "@/lib/workspace";
+import { getPool } from "@/core/substrate/storage/index.ts";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+
+/**
+ * JSON checkout for in-app buttons (dashboard banner, Profile plan section):
+ * returns `{ url }` for the client to redirect to. The GET handler below stays
+ * for marketing/pricing links that redirect server-side.
+ */
+export async function POST(request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  const period = parsePeriod(url.searchParams.get("period"));
+  const identity = await getRequestAuthIdentity();
+  if (!identity) {
+    return Response.json({ error: "Authentication required." }, { status: 401 });
+  }
+  const workspace = await getActiveWorkspaceSession();
+  if (!workspace) {
+    return Response.json({ error: "No active workspace." }, { status: 400 });
+  }
+  // Persist the owner email so trial/billing reminders have a recipient.
+  if (identity.email) {
+    await getPool()
+      .query(
+        `update workspaces
+            set settings = coalesce(settings, '{}'::jsonb)
+              || jsonb_build_object('owner_email', $2::text)
+          where id = $1`,
+        [workspace.workspace.id, identity.email],
+      )
+      .catch(() => {});
+  }
+  try {
+    const checkoutUrl = await createSubscriptionCheckoutUrl({
+      userEmail: identity.email ?? `${identity.id}@users.bombsell.local`,
+      userName: displayNameFromEmail(identity.email) ?? "Bombsell customer",
+      userId: identity.id,
+      workspaceId: workspace.workspace.id,
+      period,
+      returnUrl: new URL("/dashboard/profile?billing=pro#plan", url).toString(),
+      cancelUrl: new URL("/dashboard/profile#plan", url).toString(),
+    });
+    return Response.json({ url: checkoutUrl });
+  } catch (err) {
+    console.error("[billing/pro/checkout] POST dodo checkout error", {
+      error: err instanceof Error ? err.message : String(err),
+      workspace_id: workspace.workspace.id,
+    });
+    return Response.json(
+      { error: "Unable to start Pro checkout right now." },
+      { status: 502 },
+    );
+  }
+}
 
 export async function GET(request: Request): Promise<Response> {
   const url = new URL(request.url);

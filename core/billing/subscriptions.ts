@@ -1,5 +1,6 @@
 import type { Pool } from "pg";
 import type { EventBus, EventPayload, PublishedEvent } from "../substrate/events/index.ts";
+import { getWorkspaceBillingState, isProEntitled } from "./credits.ts";
 import {
   dodoPeriodForProductId,
   isConfiguredProProductId,
@@ -43,6 +44,14 @@ export interface HandleDodoWebhookEventResult {
   event?: PublishedEvent<EventPayload<"workspace.billing.subscription.synced">>;
 }
 
+export interface HandleDodoWebhookEventOptions {
+  webhookId?: string | null;
+  resumeDeferredMessages?: (
+    pool: Pool,
+    workspaceId: string,
+  ) => Promise<number>;
+}
+
 const ACTIVATION_EVENTS = new Set([
   "subscription.active",
   "subscription.created",
@@ -58,7 +67,7 @@ export async function handleDodoWebhookEvent(
   pool: Pool,
   bus: Pick<EventBus, "publish">,
   payload: DodoWebhookPayload,
-  opts: { webhookId?: string | null } = {},
+  opts: HandleDodoWebhookEventOptions = {},
 ): Promise<HandleDodoWebhookEventResult> {
   const eventType = payload.type;
   const status = statusForDodoEvent(eventType);
@@ -109,7 +118,32 @@ export async function handleDodoWebhookEvent(
     },
   });
 
+  const priorEntitlement = await loadWorkspaceEntitlement(pool, workspaceId);
   await projectWorkspaceBillingSubscriptionSynced(pool, event);
+
+  const current = await getWorkspaceBillingState(pool, workspaceId);
+  if (status === "active" && !priorEntitlement && current.tier === "pro") {
+    const resumed = await (opts.resumeDeferredMessages ?? resumeTrialFrozenMessages)(
+      pool,
+      workspaceId,
+    );
+    await bus.publish({
+      workspace_id: workspaceId,
+      event_type: "workspace.outreach.resumed",
+      source: "webhook",
+      producer_ref: "webhook:dodo",
+      idempotency_key: `workspace.outreach.resumed:${workspaceId}:${event.id}`,
+      payload: {
+        workspace_id: workspaceId,
+        reason: "subscription_activated",
+        resumed_at: event.occurred_at,
+        resumed_message_count: resumed,
+        subscription_status: current.subscription_status,
+        renews_at: current.renews_at,
+      },
+    });
+  }
+
   return { handled: true, event };
 }
 
@@ -230,6 +264,53 @@ async function resolveWorkspaceId(
   }
 
   return null;
+}
+
+async function loadWorkspaceEntitlement(
+  pool: Pool,
+  workspaceId: string,
+): Promise<boolean> {
+  const { rows } = await pool.query<{
+    subscription_status: string | null;
+    subscription_renews_at: Date | null;
+  }>(
+    `select subscription_status, subscription_renews_at
+       from workspaces
+      where id = $1
+      limit 1`,
+    [workspaceId],
+  );
+  const row = rows[0];
+  if (!row) return false;
+  return isProEntitled(row);
+}
+
+async function resumeTrialFrozenMessages(
+  pool: Pool,
+  workspaceId: string,
+): Promise<number> {
+  const { rows } = await pool.query<{ resumed: string }>(
+    `with resumed as (
+       update messages
+          set properties = jsonb_strip_nulls(
+                properties
+                || jsonb_build_object(
+                  'retry_after',
+                  now()::text,
+                  'resume_requested_at',
+                  now()::text
+                )
+              )
+        where workspace_id = $1
+          and status = 'deferred'::message_status
+          and direction = 'outbound'
+          and coalesce(properties->>'defer_reason', eval_notes->>'defer_reason') = 'trial_frozen'
+        returning 1
+     )
+     select count(*)::text as resumed from resumed`,
+    [workspaceId],
+  );
+  return Number(rows[0]?.resumed ?? "0");
 }
 
 function dodoWebhookIdempotencyKey(
