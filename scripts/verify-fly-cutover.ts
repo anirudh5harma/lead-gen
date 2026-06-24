@@ -339,8 +339,19 @@ function loadSelectedLocalEnv(keys: string[]): Record<string, string> {
   return env;
 }
 
+function numberFromEnv(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function trimOutput(output: string): string {
   return output.replace(/\s+/g, " ").trim().slice(0, 500) || "no output";
+}
+
+function detailFromError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function hasFailures(): boolean {

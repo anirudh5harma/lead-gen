@@ -121,11 +121,12 @@ const microsoftClientSecret = requiredEnv("MICROSOFT_CLIENT_SECRET");
 const sesConfigurationSet = process.env.SES_CONFIGURATION_SET?.trim()
   || "bombsell-outbound";
 const restateBearer = restateBearerFromEnv();
-const productRedriveSignalLimit = positiveIntegerEnv("PRODUCT_REDRIVE_SIGNAL_LIMIT", 25);
-const productRedriveReplyLimit = positiveIntegerEnv("PRODUCT_REDRIVE_REPLY_LIMIT", 25);
+const productEventDispatchLimit = positiveIntegerEnv("PRODUCT_EVENT_DISPATCH_LIMIT", 10);
+const productRedriveSignalLimit = positiveIntegerEnv("PRODUCT_REDRIVE_SIGNAL_LIMIT", 5);
+const productRedriveReplyLimit = positiveIntegerEnv("PRODUCT_REDRIVE_REPLY_LIMIT", 5);
 const productRedriveRecommendationLimit = positiveIntegerEnv(
   "PRODUCT_REDRIVE_RECOMMENDATION_LIMIT",
-  5,
+  2,
 );
 let productRedriveInFlight = false;
 let pendingDispatchRedriveInFlight = false;
@@ -318,7 +319,7 @@ const playDispatchSubscriptions = await registerProductEventDispatchers(
     },
   },
   {
-    limit: 50,
+    limit: productEventDispatchLimit,
     dispatchSignalMatching: (event) =>
       dispatchSignalMatchingWorkflowFromIngestedEvent(event, {
         pool,
@@ -328,7 +329,7 @@ const playDispatchSubscriptions = await registerProductEventDispatchers(
 );
 console.log("[production-worker] projectors consuming events");
 
-await redriveProductPlayDispatches();
+await runStartupTask("product play redrive", redriveProductPlayDispatches);
 const productRedriveTimer = setInterval(() => {
   void redriveProductPlayDispatchesGuarded().catch((err) => {
     console.error("[production-worker] product play redrive failed:", err);
@@ -336,7 +337,7 @@ const productRedriveTimer = setInterval(() => {
 }, 60_000);
 productRedriveTimer.unref();
 
-await redrivePendingDispatches();
+await runStartupTask("NATS dispatch redrive", redrivePendingDispatches);
 const relayTimer = setInterval(() => {
   void redrivePendingDispatchesGuarded().catch((err) => {
     console.error("[production-worker] NATS dispatch redrive failed:", err);
@@ -356,6 +357,14 @@ const recoveryTimer = setInterval(() => {
   });
 }, 30_000);
 recoveryTimer.unref();
+
+async function runStartupTask(name: string, task: () => Promise<void>): Promise<void> {
+  try {
+    await task();
+  } catch (err) {
+    console.error(`[production-worker] initial ${name} failed; continuing:`, err);
+  }
+}
 
 async function redrivePendingDispatches(): Promise<void> {
   const result = await bus.redrivePending();
