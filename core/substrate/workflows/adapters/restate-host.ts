@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { createHash } from "node:crypto";
 import * as restate from "@restatedev/restate-sdk";
 import type { EventBus } from "../../events/index.ts";
 import type { EventInput, PublishedEvent } from "../../events/types.ts";
@@ -33,6 +34,9 @@ export interface RestateWorkflowHostOptions {
 }
 
 export type RestateWorkflowComponent = ReturnType<typeof restate.workflow>;
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
  * Convert our WorkflowDefinition contract into a native Restate workflow.
@@ -119,7 +123,8 @@ export function createRunContext<I, O>(
     execution_scope === "platform"
       ? null
       : requireMetadata(input, "workspace_id");
-  const correlation_id = input.metadata?.correlation_id ?? run_id;
+  const correlation_id = normalizeEventUuid(input.metadata?.correlation_id) ?? uuidFromStableString(run_id);
+  const causation_id = normalizeEventUuid(input.metadata?.causation_id);
   const publish = opts.bus?.publish as
     | ((input: EventInput) => Promise<PublishedEvent>)
     | undefined;
@@ -215,7 +220,7 @@ export function createRunContext<I, O>(
         source: "system",
         producer_ref: `workflow:${definition.name}:${run_id}`,
         correlation_id,
-        causation_id: input.metadata?.causation_id ?? null,
+        causation_id,
         idempotency_key: `approval:${awakeable.id}`,
         payload: {
           approval_id: awakeable.id,
@@ -245,13 +250,36 @@ export function createRunContext<I, O>(
           source: "system",
           producer_ref: `workflow:${definition.name}:${run_id}`,
           correlation_id,
-          causation_id: input.metadata?.causation_id ?? null,
+          causation_id,
           idempotency_key: `workflow:${run_id}:event:${position}`,
           payload: payload as never,
         }),
       ) as Promise<PublishedEvent<typeof payload>>;
     },
   };
+}
+
+function normalizeEventUuid(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  return UUID_RE.test(trimmed) ? trimmed.toLowerCase() : uuidFromStableString(trimmed);
+}
+
+function uuidFromStableString(value: string): string {
+  const hex = createHash("sha256")
+    .update("bombsell:restate:event-correlation:")
+    .update(value)
+    .digest("hex");
+  const variantByte = ((Number.parseInt(hex.slice(16, 18), 16) & 0x3f) | 0x80)
+    .toString(16)
+    .padStart(2, "0");
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    `5${hex.slice(13, 16)}`,
+    `${variantByte}${hex.slice(18, 20)}`,
+    hex.slice(20, 32),
+  ].join("-");
 }
 
 function requireMetadata<I>(

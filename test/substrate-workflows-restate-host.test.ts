@@ -17,6 +17,9 @@ import type {
 import type { EventBus } from "../core/substrate/events/index.ts";
 import type { ApprovalDecision } from "../core/substrate/workflows/index.ts";
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function fakeCtx(opts: {
   key?: string;
   invocationId?: string;
@@ -185,7 +188,7 @@ test("Restate RunContext publishes workflow events with correlation metadata", a
 
   assert.equal(bus.events.length, 1);
   assert.equal((bus.events[0] as { producer_ref: string }).producer_ref, "workflow:publisher:inv-99");
-  assert.equal((bus.events[0] as { correlation_id: string }).correlation_id, "cor-2");
+  assert.match((bus.events[0] as { correlation_id: string }).correlation_id, UUID_RE);
   assert.equal(
     (bus.events[0] as { idempotency_key: string }).idempotency_key,
     "workflow:inv-99:event:0",
