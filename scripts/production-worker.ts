@@ -121,10 +121,11 @@ const microsoftClientSecret = requiredEnv("MICROSOFT_CLIENT_SECRET");
 const sesConfigurationSet = process.env.SES_CONFIGURATION_SET?.trim()
   || "bombsell-outbound";
 const restateBearer = restateBearerFromEnv();
-const productEventDispatchLimit = positiveIntegerEnv("PRODUCT_EVENT_DISPATCH_LIMIT", 10);
-const productRedriveSignalLimit = positiveIntegerEnv("PRODUCT_REDRIVE_SIGNAL_LIMIT", 5);
-const productRedriveReplyLimit = positiveIntegerEnv("PRODUCT_REDRIVE_REPLY_LIMIT", 5);
-const productRedriveRecommendationLimit = positiveIntegerEnv(
+applyWorkerPoolOverride();
+const productEventDispatchLimit = nonNegativeIntegerEnv("PRODUCT_EVENT_DISPATCH_LIMIT", 10);
+const productRedriveSignalLimit = nonNegativeIntegerEnv("PRODUCT_REDRIVE_SIGNAL_LIMIT", 5);
+const productRedriveReplyLimit = nonNegativeIntegerEnv("PRODUCT_REDRIVE_REPLY_LIMIT", 5);
+const productRedriveRecommendationLimit = nonNegativeIntegerEnv(
   "PRODUCT_REDRIVE_RECOMMENDATION_LIMIT",
   2,
 );
@@ -312,21 +313,26 @@ const signalSubscriptions = await registerSignalProjectors(
     },
   },
 );
-const playDispatchSubscriptions = await registerProductEventDispatchers(
-  {
-    subscribe(eventType, handler, durableName) {
-      return bus.subscribeScoped("*", eventType, handler, { durableName });
+const playDispatchSubscriptions = productEventDispatchLimit === 0
+  ? []
+  : await registerProductEventDispatchers(
+    {
+      subscribe(eventType, handler, durableName) {
+        return bus.subscribeScoped("*", eventType, handler, { durableName });
+      },
     },
-  },
-  {
-    limit: productEventDispatchLimit,
-    dispatchSignalMatching: (event) =>
-      dispatchSignalMatchingWorkflowFromIngestedEvent(event, {
-        pool,
-        workflows: workflowsClient,
-      }),
-  },
-);
+    {
+      limit: productEventDispatchLimit,
+      dispatchSignalMatching: (event) =>
+        dispatchSignalMatchingWorkflowFromIngestedEvent(event, {
+          pool,
+          workflows: workflowsClient,
+        }),
+    },
+  );
+if (productEventDispatchLimit === 0) {
+  console.warn("[production-worker] product event dispatchers disabled by PRODUCT_EVENT_DISPATCH_LIMIT=0");
+}
 console.log("[production-worker] projectors consuming events");
 
 await runStartupTask("product play redrive", redriveProductPlayDispatches);
@@ -387,9 +393,15 @@ async function redrivePendingDispatchesGuarded(): Promise<void> {
 
 async function redriveProductPlayDispatches(): Promise<void> {
   const [signalDispatched, replyDispatched, recommendationDispatched] = await Promise.all([
-    dispatchSignalPlaysOnce({ limit: productRedriveSignalLimit }),
-    dispatchReplyEmailPlaysOnce({ limit: productRedriveReplyLimit }),
-    dispatchWorkspaceRecommendationResearchOnce({ limit: productRedriveRecommendationLimit }),
+    productRedriveSignalLimit > 0
+      ? dispatchSignalPlaysOnce({ limit: productRedriveSignalLimit })
+      : 0,
+    productRedriveReplyLimit > 0
+      ? dispatchReplyEmailPlaysOnce({ limit: productRedriveReplyLimit })
+      : 0,
+    productRedriveRecommendationLimit > 0
+      ? dispatchWorkspaceRecommendationResearchOnce({ limit: productRedriveRecommendationLimit })
+      : 0,
   ]);
   if (signalDispatched > 0 || replyDispatched > 0 || recommendationDispatched > 0) {
     console.log(
@@ -438,12 +450,17 @@ function hasEnv(key: string): boolean {
   return Boolean(process.env[key]?.trim());
 }
 
-function positiveIntegerEnv(key: string, fallback: number): number {
+function applyWorkerPoolOverride(): void {
+  const value = process.env.WORKER_DATABASE_POOL_MAX?.trim();
+  if (value) process.env.DATABASE_POOL_MAX = value;
+}
+
+function nonNegativeIntegerEnv(key: string, fallback: number): number {
   const raw = process.env[key]?.trim();
   if (!raw) return fallback;
   const value = Number(raw);
-  if (!Number.isInteger(value) || value <= 0) {
-    throw new Error(`${key} must be a positive integer`);
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(`${key} must be a non-negative integer`);
   }
   return value;
 }

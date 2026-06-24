@@ -63,6 +63,13 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     example: "10",
   },
   {
+    name: "WORKER_DATABASE_POOL_MAX",
+    requirement: "optional",
+    category: "database",
+    description: "Worker-only override for Postgres pool size during durable workflow backlogs.",
+    example: "30",
+  },
+  {
     name: "APP_ORIGIN",
     requirement: "production",
     category: "runtime",
@@ -271,6 +278,34 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     category: "intelligence",
     description: "Minimum age, in hours, before recommendation-backed research refreshes can run again.",
     example: "24",
+  },
+  {
+    name: "PRODUCT_EVENT_DISPATCH_LIMIT",
+    requirement: "optional",
+    category: "runtime",
+    description: "Maximum product event dispatches handled per worker batch; set to 0 for emergency throttle.",
+    example: "10",
+  },
+  {
+    name: "PRODUCT_REDRIVE_SIGNAL_LIMIT",
+    requirement: "optional",
+    category: "runtime",
+    description: "Maximum signal Play redrives per worker sweep; set to 0 to pause signal redrive.",
+    example: "5",
+  },
+  {
+    name: "PRODUCT_REDRIVE_REPLY_LIMIT",
+    requirement: "optional",
+    category: "runtime",
+    description: "Maximum reply Play redrives per worker sweep; set to 0 to pause reply redrive.",
+    example: "5",
+  },
+  {
+    name: "PRODUCT_REDRIVE_RECOMMENDATION_LIMIT",
+    requirement: "optional",
+    category: "runtime",
+    description: "Maximum recommendation research redrives per worker sweep; set to 0 to pause recommendation redrive.",
+    example: "2",
   },
   {
     name: "DEEPSEEK_PROMPT_USD_PER_MILLION",
