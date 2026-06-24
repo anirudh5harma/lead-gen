@@ -78,6 +78,7 @@ export async function handleMaintenanceRequest(
     const summary = await (deps.trigger ?? triggerDueWorkspaceMaintenance)({
       pool: deps.pool ?? getPool(),
       runtime: workflowRuntime,
+      maxWorkspacePolls: positiveIntegerEnv("MAINTENANCE_WORKSPACE_POLL_LIMIT", 10),
     });
     return Response.json(summary, {
       status: summary.failures.length === 0 ? 202 : 207,
@@ -88,6 +89,16 @@ export async function handleMaintenanceRequest(
       { status: 503 },
     );
   }
+}
+
+function positiveIntegerEnv(key: string, fallback: number): number {
+  const raw = process.env[key]?.trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${key} must be a positive integer`);
+  }
+  return value;
 }
 
 function collectAllowedSecrets(): string[] {

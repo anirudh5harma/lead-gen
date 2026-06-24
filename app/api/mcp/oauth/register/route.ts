@@ -4,16 +4,28 @@ import { normalizeRedirectUris, randomToken } from "@/core/mcp/oauth.ts";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+const MAX_REGISTER_PAYLOAD_BYTES = 16 * 1024;
+const DEFAULT_REGISTRATION_LIMIT_PER_HOUR = 120;
+
 export async function OPTIONS() {
   return new Response(null, { status: 204, headers: corsHeaders() });
 }
 
 export async function POST(request: Request) {
-  const body = await request.json().catch(() => null) as {
+  const raw = await request.text().catch(() => "");
+  if (new TextEncoder().encode(raw).byteLength > MAX_REGISTER_PAYLOAD_BYTES) {
+    return oauthError("payload_too_large", 413);
+  }
+  let body: {
     client_name?: unknown;
     redirect_uris?: unknown;
     token_endpoint_auth_method?: unknown;
   } | null;
+  try {
+    body = raw.trim() ? JSON.parse(raw) : null;
+  } catch {
+    return oauthError("invalid_request", 400);
+  }
 
   const redirectUris = normalizeRedirectUris(body?.redirect_uris);
   if (redirectUris.length === 0) {
@@ -32,7 +44,12 @@ export async function POST(request: Request) {
       ? body.client_name.trim().slice(0, 120)
       : "MCP client";
 
-  await getPool().query(
+  const pool = getPool();
+  if (await registrationLimitReached(pool)) {
+    return oauthError("rate_limited", 429);
+  }
+
+  await pool.query(
     `insert into mcp_oauth_clients
        (client_id, client_name, redirect_uris, token_endpoint_auth_method)
      values ($1, $2, $3, $4)`,
@@ -55,6 +72,31 @@ export async function POST(request: Request) {
 
 function oauthError(error: string, status: number): Response {
   return Response.json({ error }, { status, headers: corsHeaders() });
+}
+
+async function registrationLimitReached(
+  pool: ReturnType<typeof getPool>,
+): Promise<boolean> {
+  const limit = positiveIntegerEnv(
+    "MCP_OAUTH_REGISTRATION_LIMIT_PER_HOUR",
+    DEFAULT_REGISTRATION_LIMIT_PER_HOUR,
+  );
+  const { rows } = await pool.query<{ count: string }>(
+    `select count(*)::text as count
+       from mcp_oauth_clients
+      where created_at >= now() - interval '1 hour'`,
+  );
+  return Number(rows[0]?.count ?? 0) >= limit;
+}
+
+function positiveIntegerEnv(key: string, fallback: number): number {
+  const raw = process.env[key]?.trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${key} must be a positive integer`);
+  }
+  return value;
 }
 
 function corsHeaders(): HeadersInit {

@@ -6,7 +6,7 @@ import type {
 } from "../../core/product/assistant/types.ts";
 
 /**
- * Client for the DeepSeek-backed assistant brain at POST /api/assistant/chat.
+ * Client for the workspace assistant brain at POST /api/assistant/chat.
  *
  * The route streams Server-Sent Events. Unlike EventSource (GET-only), we POST
  * the user message + history and parse the `event:`/`data:` framed stream off

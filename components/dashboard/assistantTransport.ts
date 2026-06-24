@@ -6,7 +6,7 @@ import type { AssistantSessionResponse } from "../../core/product/assistant/type
  * Voice capture transport. OpenAI Realtime is used here ONLY as a streaming
  * transcription service: the mic audio goes up over WebRTC and we consume the
  * input-audio transcription events. There is no model reasoning, no audio
- * output, and no function calling on this channel — DeepSeek (the brain) runs
+ * output, and no function calling on this channel — reasoning runs
  * server-side behind /api/assistant/chat and replies as text in the drawer.
  */
 

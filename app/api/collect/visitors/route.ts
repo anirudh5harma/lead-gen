@@ -18,6 +18,8 @@ import { getPool } from "../../../../core/substrate/storage/index.ts";
 
 export const dynamic = "force-dynamic";
 
+const MAX_BROWSER_VISITOR_PAYLOAD_BYTES = 32 * 1024;
+
 const BrowserVisitorPayload = VisitorEventSchema.extend({
   source_id: z.string().uuid(),
 });
@@ -44,7 +46,11 @@ export async function POST(req: Request): Promise<Response> {
 
   let payload: BrowserVisitorPayload;
   try {
-    payload = BrowserVisitorPayload.parse(JSON.parse(await req.text()));
+    const raw = await req.text();
+    if (new TextEncoder().encode(raw).byteLength > MAX_BROWSER_VISITOR_PAYLOAD_BYTES) {
+      return json({ error: "payload_too_large" }, 413, origin, true);
+    }
+    payload = BrowserVisitorPayload.parse(JSON.parse(raw));
   } catch (err) {
     return json(
       {
@@ -61,7 +67,7 @@ export async function POST(req: Request): Promise<Response> {
   if (!source) {
     return json({ error: "source_not_found" }, 404, origin, true);
   }
-  if (!originAllowed(origin, payload, source.allowed_hosts)) {
+  if (!originAllowed(origin, source.allowed_hosts)) {
     return json({ error: "origin_not_allowed" }, 403, origin, false);
   }
 
@@ -156,20 +162,13 @@ function allowedHosts(
 
 function originAllowed(
   origin: string | null,
-  payload: BrowserVisitorPayload,
   allowed: string[],
 ): boolean {
   if (allowed.length === 0) return false;
-  const seen = uniqueStrings([
-    hostFromUnknown(origin),
-    hostFromUnknown(payload.page_url),
-    hostFromUnknown(payload.referrer),
-    hostFromUnknown(payload.website_url),
-  ]);
-  return seen.some((host) =>
-    allowed.some((allowedHost) =>
-      publicHostMatches(host, allowedHost),
-    ),
+  const host = hostFromUnknown(origin);
+  if (!host) return false;
+  return allowed.some((allowedHost) =>
+    publicHostMatches(host, allowedHost),
   );
 }
 

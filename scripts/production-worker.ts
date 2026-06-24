@@ -121,6 +121,14 @@ const microsoftClientSecret = requiredEnv("MICROSOFT_CLIENT_SECRET");
 const sesConfigurationSet = process.env.SES_CONFIGURATION_SET?.trim()
   || "bombsell-outbound";
 const restateBearer = restateBearerFromEnv();
+const productRedriveSignalLimit = positiveIntegerEnv("PRODUCT_REDRIVE_SIGNAL_LIMIT", 25);
+const productRedriveReplyLimit = positiveIntegerEnv("PRODUCT_REDRIVE_REPLY_LIMIT", 25);
+const productRedriveRecommendationLimit = positiveIntegerEnv(
+  "PRODUCT_REDRIVE_RECOMMENDATION_LIMIT",
+  5,
+);
+let productRedriveInFlight = false;
+let pendingDispatchRedriveInFlight = false;
 
 const pool = getPool();
 registerProductTools();
@@ -322,7 +330,7 @@ console.log("[production-worker] projectors consuming events");
 
 await redriveProductPlayDispatches();
 const productRedriveTimer = setInterval(() => {
-  void redriveProductPlayDispatches().catch((err) => {
+  void redriveProductPlayDispatchesGuarded().catch((err) => {
     console.error("[production-worker] product play redrive failed:", err);
   });
 }, 60_000);
@@ -330,7 +338,7 @@ productRedriveTimer.unref();
 
 await redrivePendingDispatches();
 const relayTimer = setInterval(() => {
-  void redrivePendingDispatches().catch((err) => {
+  void redrivePendingDispatchesGuarded().catch((err) => {
     console.error("[production-worker] NATS dispatch redrive failed:", err);
   });
 }, 5_000);
@@ -358,16 +366,36 @@ async function redrivePendingDispatches(): Promise<void> {
   }
 }
 
+async function redrivePendingDispatchesGuarded(): Promise<void> {
+  if (pendingDispatchRedriveInFlight) return;
+  pendingDispatchRedriveInFlight = true;
+  try {
+    await redrivePendingDispatches();
+  } finally {
+    pendingDispatchRedriveInFlight = false;
+  }
+}
+
 async function redriveProductPlayDispatches(): Promise<void> {
   const [signalDispatched, replyDispatched, recommendationDispatched] = await Promise.all([
-    dispatchSignalPlaysOnce({ limit: 100 }),
-    dispatchReplyEmailPlaysOnce({ limit: 100 }),
-    dispatchWorkspaceRecommendationResearchOnce({ limit: 25 }),
+    dispatchSignalPlaysOnce({ limit: productRedriveSignalLimit }),
+    dispatchReplyEmailPlaysOnce({ limit: productRedriveReplyLimit }),
+    dispatchWorkspaceRecommendationResearchOnce({ limit: productRedriveRecommendationLimit }),
   ]);
   if (signalDispatched > 0 || replyDispatched > 0 || recommendationDispatched > 0) {
     console.log(
       `[production-worker] product play redrive: ${signalDispatched} signal plays, ${replyDispatched} reply plays, ${recommendationDispatched} recommendation workflows`,
     );
+  }
+}
+
+async function redriveProductPlayDispatchesGuarded(): Promise<void> {
+  if (productRedriveInFlight) return;
+  productRedriveInFlight = true;
+  try {
+    await redriveProductPlayDispatches();
+  } finally {
+    productRedriveInFlight = false;
   }
 }
 
@@ -399,6 +427,16 @@ function requiredEnv(key: string): string {
 
 function hasEnv(key: string): boolean {
   return Boolean(process.env[key]?.trim());
+}
+
+function positiveIntegerEnv(key: string, fallback: number): number {
+  const raw = process.env[key]?.trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${key} must be a positive integer`);
+  }
+  return value;
 }
 
 function createProductLinkedInTransport(): LinkedInTransport {

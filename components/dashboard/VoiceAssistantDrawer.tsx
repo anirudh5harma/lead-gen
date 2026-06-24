@@ -120,7 +120,7 @@ export default function VoiceAssistantDrawer() {
 
   /**
    * Run one user turn end to end: record the user message, stream the
-   * DeepSeek response (text + cards + confirmations) from /api/assistant/chat,
+   * assistant response (text + cards + confirmations) from /api/assistant/chat,
    * and finalize. Voice and text both land here — `source` only affects the
    * label on the user bubble.
    */
@@ -658,7 +658,7 @@ export default function VoiceAssistantDrawer() {
             <span>
               {assistantBusy
                 ? "Querying your workspace"
-                : "DeepSeek over your live data"}
+                : "Assistant over your live data"}
             </span>
           </div>
 

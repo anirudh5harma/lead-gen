@@ -24,6 +24,7 @@ export interface WorkspaceMaintenanceTriggerDeps {
   pool: Pool;
   runtime: Pick<WorkflowRuntime, "start">;
   now?: () => Date;
+  maxWorkspacePolls?: number;
 }
 
 export interface WorkspaceMaintenanceStartFailure {
@@ -107,7 +108,12 @@ export async function triggerDueWorkspaceMaintenance(
   });
   if (expiryStarted) summary.platform_expiry_sweeps_started += 1;
 
-  for (const target of polls) {
+  const maxWorkspacePolls = positiveLimit(deps.maxWorkspacePolls);
+  const workspacePolls = maxWorkspacePolls === null
+    ? polls
+    : polls.slice(0, maxWorkspacePolls);
+
+  for (const target of workspacePolls) {
     const cadenceBucket = Math.floor(
       now.getTime() / (target.poll_cadence_sec * 1000),
     );
@@ -161,6 +167,13 @@ export async function triggerDueWorkspaceMaintenance(
   }
 
   return summary;
+}
+
+function positiveLimit(value: number | undefined): number | null {
+  if (value === undefined) return null;
+  if (!Number.isFinite(value)) return null;
+  const limit = Math.trunc(value);
+  return limit > 0 ? limit : null;
 }
 
 async function startWorkflow(
