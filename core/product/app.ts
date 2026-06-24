@@ -11710,7 +11710,8 @@ export async function registerProductEventDispatchers(
   adapter: ProductEventDispatchSubscriptionAdapter,
   opts: ProductEventDispatcherOptions = {},
 ): Promise<Subscription[]> {
-  const limit = opts.limit ?? 25;
+  const limit = Math.max(1, Math.trunc(opts.limit ?? 25));
+  const signalMatchingGate = createConcurrencyGate(limit);
   const dispatchSignalPlays =
     opts.dispatchSignalPlays ?? dispatchSignalPlaysOnce;
   const dispatchLinkedInAcceptedFollowups =
@@ -11727,7 +11728,7 @@ export async function registerProductEventDispatchers(
   const signalMatchingSubscription = await adapter.subscribe(
     "signal.ingested",
     async (event) => {
-      await dispatchSignalMatching(event);
+      await signalMatchingGate(() => dispatchSignalMatching(event));
     },
     "product-signal-matching-workflow-dispatcher-v1",
   );
@@ -11775,6 +11776,26 @@ export async function registerProductEventDispatchers(
     meetingPrepSubscription,
     linkedInAcceptedSubscription,
   ];
+}
+
+function createConcurrencyGate(limit: number): <T>(task: () => Promise<T>) => Promise<T> {
+  let active = 0;
+  const queue: Array<() => void> = [];
+
+  return async function runWithGate<T>(task: () => Promise<T>): Promise<T> {
+    if (active >= limit) {
+      await new Promise<void>((resolve) => {
+        queue.push(resolve);
+      });
+    }
+    active++;
+    try {
+      return await task();
+    } finally {
+      active--;
+      queue.shift()?.();
+    }
+  };
 }
 
 interface RssSourceRow {

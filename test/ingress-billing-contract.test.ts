@@ -56,6 +56,7 @@ test("production worker redrive loops are capped and non-overlapping", () => {
   assert.match(worker, /initial \$\{name\} failed; continuing/);
   assert.match(worker, /productRedriveInFlight/);
   assert.match(worker, /pendingDispatchRedriveInFlight/);
+  assert.match(readFileSync("core/product/app.ts", "utf8"), /createConcurrencyGate/);
   assert.match(maintenance, /maxWorkspacePolls/);
   assert.match(maintenanceRoute, /MAINTENANCE_WORKSPACE_POLL_LIMIT/);
 });
