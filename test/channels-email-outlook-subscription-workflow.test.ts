@@ -138,6 +138,79 @@ test("Outlook lifecycle reauthorization repair uses one silent renewal call", as
   );
 });
 
+test("Outlook repair recreates a missing Graph subscription on renewal 404", async () => {
+  const workspace_id = randomUUID();
+  const channel_account_id = randomUUID();
+  const existing = {
+    id: "subscription-missing",
+    resource: "/me/messages",
+    expirationDateTime: "2026-05-28T00:00:00.000Z",
+    clientState: "secret",
+    notificationUrl: "https://app.example/api/webhooks/outlook",
+    lifecycleNotificationUrl: "https://app.example/api/webhooks/outlook",
+    recorded_at: "2026-05-27T00:00:00.000Z",
+  };
+  let persisted: unknown;
+  const pool = {
+    async query(sql: string, params: unknown[]) {
+      if (sql.includes("select id, workspace_id")) {
+        return { rows: [{ id: channel_account_id, workspace_id }] };
+      }
+      if (sql.includes("select properties from channel_accounts")) {
+        return { rows: [{ properties: { outlook_subscription: existing } }] };
+      }
+      if (sql.includes("jsonb_build_object('outlook_subscription'")) {
+        persisted = JSON.parse(params[2] as string);
+        return { rowCount: 1, rows: [] };
+      }
+      throw new Error(`unexpected query: ${sql}`);
+    },
+  } as unknown as Pool;
+  const bus = createInMemoryEventBus();
+  const calls: Array<{ method: string | undefined; url: string }> = [];
+  const workflow = createOutlookSubscriptionRepairWorkflow({
+    pool,
+    accessTokens: accessTokens(),
+    notificationUrl: "https://app.example/api/webhooks/outlook",
+    fetchImpl: async (url, init) => {
+      calls.push({ method: init?.method, url: String(url) });
+      if (init?.method === "PATCH") {
+        return new Response(
+          JSON.stringify({
+            error: {
+              code: "ResourceNotFound",
+              message: "The object was not found.",
+            },
+          }),
+          { status: 404 },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          id: "subscription-recreated",
+          resource: "/me/messages",
+          expirationDateTime: "2026-06-02T00:00:00.000Z",
+        }),
+        { status: 201 },
+      );
+    },
+  });
+
+  const result = await workflow.run(
+    { workspace_id, channel_account_id },
+    context(workspace_id, bus),
+  );
+
+  assert.equal(result.failed, 0);
+  assert.equal(result.subscriptions_created, 1);
+  assert.deepEqual(calls.map((call) => call.method), ["PATCH", "POST"]);
+  assert.equal(
+    (bus.published[0].payload as { operation: string }).operation,
+    "created",
+  );
+  assert.equal((persisted as { id: string }).id, "subscription-recreated");
+});
+
 test("Outlook repair workflow creates and projects a missing Graph subscription", async (t) => {
   const fx = await setupPg("outlook_subscription_create");
   if (!fx) return t.skip("DATABASE_URL not set");

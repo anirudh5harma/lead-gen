@@ -8,6 +8,7 @@ import {
   createOutlookSubscription,
   deleteOutlookSubscription,
   loadSubscription,
+  OutlookSubscriptionError,
   persistOutlookSubscription,
   renewOutlookSubscription,
   type OutlookSubscription,
@@ -98,12 +99,10 @@ export function createOutlookSubscriptionRepairWorkflow(
         const needsRecreate =
           needsMigration ||
           (Boolean(existing) && input.lifecycle_event === "subscriptionRemoved");
-        const operation = needsRecreate
-          ? "created" as const
-          : existing
-            ? "renewed" as const
-            : "created" as const;
-        let subscription: OutlookSubscription;
+        let result: {
+          subscription: OutlookSubscription;
+          operation: "created" | "renewed";
+        };
         try {
           const accessToken = await ctx.step(`load_access_token:${target.id}`, () =>
             deps.accessTokens.getAccessToken(target.id),
@@ -122,28 +121,36 @@ export function createOutlookSubscriptionRepairWorkflow(
           // For reauthorizationRequired, renewal is the silent repair path.
           // Avoid POST /reauthorize followed by PATCH; Graph treats both as
           // subscription updates and this can create unnecessary churn.
-          subscription = await ctx.step(
+          result = await ctx.step(
             `graph_subscription:${target.id}`,
-            () =>
-              existing && !needsRecreate
-                ? renewOutlookSubscription({
+            async () => {
+              if (existing && !needsRecreate) {
+                try {
+                  const subscription = await renewOutlookSubscription({
                     pool: deps.pool,
                     workspaceId: target.workspace_id,
                     channelAccountId: target.id,
                     accessToken,
                     fetchImpl: deps.fetchImpl,
                     persist: false,
-                  })
-                : createOutlookSubscription({
-                    pool: deps.pool,
-                    workspaceId: target.workspace_id,
-                    channelAccountId: target.id,
-                    accessToken,
-                    notificationUrl: deps.notificationUrl,
-                    lifecycleNotificationUrl,
-                    fetchImpl: deps.fetchImpl,
-                    persist: false,
-                  }),
+                  });
+                  return { subscription, operation: "renewed" as const };
+                } catch (err) {
+                  if (!isMissingOutlookSubscriptionError(err)) throw err;
+                }
+              }
+              const subscription = await createOutlookSubscription({
+                pool: deps.pool,
+                workspaceId: target.workspace_id,
+                channelAccountId: target.id,
+                accessToken,
+                notificationUrl: deps.notificationUrl,
+                lifecycleNotificationUrl,
+                fetchImpl: deps.fetchImpl,
+                persist: false,
+              });
+              return { subscription, operation: "created" as const };
+            },
             {
               retry: { max_attempts: 3, backoff: "exponential", base_ms: 500 },
             },
@@ -178,20 +185,20 @@ export function createOutlookSubscriptionRepairWorkflow(
 
         await ctx.publish("email.outlook.subscription.updated", {
           channel_account_id: target.id,
-          subscription_id: subscription.id,
-          operation,
-          expires_at: subscription.expirationDateTime,
+          subscription_id: result.subscription.id,
+          operation: result.operation,
+          expires_at: result.subscription.expirationDateTime,
         });
         await ctx.step(`project_subscription:${target.id}`, () =>
           persistOutlookSubscription(
             deps.pool,
             target.workspace_id,
             target.id,
-            subscription,
+            result.subscription,
           ),
         );
         if (needsMigration) summary.subscriptions_migrated += 1;
-        else if (operation === "created") summary.subscriptions_created += 1;
+        else if (result.operation === "created") summary.subscriptions_created += 1;
         else summary.subscriptions_renewed += 1;
       }
 
@@ -255,6 +262,14 @@ async function listSubscriptionTargets(
 export function isOutlookReauthorizationRequiredError(message: string): boolean {
   return /requires Outlook reauthorization|invalid_grant|AADSTS50173|AADSTS70008[24]/i
     .test(message);
+}
+
+function isMissingOutlookSubscriptionError(error: unknown): boolean {
+  if (error instanceof OutlookSubscriptionError && error.status === 404) {
+    return true;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return /ResourceNotFound|object was not found|subscription .*not found/i.test(message);
 }
 
 async function recordSubscriptionError(
