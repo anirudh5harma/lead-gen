@@ -94,6 +94,7 @@ export const ENVIRONMENT_KEYS: readonly EnvironmentKey[] = [
   { key: "NATS_CREDS", tier: "optional", purpose: "NATS NKEY+JWT creds (inline contents or file path) for Synadia/NGS auth" },
   { key: "NATS_STREAM_MAX_BYTES", tier: "optional", purpose: "NATS JetStream events stream byte cap" },
   { key: "NATS_STREAM_MAX_AGE_MS", tier: "optional", purpose: "NATS JetStream events stream retention age" },
+  { key: "NATS_DISPATCH_REDRIVE_LIMIT", tier: "optional", purpose: "Production worker NATS dispatch redrive throttle" },
   { key: "RESTATE_INGRESS_URL", tier: "required", purpose: "Production durable workflow runtime" },
   { key: "RESTATE_ADMIN_URL", tier: "optional", purpose: "Restate admin API for deployment verification" },
   { key: "RESTATE_ADMIN_TIMEOUT_MS", tier: "optional", purpose: "Restate admin API timeout for cutover verification" },

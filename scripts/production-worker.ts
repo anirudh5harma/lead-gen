@@ -129,6 +129,7 @@ const productRedriveRecommendationLimit = nonNegativeIntegerEnv(
   "PRODUCT_REDRIVE_RECOMMENDATION_LIMIT",
   2,
 );
+const natsDispatchRedriveLimit = nonNegativeIntegerEnv("NATS_DISPATCH_REDRIVE_LIMIT", 10);
 let productRedriveInFlight = false;
 let pendingDispatchRedriveInFlight = false;
 
@@ -373,7 +374,8 @@ async function runStartupTask(name: string, task: () => Promise<void>): Promise<
 }
 
 async function redrivePendingDispatches(): Promise<void> {
-  const result = await bus.redrivePending();
+  if (natsDispatchRedriveLimit === 0) return;
+  const result = await bus.redrivePending(natsDispatchRedriveLimit);
   if (result.attempted > 0) {
     console.log(
       `[production-worker] NATS dispatch redrive: ${result.delivered} delivered, ${result.failed} failed`,

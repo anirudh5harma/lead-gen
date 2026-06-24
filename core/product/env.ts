@@ -616,6 +616,13 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     example: "2592000000",
   },
   {
+    name: "NATS_DISPATCH_REDRIVE_LIMIT",
+    requirement: "optional",
+    category: "substrate",
+    description: "Maximum pending Postgres-to-NATS dispatches redriven per worker sweep.",
+    example: "10",
+  },
+  {
     name: "RESTATE_INGRESS_URL",
     requirement: "production",
     category: "substrate",

@@ -49,6 +49,7 @@ test("production worker redrive loops are capped and non-overlapping", () => {
   assert.match(worker, /PRODUCT_REDRIVE_REPLY_LIMIT/);
   assert.match(worker, /PRODUCT_REDRIVE_RECOMMENDATION_LIMIT/);
   assert.match(worker, /PRODUCT_EVENT_DISPATCH_LIMIT/);
+  assert.match(worker, /NATS_DISPATCH_REDRIVE_LIMIT/);
   assert.match(worker, /WORKER_DATABASE_POOL_MAX/);
   assert.match(worker, /applyWorkerPoolOverride/);
   assert.match(worker, /PRODUCT_EVENT_DISPATCH_LIMIT=0/);
@@ -59,6 +60,7 @@ test("production worker redrive loops are capped and non-overlapping", () => {
   assert.match(worker, /pendingDispatchRedriveInFlight/);
   assert.match(readFileSync("core/product/app.ts", "utf8"), /createConcurrencyGate/);
   assert.match(flyDeploy, /CREDENTIALS_ENCRYPTION_KEY/);
+  assert.match(flyDeploy, /NATS_DISPATCH_REDRIVE_LIMIT/);
   assert.match(maintenance, /maxWorkspacePolls/);
   assert.match(maintenanceRoute, /MAINTENANCE_WORKSPACE_POLL_LIMIT/);
 });
