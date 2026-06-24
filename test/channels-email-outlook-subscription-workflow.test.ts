@@ -75,6 +75,7 @@ test("Outlook lifecycle reauthorization repair uses one silent renewal call", as
     recorded_at: "2026-05-27T00:00:00.000Z",
   };
   let persisted: unknown;
+  let clearedHealth = false;
   const pool = {
     async query(sql: string, params: unknown[]) {
       if (sql.includes("select id, workspace_id")) {
@@ -87,6 +88,8 @@ test("Outlook lifecycle reauthorization repair uses one silent renewal call", as
       }
       if (sql.includes("jsonb_build_object('outlook_subscription'")) {
         persisted = JSON.parse(params[2] as string);
+        clearedHealth =
+          sql.includes("status = 'connected'") && sql.includes("last_error = null");
         return { rowCount: 1, rows: [] };
       }
       if (sql.includes("last_error")) {
@@ -132,6 +135,7 @@ test("Outlook lifecycle reauthorization repair uses one silent renewal call", as
     (persisted as { expirationDateTime?: string } | undefined)?.expirationDateTime,
     "2026-06-02T00:00:00.000Z",
   );
+  assert.equal(clearedHealth, true);
   assert.equal(
     (bus.published[0].payload as { operation: string }).operation,
     "renewed",
@@ -151,6 +155,7 @@ test("Outlook repair recreates a missing Graph subscription on renewal 404", asy
     recorded_at: "2026-05-27T00:00:00.000Z",
   };
   let persisted: unknown;
+  let clearedHealth = false;
   const pool = {
     async query(sql: string, params: unknown[]) {
       if (sql.includes("select id, workspace_id")) {
@@ -161,6 +166,8 @@ test("Outlook repair recreates a missing Graph subscription on renewal 404", asy
       }
       if (sql.includes("jsonb_build_object('outlook_subscription'")) {
         persisted = JSON.parse(params[2] as string);
+        clearedHealth =
+          sql.includes("status = 'connected'") && sql.includes("last_error = null");
         return { rowCount: 1, rows: [] };
       }
       throw new Error(`unexpected query: ${sql}`);
@@ -209,6 +216,7 @@ test("Outlook repair recreates a missing Graph subscription on renewal 404", asy
     "created",
   );
   assert.equal((persisted as { id: string }).id, "subscription-recreated");
+  assert.equal(clearedHealth, true);
 });
 
 test("Outlook repair workflow creates and projects a missing Graph subscription", async (t) => {
@@ -216,6 +224,13 @@ test("Outlook repair workflow creates and projects a missing Graph subscription"
   if (!fx) return t.skip("DATABASE_URL not set");
   try {
     const account = await seedOutlookAccount(fx.pool);
+    await fx.pool.query(
+      `update channel_accounts
+          set status = 'errored',
+              last_error = jsonb_build_object('message', 'previous Graph error')
+        where id = $1`,
+      [account.channel_account_id],
+    );
     const bus = createInMemoryEventBus();
     const calls: RequestInit[] = [];
     const workflow = createOutlookSubscriptionRepairWorkflow({
@@ -273,6 +288,17 @@ test("Outlook repair workflow creates and projects a missing Graph subscription"
       account.channel_account_id,
     );
     assert.equal(subscription?.id, "subscription-created");
+    const { rows: healthRows } = await fx.pool.query<{
+      status: string;
+      last_error: unknown;
+    }>(
+      `select status::text as status, last_error
+         from channel_accounts
+        where id = $1`,
+      [account.channel_account_id],
+    );
+    assert.equal(healthRows[0].status, "connected");
+    assert.equal(healthRows[0].last_error, null);
     assert.equal(bus.published[0].event_type, "email.outlook.subscription.updated");
     assert.deepEqual(bus.published[0].payload, {
       channel_account_id: account.channel_account_id,

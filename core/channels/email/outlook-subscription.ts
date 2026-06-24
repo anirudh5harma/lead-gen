@@ -291,7 +291,9 @@ export async function persistOutlookSubscription(
   await pool.query(
     `update channel_accounts
         set properties = coalesce(properties, '{}'::jsonb) ||
-                         jsonb_build_object('outlook_subscription', $3::jsonb)
+                         jsonb_build_object('outlook_subscription', $3::jsonb),
+            status = 'connected',
+            last_error = null
       where workspace_id = $1 and id = $2`,
     [workspaceId, channelAccountId, JSON.stringify(record)],
   );
