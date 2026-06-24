@@ -308,6 +308,13 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     example: "2",
   },
   {
+    name: "PRODUCT_SIGNAL_MATCHING_DISPATCH_INTERVAL_MS",
+    requirement: "optional",
+    category: "runtime",
+    description: "Minimum delay between signal matching workflow starts from the production worker.",
+    example: "1000",
+  },
+  {
     name: "DEEPSEEK_PROMPT_USD_PER_MILLION",
     requirement: "optional",
     category: "llm",

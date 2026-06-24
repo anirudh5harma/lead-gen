@@ -54,6 +54,7 @@ export const ENVIRONMENT_KEYS: readonly EnvironmentKey[] = [
   { key: "PRODUCT_REDRIVE_SIGNAL_LIMIT", tier: "optional", purpose: "Production worker signal Play redrive throttle" },
   { key: "PRODUCT_REDRIVE_REPLY_LIMIT", tier: "optional", purpose: "Production worker reply Play redrive throttle" },
   { key: "PRODUCT_REDRIVE_RECOMMENDATION_LIMIT", tier: "optional", purpose: "Production worker recommendation redrive throttle" },
+  { key: "PRODUCT_SIGNAL_MATCHING_DISPATCH_INTERVAL_MS", tier: "optional", purpose: "Production worker signal matching start rate limit" },
   { key: "AWS_REGION", tier: "optional", purpose: "Optional SES owned-domain sender and AWS-backed worker checks" },
   { key: "AWS_ACCESS_KEY_ID", tier: "optional", purpose: "Local AWS credentials" },
   { key: "AWS_SECRET_ACCESS_KEY", tier: "optional", purpose: "Local AWS credentials" },

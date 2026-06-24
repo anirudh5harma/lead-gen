@@ -130,8 +130,13 @@ const productRedriveRecommendationLimit = nonNegativeIntegerEnv(
   2,
 );
 const natsDispatchRedriveLimit = nonNegativeIntegerEnv("NATS_DISPATCH_REDRIVE_LIMIT", 10);
+const signalMatchingDispatchIntervalMs = nonNegativeIntegerEnv(
+  "PRODUCT_SIGNAL_MATCHING_DISPATCH_INTERVAL_MS",
+  1000,
+);
 let productRedriveInFlight = false;
 let pendingDispatchRedriveInFlight = false;
+let nextSignalMatchingDispatchAt = 0;
 
 const pool = getPool();
 registerProductTools();
@@ -325,10 +330,7 @@ const playDispatchSubscriptions = productEventDispatchLimit === 0
     {
       limit: productEventDispatchLimit,
       dispatchSignalMatching: (event) =>
-        dispatchSignalMatchingWorkflowFromIngestedEvent(event, {
-          pool,
-          workflows: workflowsClient,
-        }),
+        dispatchSignalMatchingWorkflowThrottled(event),
     },
   );
 if (productEventDispatchLimit === 0) {
@@ -420,6 +422,24 @@ async function redriveProductPlayDispatchesGuarded(): Promise<void> {
   } finally {
     productRedriveInFlight = false;
   }
+}
+
+async function dispatchSignalMatchingWorkflowThrottled(
+  event: Parameters<typeof dispatchSignalMatchingWorkflowFromIngestedEvent>[0],
+): Promise<number> {
+  if (signalMatchingDispatchIntervalMs > 0) {
+    const now = Date.now();
+    const scheduledAt = Math.max(now, nextSignalMatchingDispatchAt);
+    nextSignalMatchingDispatchAt = scheduledAt + signalMatchingDispatchIntervalMs;
+    const waitMs = scheduledAt - now;
+    if (waitMs > 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
+    }
+  }
+  return dispatchSignalMatchingWorkflowFromIngestedEvent(event, {
+    pool,
+    workflows: workflowsClient,
+  });
 }
 
 async function shutdown(): Promise<void> {
