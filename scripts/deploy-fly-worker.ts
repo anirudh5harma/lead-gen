@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 
 const REQUIRED_SECRET_KEYS = [
   "APP_ORIGIN",
+  "CREDENTIALS_ENCRYPTION_KEY",
   "DATABASE_URL",
   "DEEPSEEK_API_KEY",
   "MICROSOFT_CLIENT_ID",

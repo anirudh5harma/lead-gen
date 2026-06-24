@@ -41,6 +41,7 @@ test("public MCP OAuth registration has abuse controls", () => {
 
 test("production worker redrive loops are capped and non-overlapping", () => {
   const worker = readFileSync("scripts/production-worker.ts", "utf8");
+  const flyDeploy = readFileSync("scripts/deploy-fly-worker.ts", "utf8");
   const maintenance = readFileSync("core/substrate/workflows/maintenance-trigger.ts", "utf8");
   const maintenanceRoute = readFileSync("app/api/internal/workflows/maintenance/route.ts", "utf8");
 
@@ -57,6 +58,7 @@ test("production worker redrive loops are capped and non-overlapping", () => {
   assert.match(worker, /productRedriveInFlight/);
   assert.match(worker, /pendingDispatchRedriveInFlight/);
   assert.match(readFileSync("core/product/app.ts", "utf8"), /createConcurrencyGate/);
+  assert.match(flyDeploy, /CREDENTIALS_ENCRYPTION_KEY/);
   assert.match(maintenance, /maxWorkspacePolls/);
   assert.match(maintenanceRoute, /MAINTENANCE_WORKSPACE_POLL_LIMIT/);
 });
