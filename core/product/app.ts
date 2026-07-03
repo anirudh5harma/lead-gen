@@ -1631,16 +1631,18 @@ export async function createProductWorkspaceForUser(
   input: { name: string; slug?: string },
   user_id: string,
   pool = getPool(),
+  opts: { workspace_id?: string } = {},
 ): Promise<ProductWorkspace> {
   const name = input.name.trim() || "Bombsell Workspace";
   const baseSlug = slugifyWorkspace(input.slug || name);
   let slug = baseSlug;
   for (let attempt = 0; attempt < 5; attempt++) {
-    const id = randomUUID();
+    const id = opts.workspace_id ?? randomUUID();
     try {
       const { rows } = await pool.query<ProductWorkspace>(
         `insert into workspaces (id, slug, name, settings)
          values ($1, $2, $3, $4::jsonb)
+         on conflict (id) do nothing
          returning id, slug::text as slug, name`,
         [
           id,
@@ -1654,6 +1656,18 @@ export async function createProductWorkspaceForUser(
           ),
         ],
       );
+      const workspace = rows[0] ?? (
+        await pool.query<ProductWorkspace>(
+          `select id, slug::text as slug, name
+             from workspaces
+            where id = $1
+            limit 1`,
+          [id],
+        )
+      ).rows[0];
+      if (!workspace) {
+        throw new Error(`Workspace ${id} was not available after creation.`);
+      }
 
       const engine = await getProductEngine();
       const event = await engine.bus.publish({
@@ -1675,7 +1689,7 @@ export async function createProductWorkspaceForUser(
         },
       });
       await projectWorkspaceCreated(engine, event);
-      return rows[0]!;
+      return workspace;
     } catch (error) {
       if (
         typeof error === "object" &&
@@ -1709,34 +1723,30 @@ export async function getOrCreateProductWorkspaceForUser(
     if (rows[0]) return rows[0];
   }
 
-  const lockClient = await pool.connect();
-  try {
-    await lockClient.query(
-      `select pg_advisory_lock(hashtextextended($1, 0))`,
-      [`product-onboarding-workspace:${user_id}`],
-    );
-    const guardedId = await findFirstProductWorkspaceForUser(user_id, pool);
-    if (guardedId) {
-      const { rows } = await pool.query<ProductWorkspace>(
-        `select id, slug::text as slug, name
-           from workspaces
-          where id = $1
-          limit 1`,
-        [guardedId],
-      );
-      if (rows[0]) return rows[0];
-    }
-    return createProductWorkspaceForUser(input, user_id, pool);
-  } finally {
-    try {
-      await lockClient.query(
-        `select pg_advisory_unlock(hashtextextended($1, 0))`,
-        [`product-onboarding-workspace:${user_id}`],
-      );
-    } finally {
-      lockClient.release();
-    }
-  }
+  const { rows } = await pool.query<{ generation: string }>(
+    `select count(*)::text as generation
+       from workspace_members wm
+       join workspaces w on w.id = wm.workspace_id
+      where wm.user_id = $1
+        and wm.accepted_at is not null
+        and w.archived_at is not null`,
+    [user_id],
+  );
+  const generation = Number(rows[0]?.generation ?? 0);
+  return createProductWorkspaceForUser(input, user_id, pool, {
+    workspace_id: onboardingWorkspaceId(user_id, generation),
+  });
+}
+
+function onboardingWorkspaceId(userId: string, generation: number): string {
+  const bytes = createHash("sha256")
+    .update(`bombsell:onboarding-workspace:v1:${userId}:${generation}`)
+    .digest()
+    .subarray(0, 16);
+  bytes[6] = (bytes[6]! & 0x0f) | 0x50;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 async function projectWorkspaceCreated(
@@ -12465,7 +12475,7 @@ export async function claimRunnableWorkflowRuns(
 export async function retryFailedWorkflowRun(
   run_id: string,
   session?: ProductWorkspaceSession,
-): Promise<void> {
+): Promise<boolean> {
   const engine = await getProductEngine();
   const { rows } = await engine.pool.query<{
     id: string;
@@ -12473,17 +12483,18 @@ export async function retryFailedWorkflowRun(
     workflow_name: string;
     status: string;
     input: Record<string, unknown>;
+    play_id: string | null;
   }>(
-    `select id, workspace_id, workflow_name, status, input
+    `select id, workspace_id, workflow_name, status, input, play_id
        from workflow_runs
       where id = $1
       limit 1`,
     [run_id],
   );
   const run = rows[0];
-  if (!run || run.status !== "failed") return;
+  if (!run || run.status !== "failed") return false;
   if (session) {
-    if (run.workspace_id !== session.workspace_id) return;
+    if (run.workspace_id !== session.workspace_id) return false;
     await assertProductWorkspaceAccess(session, engine.pool);
   }
   if (run.workflow_name === WORKSPACE_ACTIVATION_SETUP_WORKFLOW) {
@@ -12543,21 +12554,16 @@ export async function retryFailedWorkflowRun(
     await registerExaRecommendationWorkflows(engine);
   }
 
-  let retryRunId = run.id;
-  if (run.workflow_name === RSS_SIGNAL_INGESTION_WORKFLOW) {
-    const retry = await engine.runtime.start({
-      workspace_id: run.workspace_id,
-      workflow_name: run.workflow_name,
-      idempotency_key: `recovery:${run.id}:${Date.now()}`,
-      correlation_id: run.id,
-      causation_id: run.id,
-      input: run.input,
-    });
-    retryRunId = retry.id;
-  } else {
-    const retry = await engine.runtime.resume(run.id);
-    retryRunId = retry?.id ?? run.id;
-  }
+  const retry = await engine.runtime.start({
+    workspace_id: run.workspace_id,
+    workflow_name: run.workflow_name,
+    play_id: run.play_id ?? undefined,
+    idempotency_key: `recovery:${run.id}`,
+    correlation_id: run.id,
+    causation_id: run.id,
+    input: run.input,
+  });
+  const retryRunId = retry.id;
 
   await engine.bus.publish({
     workspace_id: run.workspace_id,
@@ -12566,12 +12572,14 @@ export async function retryFailedWorkflowRun(
     producer_ref: session?.user_id ?? DEFAULT_PRODUCT_USER_ID,
     correlation_id: run.id,
     causation_id: run.id,
+    idempotency_key: `workflow.run.retried:${run.id}:${retryRunId}`,
     payload: {
       run_id: run.id,
       workflow_name: run.workflow_name,
       retry_run_id: retryRunId,
     },
   });
+  return true;
 }
 
 export async function redriveDeadLetteredEventDispatch(

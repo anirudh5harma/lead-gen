@@ -148,6 +148,7 @@ export interface ActivationSetupGraphOptions {
     defaultAggregatorConfigure: string;
     outlookConnectUrlGet: string;
     linkedInConnectUrlGet: string;
+    signalIngestionRun: string;
   }>;
   toolOptions?: LangGraphToolOptions;
 }
@@ -190,6 +191,13 @@ interface ConnectIntent {
   provider_configured: boolean;
 }
 
+interface SignalIngestionRunResult {
+  workspace_id: string;
+  workflow_name: "workspace.signal.ingestion";
+  workflow_run_id: string;
+  output: unknown | null;
+}
+
 const DEFAULT_TOOLS = {
   websiteProfileExtract: "product.company.website_profile.extract",
   companyProfileConfigure: "product.company.profile.configure",
@@ -199,6 +207,7 @@ const DEFAULT_TOOLS = {
   defaultAggregatorConfigure: "product.sources.default_aggregator.configure",
   outlookConnectUrlGet: "product.outlook_account.connect_url.get",
   linkedInConnectUrlGet: "product.linkedin_account.connect_url.get",
+  signalIngestionRun: "product.signal.ingestion.run",
 } as const;
 
 export function createActivationSetupGraph(
@@ -474,11 +483,12 @@ export function createActivationSetupGraph(
             {
               company_name: profile.company_name,
               website_url: profile.website_url,
-              industry: profile.industry,
+              industry: profile.industry ?? undefined,
               description: profile.description,
-              signal_keywords: profile.signal_keywords,
-              competitor_watchlist: profile.competitor_watchlist,
-              linkedin_signal_behaviors: profile.linkedin_signal_behaviors,
+              signal_keywords: profile.signal_keywords ?? undefined,
+              competitor_watchlist: profile.competitor_watchlist ?? undefined,
+              linkedin_signal_behaviors:
+                profile.linkedin_signal_behaviors ?? undefined,
               signal_kind: icp.signal_kind,
             },
             {
@@ -562,12 +572,41 @@ export function createActivationSetupGraph(
         },
       }),
     )
+    .addNode(
+      "ingestion",
+      traceLangGraphNode({
+        graph_name: ACTIVATION_SETUP_GRAPH_NAME,
+        node_name: "ingestion",
+        bus: opts.bus,
+        handler: async (state: BombsellLangGraphState) => {
+          const ingestion = await invokeLangGraphTool<SignalIngestionRunResult>(
+            tools.signalIngestionRun,
+            {
+              limit: 4,
+              wait: false,
+              idempotency_nonce: `activation:${state.run_id}`,
+            },
+            state,
+            toolOptions,
+          );
+          return {
+            attributes: mergeAttributes(state, {
+              initial_signal_ingestion: ingestion,
+            }),
+            tool_results: {
+              initial_signal_ingestion: ingestion,
+            },
+          };
+        },
+      }),
+    )
     .addEdge(START, "request")
     .addEdge("request", "profile")
     .addEdge("profile", "draft")
     .addEdge("draft", "configure")
     .addEdge("configure", "checklist")
-    .addEdge("checklist", END)
+    .addEdge("checklist", "ingestion")
+    .addEdge("ingestion", END)
     .compile({ checkpointer: createLangGraphMemoryCheckpoint() });
 }
 

@@ -312,6 +312,8 @@ test("workspace company profile edits replace scraped defaults", async (t) => {
         website_set: true,
         description_set: true,
         product_ready: true,
+        setup_status: "idle",
+        setup_run_id: null,
       },
     );
 
@@ -384,6 +386,8 @@ test("workspace company profile edits replace scraped defaults", async (t) => {
         website_set: true,
         description_set: false,
         product_ready: false,
+        setup_status: "idle",
+        setup_run_id: null,
       },
     );
   } finally {
@@ -417,6 +421,8 @@ test("website-pending onboarding completes without creating a company profile", 
         website_set: false,
         description_set: false,
         product_ready: false,
+        setup_status: "idle",
+        setup_run_id: null,
       },
     );
 
@@ -473,6 +479,95 @@ test("website-pending onboarding deduplicates concurrent workspace creation for 
       [first.id],
     );
     assert.equal(events.rows[0]?.count, "1");
+  } finally {
+    await resetProductEngineForTests();
+    await fx.close();
+    await resetPool();
+  }
+});
+
+test("website-pending onboarding does not self-starve when one pool slot remains", async (t) => {
+  const fx = await setupPg("product_onboarding_single_connection");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  const occupiedClient = await fx.pool.connect();
+  let occupied = true;
+  let forcedReleaseFired = false;
+  const releaseOccupiedClient = () => {
+    if (!occupied) return;
+    occupied = false;
+    occupiedClient.release();
+  };
+  const forcedRelease = setTimeout(() => {
+    forcedReleaseFired = true;
+    releaseOccupiedClient();
+  }, 10_000);
+  setPool(fx.pool);
+  try {
+    const userId = randomUUID();
+    const workspace = await getOrCreateProductWorkspaceForUser(
+      { name: "Single Connection GTM" },
+      userId,
+      fx.pool,
+    );
+
+    assert.deepEqual(await findCompletedOnboardingForUser(userId, fx.pool), {
+      workspace_id: workspace.id,
+      completion_source: "accepted_workspace",
+    });
+    assert.equal(
+      forcedReleaseFired,
+      false,
+      "workspace creation waited for a second pool slot",
+    );
+  } finally {
+    clearTimeout(forcedRelease);
+    releaseOccupiedClient();
+    await resetProductEngineForTests();
+    await fx.close();
+    await resetPool();
+  }
+});
+
+test("website-pending onboarding recovers partial projection and replaces archived workspaces", async (t) => {
+  const fx = await setupPg("product_onboarding_recovery");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  setPool(fx.pool);
+  try {
+    const userId = randomUUID();
+    const first = await getOrCreateProductWorkspaceForUser(
+      { name: "Recovery GTM" },
+      userId,
+      fx.pool,
+    );
+    await fx.pool.query(
+      `delete from workspace_members where workspace_id = $1 and user_id = $2`,
+      [first.id, userId],
+    );
+
+    const recovered = await getOrCreateProductWorkspaceForUser(
+      { name: "Recovery GTM" },
+      userId,
+      fx.pool,
+    );
+    assert.equal(recovered.id, first.id);
+    assert.ok(await findCompletedOnboardingForUser(userId, fx.pool));
+
+    await fx.pool.query(
+      `update workspaces set archived_at = now() where id = $1`,
+      [first.id],
+    );
+    const replacement = await getOrCreateProductWorkspaceForUser(
+      { name: "Recovery GTM" },
+      userId,
+      fx.pool,
+    );
+    assert.notEqual(replacement.id, first.id);
+    assert.deepEqual(await findCompletedOnboardingForUser(userId, fx.pool), {
+      workspace_id: replacement.id,
+      completion_source: "accepted_workspace",
+    });
   } finally {
     await resetProductEngineForTests();
     await fx.close();

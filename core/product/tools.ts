@@ -327,6 +327,12 @@ const SourceAdapterSchema = z.enum([
 const WorkspaceResultSchema = z.object({
   workspace_id: z.string().uuid(),
 });
+const SignalIngestionHandleSchema = z.object({
+  workspace_id: z.string().uuid(),
+  workflow_name: z.literal("workspace.signal.ingestion"),
+  workflow_run_id: z.string(),
+  output: z.unknown().nullable(),
+});
 const OperatingBriefWindowSchema = z.object({
   qualified_signals: z.number().int().nonnegative(),
   emails_sent: z.number().int().nonnegative(),
@@ -1375,24 +1381,14 @@ export function registerProductTools(): void {
         session,
         { wait, timeoutMs: timeout_ms },
       );
-      if (wait === false) {
-        return {
-          ...activation,
-          initial_signal_ingestion: null,
-        };
-      }
-      const initial_signal_ingestion = await runWorkspaceSignalIngestion(
-        { limit: 4 },
-        session,
-        { wait: false },
+      const initialSignalIngestion = SignalIngestionHandleSchema.safeParse(
+        activation.output?.attributes?.initial_signal_ingestion,
       );
       return {
         ...activation,
-        initial_signal_ingestion: {
-          workflow_name: initial_signal_ingestion.workflow_name,
-          workflow_run_id: initial_signal_ingestion.workflow_run_id,
-          output: initial_signal_ingestion.output,
-        },
+        initial_signal_ingestion: initialSignalIngestion.success
+          ? initialSignalIngestion.data
+          : null,
       };
     },
   });
@@ -2333,7 +2329,13 @@ export function registerProductTools(): void {
     input: z.object({ run_id: z.string().uuid() }),
     output: z.object({ ok: z.literal(true) }),
     async handler(input, ctx) {
-      await retryFailedWorkflowRun(input.run_id, sessionFromContext(ctx));
+      const retried = await retryFailedWorkflowRun(
+        input.run_id,
+        sessionFromContext(ctx),
+      );
+      if (!retried) {
+        throw new Error("Failed workflow run not found in the active workspace.");
+      }
       return { ok: true as const };
     },
   });

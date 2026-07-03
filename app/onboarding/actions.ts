@@ -1,14 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 import {
   getOrCreateProductWorkspaceForUser,
   runWorkspaceActivationSetup,
-  runWorkspaceSignalIngestion,
   verifiedProductWorkspaceSession,
   type ProductWorkspaceSession,
 } from "@/core/product/app";
+import { withTransientConnectionRetry } from "@/core/substrate/storage/index.ts";
 import {
   normalizeCompanyWebsiteUrl,
 } from "@/core/product/company-profile";
@@ -19,6 +19,7 @@ import {
   getActiveWorkspaceSession,
   setActiveWorkspaceCookie,
 } from "@/lib/workspace";
+import { onboardingActionErrorMessage } from "./errors";
 
 export interface OnboardingActionState {
   error: string | null;
@@ -63,25 +64,27 @@ async function requireOnboardingSession(
 }
 
 export async function createActivationSetupAction(formData: FormData) {
-  redirectAfterActivationSetup(await createActivationSetup(formData));
+  const path = await withTransientConnectionRetry(() =>
+    createActivationSetup(formData)
+  );
+  redirectAfterActivationSetup(path);
 }
 
 export async function createActivationSetupFormAction(
   _prevState: OnboardingActionState,
   formData: FormData,
 ): Promise<OnboardingActionState> {
+  let path: string;
   try {
-    redirectAfterActivationSetup(await createActivationSetup(formData));
+    path = await withTransientConnectionRetry(() =>
+      createActivationSetup(formData)
+    );
   } catch (error) {
-    if (isNextRedirectError(error)) throw error;
-    return {
-      error:
-        error instanceof Error
-          ? error.message
-          : "Could not create the workspace. Try again.",
-    };
+    unstable_rethrow(error);
+    console.error("[onboarding] Agent launch failed", error);
+    return { error: onboardingActionErrorMessage(error) };
   }
-  return { error: null };
+  redirectAfterActivationSetup(path);
 }
 
 export async function createProfileAndAggregatorAction(formData: FormData) {
@@ -93,11 +96,6 @@ export async function createProfileAndAggregatorFormAction(
   formData: FormData,
 ): Promise<OnboardingActionState> {
   return createActivationSetupFormAction(prevState, formData);
-}
-
-function isNextRedirectError(error: unknown): boolean {
-  if (!error || typeof error !== "object" || !("digest" in error)) return false;
-  return String((error as { digest?: unknown }).digest).startsWith("NEXT_REDIRECT;");
 }
 
 function redirectAfterActivationSetup(path: string): never {
@@ -158,8 +156,8 @@ async function createActivationSetup(formData: FormData): Promise<string> {
       ],
     },
     session,
+    { wait: false },
   );
-  await runWorkspaceSignalIngestion({ limit: 4 }, session, { wait: false });
 
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/profile");

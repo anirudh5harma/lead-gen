@@ -34,6 +34,8 @@ test("getWorkspaceActivationState returns false flags when no workspace profile 
     website_set: false,
     description_set: false,
     product_ready: false,
+    setup_status: "idle",
+    setup_run_id: null,
   });
 });
 
@@ -46,6 +48,8 @@ test("getWorkspaceActivationState reports website pending when description is mi
     website_set: true,
     description_set: false,
     product_ready: false,
+    setup_status: "idle",
+    setup_run_id: null,
   });
 });
 
@@ -61,5 +65,30 @@ test("getWorkspaceActivationState reports ready only when website and descriptio
     website_set: true,
     description_set: true,
     product_ready: true,
+    setup_status: "idle",
+    setup_run_id: null,
+  });
+});
+
+test("getWorkspaceActivationState reports durable setup still running", async () => {
+  const state = await getWorkspaceActivationState(
+    scriptedPool((sql) => {
+      assert.match(sql, /workspace\.activation\.setup/);
+      return [{
+        website_url: null,
+        description: null,
+        setup_status: "running",
+        setup_run_id: "22222222-2222-4222-8222-222222222222",
+      }];
+    }),
+    randomUUID(),
+  );
+
+  assert.deepEqual(state, {
+    website_set: false,
+    description_set: false,
+    product_ready: false,
+    setup_status: "running",
+    setup_run_id: "22222222-2222-4222-8222-222222222222",
   });
 });

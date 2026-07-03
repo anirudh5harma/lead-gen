@@ -983,6 +983,7 @@ test("dashboard Signal surfaces do not expose manual ingestion controls", () => 
   const reps = source("app/dashboard/agent/AgentPage.tsx");
   const productApp = source("core/product/app.ts");
   const onboardingActions = source("app/onboarding/actions.ts");
+  const activationGraph = source("core/agents/langgraph/graphs/activation.ts");
   const capabilityMap = source("docs/agent-native-capability-map.md");
 
   assert.doesNotMatch(actions, /runWorkspaceSignalAggregatorOnce/);
@@ -1033,7 +1034,8 @@ test("dashboard Signal surfaces do not expose manual ingestion controls", () => 
   assert.doesNotMatch(signals, /signal-to-email outreach run/);
   assert.doesNotMatch(signals, /\/api\/auth\/outlook\?return_to=\/dashboard\/signals/);
   assert.doesNotMatch(signals, /"\/api\/auth\/outlook"/);
-  assert.match(onboardingActions, /runWorkspaceSignalIngestion/);
+  assert.doesNotMatch(onboardingActions, /runWorkspaceSignalIngestion/);
+  assert.match(activationGraph, /product\.signal\.ingestion\.run/);
   assert.match(onboardingActions, /wait: false/);
   assert.match(capabilityMap, /Autonomous signal ingestion/);
   assert.doesNotMatch(
@@ -1711,7 +1713,9 @@ test("onboarding website setup starts activation then durable Signal ingestion",
   assert.match(onboardingActions, /linkedin_signal_behaviors/);
   assert.match(onboardingActions, /exclusion_rules/);
   assert.match(onboardingActions, /preferred_language/);
-  assert.match(onboardingActions, /runWorkspaceSignalIngestion/);
+  assert.doesNotMatch(onboardingActions, /runWorkspaceSignalIngestion/);
+  assert.match(activationGraph, /signalIngestionRun/);
+  assert.match(activationGraph, /product\.signal\.ingestion\.run/);
   assert.match(onboardingActions, /wait: false/);
   assert.match(onboardingActions, /POST_ONBOARDING_PATH = "\/dashboard\/profile#channels"/);
   assert.match(onboardingActions, /redirect\(POST_ONBOARDING_PATH\)/);
@@ -1764,6 +1768,24 @@ test("onboarding website setup starts activation then durable Signal ingestion",
   assert.match(capabilityMap, /`product\.activation\.setup\.run`/);
   assert.match(capabilityMap, /starts `workspace\.signal\.ingestion`/);
   assert.match(capabilityMap, /`product\.signal\.ingestion\.run`/);
+});
+
+test("failed workflow recovery starts a fresh correlated durable run", () => {
+  const productApp = source("core/product/app.ts");
+  const start = productApp.indexOf("export async function retryFailedWorkflowRun");
+  const end = productApp.indexOf(
+    "export async function redriveDeadLetteredEventDispatch",
+    start,
+  );
+  const retryOperation = productApp.slice(start, end);
+
+  assert.match(retryOperation, /engine\.runtime\.start/);
+  assert.match(retryOperation, /idempotency_key: `recovery:/);
+  assert.doesNotMatch(retryOperation, /Date\.now\(\)/);
+  assert.match(retryOperation, /correlation_id: run\.id/);
+  assert.match(retryOperation, /idempotency_key: `workflow\.run\.retried:/);
+  assert.match(retryOperation, /event_type: "workflow\.run\.retried"/);
+  assert.doesNotMatch(retryOperation, /engine\.runtime\.resume/);
 });
 
 test("visual system uses the clean light operating surface", () => {

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 import {
   getProductCompanyProfile,
   approveWorkflowApproval,
@@ -22,6 +22,7 @@ import {
   recordProductCampaignOutcome,
   recordProductPersonFitFeedback,
   recordProductRecommendationOutcome,
+  retryFailedWorkflowRun,
   reviewProductRecommendation,
   runWorkspaceSignalIngestion,
   runWorkspaceSourcePollNow,
@@ -77,6 +78,20 @@ function redirectWithToast(
   parsed.searchParams.set("toast", message);
   parsed.searchParams.set("toast_variant", variant);
   redirect(`${parsed.pathname}${parsed.search}${parsed.hash}`);
+}
+
+function dashboardActionErrorMessage(error: unknown, fallback: string): string {
+  if (!(error instanceof Error)) return fallback;
+  if (/authentication required/i.test(error.message)) {
+    return "Sign in again before changing Agent work.";
+  }
+  if (/workspace access denied|active workspace/i.test(error.message)) {
+    return "Select an active workspace before changing Agent work.";
+  }
+  if (/not found/i.test(error.message)) {
+    return "That item is no longer available. Refresh and try again.";
+  }
+  return fallback;
 }
 
 function numberValue(
@@ -435,18 +450,30 @@ export async function optimizePlaySkillsAction(formData: FormData) {
 }
 
 export async function prepareQualifiedSignalsAction(formData: FormData) {
-  const session = await requireDashboardSession();
   const returnTo = dashboardReturnPath(formData, "/dashboard/agent#qualified-signals");
-  await dispatchSignalPlaysOnce(
-    { limit: numberValue(formData, "limit", 25) },
-    session,
-  );
-  revalidateProductPaths();
+  try {
+    const session = await requireDashboardSession();
+    await dispatchSignalPlaysOnce(
+      { limit: numberValue(formData, "limit", 25) },
+      session,
+    );
+    revalidateProductPaths();
+  } catch (error) {
+    unstable_rethrow(error);
+    console.error("Qualified signal preparation failed", error);
+    redirectWithToast(
+      returnTo,
+      dashboardActionErrorMessage(
+        error,
+        "Could not prepare contacts and outreach yet. Refresh and try again.",
+      ),
+      "error",
+    );
+  }
   redirectWithToast(returnTo, "Preparing verified contacts and outreach.");
 }
 
 export async function resolveQualifiedSignalContactsAction(formData: FormData) {
-  const session = await requireDashboardSession();
   const returnTo = dashboardReturnPath(formData, "/dashboard/agent#qualified-signals");
   const signalId = value(formData, "signal_id");
   if (!signalId) {
@@ -456,18 +483,47 @@ export async function resolveQualifiedSignalContactsAction(formData: FormData) {
       "error",
     );
   }
-  await dispatchSignalPlaysOnce({ signal_id: signalId, limit: 1 }, session);
-  revalidateProductPaths();
+  try {
+    const session = await requireDashboardSession();
+    await dispatchSignalPlaysOnce({ signal_id: signalId, limit: 1 }, session);
+    revalidateProductPaths();
+  } catch (error) {
+    unstable_rethrow(error);
+    console.error("Qualified signal contact resolution failed", error);
+    redirectWithToast(
+      returnTo,
+      dashboardActionErrorMessage(
+        error,
+        "Could not review contacts for that signal yet. Refresh and try again.",
+      ),
+      "error",
+    );
+  }
   redirectWithToast(returnTo, "Resolving verified contacts and outreach.");
 }
 
 export async function checkAgentSourcesAction(formData: FormData) {
-  const session = await requireDashboardSession();
   const returnTo = dashboardReturnPath(formData, "/dashboard/agent");
-  const sourceCheckStarted = await startAgentSourceCheck(
-    session,
-    numberValue(formData, "limit", 25),
-  );
+  let sourceCheckStarted = false;
+  try {
+    const session = await requireDashboardSession();
+    sourceCheckStarted = await startAgentSourceCheck(
+      session,
+      numberValue(formData, "limit", 25),
+    );
+    revalidateProductPaths();
+  } catch (error) {
+    unstable_rethrow(error);
+    console.error("Agent source check failed", error);
+    redirectWithToast(
+      returnTo,
+      dashboardActionErrorMessage(
+        error,
+        "Could not start the source check yet. Refresh and try again.",
+      ),
+      "error",
+    );
+  }
   if (!sourceCheckStarted) {
     redirectWithToast(
       returnTo,
@@ -475,30 +531,33 @@ export async function checkAgentSourcesAction(formData: FormData) {
       "error",
     );
   }
-  revalidateProductPaths();
   redirectWithToast(returnTo, "Source check started.");
 }
 
 export async function runAgentSourceNowAction(formData: FormData) {
-  const session = await requireDashboardSession();
   const returnTo = dashboardReturnPath(formData, "/dashboard/agent");
   const sourceId = value(formData, "source_id");
   if (!sourceId) {
     redirectWithToast(returnTo, "Choose a source before running it.", "error");
   }
   try {
+    const session = await requireDashboardSession();
     await runWorkspaceSourcePollNow({ source_id: sourceId }, session);
+    revalidateProductPaths();
   } catch (error) {
+    unstable_rethrow(error);
     console.error("Agent source run failed", error);
     redirectWithToast(
       returnTo,
       error instanceof Error && /paused/i.test(error.message)
         ? "That source is paused. Enable it before running."
-        : "Could not run that source yet. Refresh and try again.",
+        : dashboardActionErrorMessage(
+            error,
+            "Could not run that source yet. Refresh and try again.",
+          ),
       "error",
     );
   }
-  revalidateProductPaths();
   redirectWithToast(returnTo, "Source run started.");
 }
 
@@ -621,7 +680,6 @@ function isMissingMcpOauthSchema(error: unknown): boolean {
 }
 
 export async function generateMeetingPrepAction(formData: FormData) {
-  const session = await requireDashboardSession();
   const conversationId = value(formData, "conversation_id");
   const returnTo = dashboardReturnPath(
     formData,
@@ -636,17 +694,30 @@ export async function generateMeetingPrepAction(formData: FormData) {
       "error",
     );
   }
-  await generateProductMeetingPrep(
-    { conversation_id: conversationId },
-    session,
-  );
-  revalidateProductPaths();
-  revalidatePath(`/dashboard/agent/outreach/${conversationId}`);
+  try {
+    const session = await requireDashboardSession();
+    await generateProductMeetingPrep(
+      { conversation_id: conversationId },
+      session,
+    );
+    revalidateProductPaths();
+    revalidatePath(`/dashboard/agent/outreach/${conversationId}`);
+  } catch (error) {
+    unstable_rethrow(error);
+    console.error("Meeting prep generation failed", error);
+    redirectWithToast(
+      returnTo,
+      dashboardActionErrorMessage(
+        error,
+        "Could not prepare that meeting yet. Refresh and try again.",
+      ),
+      "error",
+    );
+  }
   redirectWithToast(returnTo, "Meeting prep updated.");
 }
 
 export async function dismissQualifiedSignalAction(formData: FormData) {
-  const session = await requireDashboardSession();
   const returnTo = dashboardReturnPath(formData, "/dashboard/agent");
   const signalId = value(formData, "signal_id");
   if (!signalId) {
@@ -657,6 +728,7 @@ export async function dismissQualifiedSignalAction(formData: FormData) {
     );
   }
   try {
+    const session = await requireDashboardSession();
     await dismissProductSignal(
       {
         signal_id: signalId,
@@ -666,20 +738,23 @@ export async function dismissQualifiedSignalAction(formData: FormData) {
       },
       session,
     );
+    revalidateProductPaths();
   } catch (error) {
+    unstable_rethrow(error);
     console.error("Signal dismissal failed", error);
     redirectWithToast(
       returnTo,
-      "Could not skip that opportunity yet. Refresh and try again.",
+      dashboardActionErrorMessage(
+        error,
+        "Could not skip that opportunity yet. Refresh and try again.",
+      ),
       "error",
     );
   }
-  revalidateProductPaths();
   redirectWithToast(returnTo, "Opportunity skipped.");
 }
 
 export async function recordPersonFitFeedbackAction(formData: FormData) {
-  const session = await requireDashboardSession(formData);
   const personId = value(formData, "person_id");
   const returnTo = dashboardReturnPath(
     formData,
@@ -696,6 +771,7 @@ export async function recordPersonFitFeedbackAction(formData: FormData) {
       ? decisionValue
       : "unsure";
   try {
+    const session = await requireDashboardSession(formData);
     await recordProductPersonFitFeedback(
       {
         person_id: personId,
@@ -704,16 +780,20 @@ export async function recordPersonFitFeedbackAction(formData: FormData) {
       },
       session,
     );
+    revalidateProductPaths();
+    revalidatePath(`/dashboard/agent/contacts/${personId}`);
   } catch (error) {
+    unstable_rethrow(error);
     console.error("Contact fit feedback failed", error);
     redirectWithToast(
       returnTo,
-      "Could not save contact fit yet. Refresh and try again.",
+      dashboardActionErrorMessage(
+        error,
+        "Could not save contact fit yet. Refresh and try again.",
+      ),
       "error",
     );
   }
-  revalidateProductPaths();
-  revalidatePath(`/dashboard/agent/contacts/${personId}`);
   redirectWithToast(returnTo, "Contact fit saved.");
 }
 
@@ -820,8 +900,37 @@ async function startAgentSourceCheck(
   }
 }
 
+export async function retryActivationSetupAction(formData: FormData) {
+  const returnTo = dashboardReturnPath(formData, "/dashboard/profile#profile");
+  const runId = value(formData, "workflow_run_id");
+  if (!runId) {
+    redirectWithToast(returnTo, "That Agent launch is no longer available.", "error");
+  }
+  let retried = false;
+  try {
+    const session = await requireDashboardSession();
+    retried = await retryFailedWorkflowRun(runId, session);
+    revalidateProductPaths();
+  } catch (error) {
+    unstable_rethrow(error);
+    console.error("Activation setup retry failed", error);
+    redirectWithToast(
+      returnTo,
+      dashboardActionErrorMessage(
+        error,
+        "Could not retry Agent launch yet. Refresh and try again.",
+      ),
+      "error",
+    );
+  }
+  redirectWithToast(
+    returnTo,
+    retried ? "Agent launch restarted." : "Agent launch is already running or complete.",
+    retried ? "success" : "info",
+  );
+}
+
 export async function decideApprovalWithDraftAction(formData: FormData) {
-  const session = await requireDashboardSession();
   const returnTo = dashboardReturnPath(formData, "/dashboard/agent#qualified-signals");
   const approvalId = value(formData, "approval_id");
   if (!approvalId) {
@@ -845,23 +954,28 @@ export async function decideApprovalWithDraftAction(formData: FormData) {
       : value(formData, "decision_note") || undefined;
   let decided = false;
   try {
+    const session = await requireDashboardSession();
     decided = await approveWorkflowApproval(
       approvalId,
       decision,
       session,
       note,
     );
+    revalidateProductPaths();
   } catch (error) {
+    unstable_rethrow(error);
     console.error("Approval decision failed", error);
     redirectWithToast(
       returnTo,
-      decision === "rejected"
-        ? "Could not reject this draft yet. Refresh and try again."
-        : "Could not approve this draft yet. Refresh and try again.",
+      dashboardActionErrorMessage(
+        error,
+        decision === "rejected"
+          ? "Could not reject this draft yet. Refresh and try again."
+          : "Could not approve this draft yet. Refresh and try again.",
+      ),
       "error",
     );
   }
-  revalidateProductPaths();
   if (!decided) {
     redirectWithToast(
       returnTo,

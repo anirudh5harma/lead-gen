@@ -118,6 +118,7 @@ test("activation setup graph: turns a website URL into a gated setup draft witho
     "product.sources.default_aggregator.configure",
     "product.outlook_account.connect_url.get",
     "product.linkedin_account.connect_url.get",
+    "product.signal.ingestion.run",
   ]);
   assert.deepEqual(emailSignalKinds, ["product_launch", "hiring"]);
   assert.deepEqual(linkedInSignalKinds, [
@@ -193,7 +194,7 @@ function registerActivationStubTools(opts: {
       return {
         company_name: input.company_hint ?? "Acme AI",
         website_url: input.website_url,
-        industry: "AI",
+        industry: null,
         description:
           "Acme AI helps revenue teams turn public market movement into qualified conversations.",
       };
@@ -311,8 +312,11 @@ function registerActivationStubTools(opts: {
     input: z.object({
       company_name: z.string(),
       website_url: z.string().optional(),
-      industry: z.string().nullable().optional(),
+      industry: z.string().optional(),
       description: z.string().optional(),
+      signal_keywords: z.string().optional(),
+      competitor_watchlist: z.string().optional(),
+      linkedin_signal_behaviors: z.string().optional(),
       signal_kind: z.string().optional(),
     }),
     output: z.object({
@@ -321,6 +325,10 @@ function registerActivationStubTools(opts: {
     }),
     async handler(_input, ctx) {
       opts.toolCalls.push("product.sources.default_aggregator.configure");
+      assert.equal(_input.industry, undefined);
+      assert.equal(_input.signal_keywords, undefined);
+      assert.equal(_input.competitor_watchlist, undefined);
+      assert.equal(_input.linkedin_signal_behaviors, undefined);
       return { workspace_id: ctx.workspace_id, source_count: 4 };
     },
   });
@@ -361,6 +369,35 @@ function registerActivationStubTools(opts: {
         workspace_id: ctx.workspace_id,
         connect_url: "/api/auth/linkedin",
         provider_configured: true,
+      };
+    },
+  });
+
+  registerTool({
+    name: "product.signal.ingestion.run",
+    description: "Start initial Signal ingestion.",
+    kind: "write",
+    input: z.object({
+      limit: z.number().int().positive().optional(),
+      wait: z.boolean().optional(),
+      idempotency_nonce: z.string().optional(),
+    }),
+    output: z.object({
+      workspace_id: z.string().uuid(),
+      workflow_name: z.literal("workspace.signal.ingestion"),
+      workflow_run_id: z.string(),
+      output: z.unknown().nullable(),
+    }),
+    async handler(input, ctx) {
+      opts.toolCalls.push("product.signal.ingestion.run");
+      assert.equal(input.limit, 4);
+      assert.equal(input.wait, false);
+      assert.match(input.idempotency_nonce ?? "", /^activation:/);
+      return {
+        workspace_id: ctx.workspace_id,
+        workflow_name: "workspace.signal.ingestion" as const,
+        workflow_run_id: "initial-signal-ingestion",
+        output: null,
       };
     },
   });
