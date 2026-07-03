@@ -13,6 +13,7 @@ test("deploy fly worker parses app name from fly.toml", () => {
 test("deploy fly worker collects required and optional secrets", () => {
   const result = collectFlyWorkerSecrets({
     APP_ORIGIN: "https://www.bombsell.com",
+    CREDENTIALS_ENCRYPTION_KEY: "base64-secret",
     DATABASE_URL: "postgresql://db",
     DEEPSEEK_API_KEY: "ds",
     EXA_API_KEY: "exa",
@@ -33,6 +34,7 @@ test("deploy fly worker collects required and optional secrets", () => {
     result.secrets.map((entry) => entry.key),
     [
       "APP_ORIGIN",
+      "CREDENTIALS_ENCRYPTION_KEY",
       "DATABASE_URL",
       "DEEPSEEK_API_KEY",
       "EXA_API_KEY",
@@ -62,6 +64,7 @@ test("deploy fly worker reports missing conditional worker providers", () => {
   });
 
   assert.deepEqual(result.missingRequiredKeys, [
+    "CREDENTIALS_ENCRYPTION_KEY",
     "HUNTER_API_KEY | EXA_API_KEY",
     "HUNTER_API_KEY | ZEROBOUNCE_API_KEY",
   ]);

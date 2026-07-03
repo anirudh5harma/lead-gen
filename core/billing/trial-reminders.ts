@@ -25,7 +25,7 @@ export interface TrialReminderProjectionDeps {
   now?: () => Date;
 }
 
-export interface DueTrialReminderSweepDeps extends TrialReminderProjectionDeps {}
+export type DueTrialReminderSweepDeps = TrialReminderProjectionDeps;
 
 function reminderEnabled(enabled?: boolean): boolean {
   if (typeof enabled === "boolean") return enabled;
