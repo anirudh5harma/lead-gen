@@ -34,11 +34,11 @@ const dashboardStubs = new Map<string, string>([
     'export default function RouteRefresh() { return null; }',
   ],
   [
-    "./actions",
+    "../actions",
     "export async function generateMeetingPrepAction() {} export async function prepareQualifiedSignalsAction() {}",
   ],
   [
-    "./server-data",
+    "../server-data",
     'export async function loadDashboardData() { throw new Error("test stub"); }',
   ],
 ]);

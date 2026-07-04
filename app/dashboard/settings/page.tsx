@@ -3,6 +3,7 @@ import Icon from "@/components/Icon";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
 import PlanSection from "@/components/dashboard/PlanSection";
 import { editCompanyProfileAction } from "@/app/dashboard/actions";
+import { updateIcpTextAction } from "./actions";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getWorkspaceBillingState } from "@/core/billing/index.ts";
 import { getActiveWorkspaceSessionForDashboard } from "@/lib/workspace";
@@ -162,24 +163,47 @@ export default async function SettingsPage() {
         </div>
       </form>
 
-      <Card title="ICP (Ideal Customer Profile)">
-        <div className="grid gap-1.5">
-          <p className="text-[13px] font-medium text-[var(--color-text-2)]">
-            {icp?.name ?? "No ICP configured"}
-          </p>
-          <p className="text-[13px] leading-5 text-[var(--color-text-3)]">
-            {icp?.description ??
-              "Set your ICP so signals get scored against a real target."}
-          </p>
-          <a
-            href="/dashboard/agent#icp"
-            className="btn-quiet-sm mt-2 inline-flex w-fit"
+      <form action={updateIcpTextAction}>
+        <Card title="ICP (Ideal Customer Profile)">
+          <Field label="ICP name">
+            <input
+              name="icp_name"
+              defaultValue={icp?.name ?? ""}
+              className={inputCls}
+              placeholder="Series A → C fintech ops leads"
+            />
+          </Field>
+          <Field
+            label="ICP description"
+            hint="Who is a perfect fit? Titles, industries, size, triggers."
           >
-            <Icon name="edit" size={12} />
-            Refine ICP
-          </a>
-        </div>
-      </Card>
+            <textarea
+              name="icp_description"
+              defaultValue={icp?.description ?? ""}
+              rows={4}
+              className={inputCls}
+              placeholder="VP Ops / Head of Finance at 100-1000 person B2B fintechs; recently raised; hiring RevOps."
+            />
+          </Field>
+          <div className="flex items-center justify-between gap-3">
+            <a
+              href="/dashboard/agent#icp"
+              className="btn-quiet-sm inline-flex"
+            >
+              <Icon name="tune" size={12} />
+              Advanced tuning
+            </a>
+            <PendingSubmitButton
+              className="btn-solid-sm"
+              icon="save"
+              iconSize={12}
+              pendingLabel="Saving"
+            >
+              Save ICP
+            </PendingSubmitButton>
+          </div>
+        </Card>
+      </form>
 
       <section>
         <h2 className="mb-3 text-[13px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-3)]">

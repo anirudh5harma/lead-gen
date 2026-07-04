@@ -12,6 +12,7 @@ import {
 } from "../core/ingest/adapters/hn-whos-hiring.ts";
 import { productHuntAdapter } from "../core/ingest/adapters/product-hunt.ts";
 import { redditAdapter, RedditError } from "../core/ingest/adapters/reddit.ts";
+import { redditSearchAdapter } from "../core/ingest/adapters/reddit-search.ts";
 import { googleNewsAdapter } from "../core/ingest/adapters/google-news.ts";
 import { xSearchAdapter, XSearchError } from "../core/ingest/adapters/x-search.ts";
 import { exaAdapter } from "../core/ingest/adapters/exa.ts";
@@ -827,6 +828,126 @@ test("reddit adapter: non-2xx throws RedditError", async () => {
     }),
     (err) => err instanceof RedditError && err.status === 429,
   );
+});
+
+// ─── Reddit search ────────────────────────────────────────────────────────
+
+test("reddit_search adapter: empty subreddit list → no-op", async () => {
+  let calls = 0;
+  const fetchImpl = (async () => {
+    calls += 1;
+    return jsonResponse({});
+  }) as unknown as typeof fetch;
+  const result = await redditSearchAdapter.poll({
+    workspace_id: "ws",
+    source: { id: "s", name: "x", config: { subreddits: [], keywords: ["ai"] } },
+    cursor: {},
+    fetchImpl,
+  });
+  assert.equal(calls, 0);
+  assert.equal(result.items.length, 0);
+});
+
+test("reddit_search adapter: keyword-filtered items include matched_keywords", async () => {
+  const urls: string[] = [];
+  const fetchImpl = (async (url: string) => {
+    urls.push(url);
+    return jsonResponse({
+      data: {
+        children: [
+          {
+            kind: "t3",
+            data: {
+              id: "z1",
+              name: "t3_z1",
+              title: "Best cold email tools for outbound?",
+              selftext: "We are trying to scale outbound and hate spamming.",
+              permalink: "/r/SaaS/comments/z1/",
+              subreddit: "SaaS",
+              score: 12,
+              num_comments: 3,
+              created_utc: 1717000000,
+              domain: "self.SaaS",
+            },
+          },
+          {
+            kind: "t3",
+            data: {
+              id: "z2",
+              name: "t3_z2",
+              title: "Kubernetes cluster tips",
+              selftext: "Nothing related",
+              permalink: "/r/SaaS/comments/z2/",
+              subreddit: "SaaS",
+              score: 0,
+              num_comments: 0,
+              created_utc: 1717000000,
+              domain: "self.SaaS",
+            },
+          },
+        ],
+      },
+    });
+  }) as unknown as typeof fetch;
+  const result = await redditSearchAdapter.poll({
+    workspace_id: "ws",
+    source: {
+      id: "s",
+      name: "x",
+      config: {
+        subreddits: ["SaaS"],
+        keywords: ["cold email", "outbound"],
+        limit_per_sub: 5,
+      },
+    },
+    cursor: {},
+    fetchImpl,
+  });
+  assert.equal(urls.length, 1);
+  assert.match(urls[0]!, /\/r\/SaaS\/search\.json\?q=/);
+  assert.equal(result.items.length, 1);
+  const structured = result.items[0]!.structured as {
+    subreddit: string;
+    matched_keywords: string[];
+  };
+  assert.equal(structured.subreddit, "SaaS");
+  assert.deepEqual(structured.matched_keywords.sort(), ["cold email", "outbound"]);
+});
+
+test("reddit_search adapter: no-keyword mode returns all posts", async () => {
+  const fetchImpl = (async (url: string) => {
+    assert.match(url, /\/r\/marketing\/new\.json/);
+    return jsonResponse({
+      data: {
+        children: [
+          {
+            kind: "t3",
+            data: {
+              id: "a1",
+              name: "t3_a1",
+              title: "Any post here",
+              subreddit: "marketing",
+              permalink: "/r/marketing/comments/a1/",
+              score: 1,
+              num_comments: 0,
+              created_utc: 1717000000,
+            },
+          },
+        ],
+      },
+    });
+  }) as unknown as typeof fetch;
+  const result = await redditSearchAdapter.poll({
+    workspace_id: "ws",
+    source: {
+      id: "s",
+      name: "x",
+      config: { subreddits: ["marketing"] },
+    },
+    cursor: {},
+    fetchImpl,
+  });
+  assert.equal(result.items.length, 1);
 });
 
 // ─── Google News ──────────────────────────────────────────────────────────
