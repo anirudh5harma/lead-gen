@@ -10,6 +10,7 @@ export interface DefaultNewsQuery {
     | "regulation"
     | "churn_risk"
     | "competitor_move"
+    | "hiring"
     | "press_mention";
   poll_interval_minutes: number;
   source_tier: "aggregator";
@@ -215,6 +216,42 @@ export const DEFAULT_GOOGLE_NEWS_QUERIES: DefaultNewsQuery[] = [
     source_tier: "aggregator",
     source_authority: 0.66,
     source_reason: "free_expansion_recall",
+  },
+  {
+    query: "\"hiring VP sales\" OR \"hiring head of sales\" OR \"hiring CRO\"",
+    name: "Hiring — GTM leadership",
+    signal_kind: "hiring",
+    poll_interval_minutes: 60,
+    source_tier: "aggregator",
+    source_authority: 0.66,
+    source_reason: "free_hiring_recall",
+  },
+  {
+    query: "\"hiring head of engineering\" OR \"hiring VP engineering\" OR \"hiring CTO\"",
+    name: "Hiring — engineering leadership",
+    signal_kind: "hiring",
+    poll_interval_minutes: 60,
+    source_tier: "aggregator",
+    source_authority: 0.66,
+    source_reason: "free_hiring_recall",
+  },
+  {
+    query: "\"hiring founding engineer\" OR \"hiring founding AE\" OR \"hiring founding designer\"",
+    name: "Hiring — founding team",
+    signal_kind: "hiring",
+    poll_interval_minutes: 60,
+    source_tier: "aggregator",
+    source_authority: 0.66,
+    source_reason: "free_hiring_recall",
+  },
+  {
+    query: "startup hiring RevOps OR \"customer success lead\" OR \"head of growth\"",
+    name: "Hiring — RevOps + growth",
+    signal_kind: "hiring",
+    poll_interval_minutes: 60,
+    source_tier: "aggregator",
+    source_authority: 0.66,
+    source_reason: "free_hiring_recall",
   },
   {
     query: "company enters new market expansion",
