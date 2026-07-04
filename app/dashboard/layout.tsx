@@ -16,6 +16,7 @@ import {
   getWorkspaceActivationState,
   type WorkspaceActivationState,
 } from "@/core/product/activation-state.ts";
+import { ensureDefaultSignalSourcesForWorkspace } from "@/core/product/self-heal.ts";
 import type { WorkspaceBillingState } from "@/components/dashboard/billing";
 
 type DashboardChromeState =
@@ -79,6 +80,9 @@ async function loadDashboardChrome(
     ]);
     const workspaceId = active?.workspace.id ?? completed.workspace_id;
     const pool = getPool();
+    // Fire-and-forget self-heal: reseed default signal sources if the
+    // workspace has none (activation setup can die mid-run). Idempotent.
+    void ensureDefaultSignalSourcesForWorkspace(pool, workspaceId, identity.id);
     const [billing, activation] = await Promise.all([
       getWorkspaceBillingState(pool, workspaceId).catch((err) => {
         console.error("[dashboard/layout] failed to load billing state", err);

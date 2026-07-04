@@ -17,31 +17,35 @@ test("dashboard navigation uses active product surface routes", () => {
     shell.indexOf("function isActivePath"),
   );
 
-  assert.match(primaryNav, /href: "\/dashboard\/brief",\s+label: "Brief"/);
-  assert.match(primaryNav, /matches: \["\/dashboard\/brief", "\/dashboard"\]/);
-  assert.match(primaryNav, /href: "\/dashboard\/agent",\s+label: "Agent"/);
-  assert.match(primaryNav, /matches: \["\/dashboard\/agent"\]/);
-  assert.match(primaryNav, /href: "\/dashboard\/profile",\s+label: "Profile"/);
-  assert.match(primaryNav, /matches: \["\/dashboard\/profile"\]/);
+  // Left-nav surfaces (2026-07 launch): Outreach is the default landing,
+  // followed by Conversations, Reddit marketing, Integrations, Settings.
+  assert.match(primaryNav, /href: "\/dashboard\/outreach",\s+label: "Outreach"/);
+  assert.match(
+    primaryNav,
+    /matches: \["\/dashboard\/outreach", "\/dashboard"\]/,
+  );
+  assert.match(
+    primaryNav,
+    /href: "\/dashboard\/conversations",\s+label: "Conversations"/,
+  );
+  assert.match(
+    primaryNav,
+    /href: "\/dashboard\/reddit",\s+label: "Reddit marketing"/,
+  );
+  assert.match(
+    primaryNav,
+    /href: "\/dashboard\/integrations",\s+label: "Integrations"/,
+  );
+  assert.match(primaryNav, /href: "\/dashboard\/settings",\s+label: "Settings"/);
+  assert.doesNotMatch(primaryNav, /label: "Brief"/);
+  assert.doesNotMatch(primaryNav, /label: "Agent"/);
+  assert.doesNotMatch(primaryNav, /label: "Profile"/);
   assert.doesNotMatch(primaryNav, /"\/dashboard\/reps"/);
-  assert.doesNotMatch(primaryNav, /"\/dashboard\/conversations"/);
   assert.doesNotMatch(primaryNav, /"\/dashboard\/signals"/);
   assert.doesNotMatch(primaryNav, /"\/dashboard\/plays"/);
   assert.doesNotMatch(primaryNav, /"\/dashboard\/outcomes"/);
-  assert.doesNotMatch(primaryNav, /label: "Outreach"/);
   assert.doesNotMatch(primaryNav, /label: "Prospects"/);
   assert.doesNotMatch(primaryNav, /label: "Inbox"/);
-  assert.doesNotMatch(primaryNav, /label: "Signals"/);
-  assert.doesNotMatch(primaryNav, /label: "Plays"/);
-  assert.doesNotMatch(primaryNav, /label: "Outcomes"/);
-  assert.doesNotMatch(
-    primaryNav,
-    /href: "\/dashboard\/prospecting", label: "Prospecting"/,
-  );
-  assert.doesNotMatch(
-    primaryNav,
-    /href: "\/dashboard\/prospects", label: "Prospects"/,
-  );
   assert.match(shell, /hrefPath\(href\) === pathname/);
   assert.match(shell, /candidate !== "\/dashboard"/);
   assert.doesNotMatch(shell, /ProductFlowRail/);
@@ -73,9 +77,11 @@ test("dashboard shell keeps route chrome simple and avoids extra flow queries", 
 
   assert.match(shell, /DashboardShell/);
   assert.match(shell, /const NAV/);
-  assert.match(shell, /label: "Brief"/);
-  assert.match(shell, /label: "Agent"/);
-  assert.match(shell, /label: "Profile"/);
+  assert.match(shell, /label: "Outreach"/);
+  assert.match(shell, /label: "Conversations"/);
+  assert.match(shell, /label: "Reddit marketing"/);
+  assert.match(shell, /label: "Integrations"/);
+  assert.match(shell, /label: "Settings"/);
   assert.match(layout, /<DashboardShell/);
   assert.match(layout, /getActiveWorkspaceSession/);
   assert.match(layout, /loadDashboardChrome/);
@@ -141,16 +147,18 @@ test("Agent is the canonical dashboard surface route", () => {
     source("app/dashboard/profile/page.tsx"),
     /from "\.\/ProfilePage"/,
   );
+  // Settings is a live surface in the new nav (company profile + tone +
+  // subscription). Advanced ICP tuning links back to Agent.
   assert.match(
     source("app/dashboard/settings/page.tsx"),
-    /redirect\("\/dashboard\/profile#tools"\)/,
+    /Settings \| Bombsell/,
   );
   assert.equal(exists("app/dashboard/agent/[id]/loading.tsx"), false);
   assert.equal(exists("app/dashboard/agent/contacts/[id]/loading.tsx"), true);
 
   const productLinks = [
     source("components/dashboard/Shell.tsx"),
-    source("app/dashboard/page.tsx"),
+    source("app/dashboard/brief/page.tsx"),
     source("app/dashboard/agent/AgentPage.tsx"),
     source("app/dashboard/agent/contacts/[id]/ContactPage.tsx"),
     source("app/dashboard/setup/page.tsx"),
@@ -168,10 +176,7 @@ test("Agent is the canonical dashboard surface route", () => {
 test("legacy list and Profile routes redirect to current product hubs", () => {
   const nextConfig = source("next.config.ts");
 
-  assert.match(
-    source("app/dashboard/settings/page.tsx"),
-    /redirect\("\/dashboard\/profile#tools"\)/,
-  );
+  // Settings is now a live surface — see "Settings surface" test below.
   assert.match(
     source("app/dashboard/prospecting/page.tsx"),
     /redirect\("\/dashboard\/profile#profile"\)/,
@@ -196,10 +201,7 @@ test("legacy list and Profile routes redirect to current product hubs", () => {
     source("app/dashboard/prospects/page.tsx"),
     /redirect\("\/dashboard\/agent#verified-contacts"\)/,
   );
-  assert.match(
-    source("app/dashboard/conversations/page.tsx"),
-    /redirect\("\/dashboard\/agent#outreach"\)/,
-  );
+  // Conversations is now a live surface listing Outlook + LinkedIn threads.
   assert.match(
     source("app/dashboard/conversations/[id]/page.tsx"),
     /redirect\(`\/dashboard\/agent\/outreach\/\$\{id\}`\)/,
@@ -295,7 +297,7 @@ test("retired product surfaces redirect to Agent", () => {
 });
 
 test("Dashboard routes setup work through Profile and current surfaces", () => {
-  const dashboard = source("app/dashboard/page.tsx");
+  const dashboard = source("app/dashboard/brief/page.tsx");
   const profile = source("app/dashboard/profile/ProfilePage.tsx");
   const appLayout = source("app/layout.tsx");
   const urlStart = source("components/UrlStart.tsx");
@@ -390,7 +392,8 @@ test("Dashboard routes setup work through Profile and current surfaces", () => {
   assert.doesNotMatch(profile, /const planned = \[/);
 
   assert.match(source("app/dashboard/brief/page.tsx"), /dynamic = "force-dynamic"/);
-  assert.match(source("app/dashboard/brief/page.tsx"), /from "\.\.\/page"/);
+  // Brief content now lives in brief/page.tsx directly (the top-level
+  // dashboard route is a redirect to /dashboard/outreach).
   assert.match(source("app/brief/page.tsx"), /redirect\("\/dashboard\/brief"\)/);
   assert.match(appLayout, /Grow your sales with high-intent outreach/);
   assert.doesNotMatch(appLayout, /Prospecting, signal ingestion/);
@@ -479,7 +482,7 @@ test("Profile presents merged Outlook and LinkedIn connection gates", () => {
 });
 test("Outlook connection surfaces collapse duplicate rows by mailbox identity", () => {
   const settings = source("app/dashboard/profile/ProfilePage.tsx");
-  const brief = source("app/dashboard/page.tsx");
+  const brief = source("app/dashboard/brief/page.tsx");
 
   assert.match(settings, /row_number\(\) over/);
   assert.match(settings, /properties ->> 'mailbox_email'/);
@@ -551,7 +554,7 @@ test("Verified contacts open graph-backed profile pages with channel readiness",
   const prospectDetail = source("app/dashboard/prospects/[id]/page.tsx");
   const profile = source("app/dashboard/agent/contacts/[id]/ContactPage.tsx");
   const reps = source("app/dashboard/agent/AgentPage.tsx");
-  const brief = source("app/dashboard/page.tsx");
+  const brief = source("app/dashboard/brief/page.tsx");
   const actions = source("app/dashboard/actions.ts");
 
   assert.match(prospects, /redirect\("\/dashboard\/agent#verified-contacts"\)/);
@@ -606,7 +609,7 @@ test("Reply insights keep outcome data under the simplified dashboard", () => {
   const outcomes = source("app/dashboard/outcomes/page.tsx");
   const loading = source("app/dashboard/outcomes/loading.tsx");
   const loader = source("components/dashboard/LoadingState.tsx");
-  const dashboard = source("app/dashboard/page.tsx");
+  const dashboard = source("app/dashboard/brief/page.tsx");
   const reps = source("app/dashboard/agent/AgentPage.tsx");
 
   assert.match(outcomes, /redirect\("\/dashboard\/brief"\)/);
@@ -888,13 +891,15 @@ test("sent outreach links open the exact draft in the conversation trace", () =>
   const detail = source("app/dashboard/agent/outreach/[id]/page.tsx");
   const trust = source("core/product/conversation-trust.ts");
   const reps = source("app/dashboard/agent/AgentPage.tsx");
-  const dashboard = source("app/dashboard/page.tsx");
+  const dashboard = source("app/dashboard/brief/page.tsx");
   const profile = source("app/dashboard/profile/ProfilePage.tsx");
   const contact = source("app/dashboard/agent/contacts/[id]/ContactPage.tsx");
   const actions = source("app/dashboard/actions.ts");
   const aliases = source("core/product/bombsell-tools.ts");
 
-  assert.match(outreach, /redirect\("\/dashboard\/agent#outreach"\)/);
+  // /dashboard/conversations is now a live surface listing threads; individual
+  // thread deep-links still land in the Agent outreach trace via [id]/page.tsx.
+  assert.match(outreach, /Conversations \| Bombsell/);
   assert.match(legacyDetail, /redirect\(`\/dashboard\/agent\/outreach\/\$\{id\}`\)/);
   assert.match(reps, /<AgentConversationsPanel/);
   assert.match(reps, /kind: "sent"/);
@@ -910,9 +915,6 @@ test("sent outreach links open the exact draft in the conversation trace", () =>
   assert.match(actions, /revalidatePath\(`\/dashboard\/agent\/outreach\/\$\{conversationId\}`\)/);
   assert.match(aliases, /\/dashboard\/agent\/outreach\/\$\{message\.conversation_id\}#message-\$\{message\.id\}/);
   assert.doesNotMatch(aliases, /\/dashboard\/conversations\/\$\{message\.conversation_id\}/);
-  assert.doesNotMatch(outreach, /kicker="Outreach"/);
-  assert.doesNotMatch(outreach, /kicker="Inbox"/);
-  assert.doesNotMatch(outreach, /Sent list/);
   assert.match(detail, /brief-kicker">Agent/);
   assert.match(detail, /OutreachProofTimeline/);
   assert.match(detail, /Signal-to-outreach trace/);
@@ -1434,15 +1436,19 @@ test("Profile exposes profile, channels, advanced setup, and workspace autonomy 
   assert.match(registry, /"workspace\.configured": WorkspaceConfigured/);
 });
 
-test("Integrations route folds into Profile", () => {
+test("Integrations surface hosts connections and MCP instructions", () => {
   const integrations = source("app/dashboard/integrations/page.tsx");
   const outlook = source("app/api/auth/outlook/route.ts");
   const linkedIn = source("app/api/auth/linkedin/route.ts");
 
-  assert.match(integrations, /redirect\("\/dashboard\/profile#tools"\)/);
-  assert.doesNotMatch(integrations, /Connect Outlook/);
-  assert.doesNotMatch(integrations, /Connect LinkedIn/);
-  assert.doesNotMatch(integrations, /href="\/api\/mcp"/);
+  assert.match(integrations, /Integrations \| Bombsell/);
+  assert.match(integrations, /Outlook \/ Microsoft 365/);
+  assert.match(integrations, /\/api\/auth\/outlook\?return_to=/);
+  // LinkedIn is Coming soon in the UI — matches the LinkedIn native-engagement
+  // gap called out in ARCHITECTURE.md.
+  assert.doesNotMatch(integrations, /\/api\/auth\/linkedin\?return_to=/);
+  assert.match(integrations, /Coming soon/);
+  assert.match(integrations, /MCP for Claude \/ Codex/);
   assert.match(outlook, /authCallbackOrigin/);
   assert.match(linkedIn, /authCallbackOrigin/);
   assert.match(linkedIn, /safeReturnTo/);
@@ -1519,7 +1525,6 @@ test("account connection entry points carry explicit product return targets", ()
   assert.match(surfaces, /\/api\/auth\/outlook\?return_to=/);
   // LinkedIn connection is coming soon — no LinkedIn OAuth entry point in the UI.
   assert.doesNotMatch(surfaces, /\/api\/auth\/linkedin\?return_to=/);
-  assert.doesNotMatch(surfaces, /\/dashboard\/integrations/);
   assert.doesNotMatch(surfaces, /\/api\/auth\/outlook\?return_to=\/dashboard\/deliverability/);
 });
 
@@ -1821,7 +1826,7 @@ test("dashboard icon names resolve to first-party SVG symbols", () => {
     source("app/page.tsx"),
     source("components/dashboard/Shell.tsx"),
     source("app/onboarding/OnboardingForm.tsx"),
-    source("app/dashboard/page.tsx"),
+    source("app/dashboard/brief/page.tsx"),
     source("app/dashboard/agent/AgentPage.tsx"),
     source("app/dashboard/profile/ProfilePage.tsx"),
     source("app/dashboard/ingestion/page.tsx"),

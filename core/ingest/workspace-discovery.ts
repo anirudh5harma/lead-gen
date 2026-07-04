@@ -378,7 +378,12 @@ export function deriveSignalCompanyHint(input: {
     });
   }
 
-  if (adapter === "hn_front" || adapter === "hacker_news" || adapter === "reddit") {
+  if (
+    adapter === "hn_front" ||
+    adapter === "hacker_news" ||
+    adapter === "reddit" ||
+    adapter === "reddit_search"
+  ) {
     const domain = firstDomain(
       structured?.company_domain,
       structured?.linked_domain,

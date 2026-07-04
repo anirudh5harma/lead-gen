@@ -156,6 +156,11 @@ async function createActivationSetup(formData: FormData): Promise<string> {
       ],
     },
     session,
+    // Activation runs Firecrawl + LLM + multiple tool calls; a hard sync
+    // wait risks hitting Vercel's 60s route budget. Instead we redirect
+    // immediately and rely on the idempotent self-heal that runs on every
+    // dashboard load — see `ensureDefaultSignalSources` in the dashboard
+    // layout.
     { wait: false },
   );
 

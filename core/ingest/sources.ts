@@ -167,3 +167,112 @@ export async function recordCursorError(
     [source_id, company_id, JSON.stringify(payload)],
   );
 }
+
+// ─── Workspace source health ─────────────────────────────────────────────
+
+export interface StaleSource {
+  source_id: string;
+  workspace_id: string;
+  name: string;
+  adapter: string | null;
+  last_polled_at: string | null;
+  last_error: Record<string, unknown> | null;
+  produced_7d: number;
+}
+
+/**
+ * Returns workspace sources that look unhealthy: enabled but either
+ * (a) have never polled successfully in the last poll window,
+ * (b) hold a `last_error`, or
+ * (c) produced zero signals in the past 7 days.
+ *
+ * UI uses this to surface "why aren't signals appearing?" without needing
+ * an operator to grep worker logs.
+ */
+export async function getStaleSources(
+  pool: Pool,
+  workspace_id: string,
+): Promise<StaleSource[]> {
+  const { rows } = await pool.query<{
+    source_id: string;
+    workspace_id: string;
+    name: string;
+    adapter: string | null;
+    last_polled_at: Date | null;
+    last_error: Record<string, unknown> | null;
+    produced_7d: string;
+  }>(
+    `select gs.id                                     as source_id,
+            gs.workspace_id                           as workspace_id,
+            gs.name                                   as name,
+            coalesce(gs.config->>'adapter', gs.kind::text) as adapter,
+            wsc.last_polled_at                        as last_polled_at,
+            wsc.last_error                            as last_error,
+            (
+              select count(*)::text
+                from signals s
+               where s.workspace_id = gs.workspace_id
+                 and s.source_id = gs.id
+                 and coalesce(s.ingested_at, s.freshness_at)
+                     >= now() - interval '7 days'
+            ) as produced_7d
+       from graph_sources gs
+       join workspace_source_configs wsc
+         on wsc.workspace_id = gs.workspace_id
+        and wsc.source_id = gs.id
+      where gs.workspace_id = $1
+        and gs.enabled
+        and wsc.enabled
+        and (
+          wsc.last_polled_at is null
+          or wsc.last_polled_at
+             <= now() - (wsc.poll_cadence_sec * interval '1 second') * 2
+          or wsc.last_error is not null
+          or (
+            select count(*)
+              from signals s
+             where s.workspace_id = gs.workspace_id
+               and s.source_id = gs.id
+               and coalesce(s.ingested_at, s.freshness_at)
+                   >= now() - interval '7 days'
+          ) = 0
+        )
+      order by wsc.last_polled_at asc nulls first, gs.name asc
+      limit 50`,
+    [workspace_id],
+  );
+  return rows.map((row) => ({
+    source_id: row.source_id,
+    workspace_id: row.workspace_id,
+    name: row.name,
+    adapter: row.adapter,
+    last_polled_at: row.last_polled_at ? row.last_polled_at.toISOString() : null,
+    last_error: row.last_error,
+    produced_7d: Number(row.produced_7d ?? 0),
+  }));
+}
+
+/**
+ * Cheap "does the workspace have any enabled signal source at all?" probe.
+ * Used by the dashboard self-heal path to decide whether to trigger default
+ * seeding when a workspace has none — e.g., because activation setup died
+ * mid-run and never emitted `workspace.source.configured`.
+ */
+export async function hasEnabledSignalSource(
+  pool: Pool,
+  workspace_id: string,
+): Promise<boolean> {
+  const { rows } = await pool.query<{ has_source: boolean }>(
+    `select exists (
+       select 1
+         from graph_sources gs
+         join workspace_source_configs wsc
+           on wsc.workspace_id = gs.workspace_id and wsc.source_id = gs.id
+        where gs.workspace_id = $1
+          and gs.enabled
+          and wsc.enabled
+     ) as has_source`,
+    [workspace_id],
+  );
+  return rows[0]?.has_source === true;
+}

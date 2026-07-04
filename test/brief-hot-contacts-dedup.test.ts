@@ -34,11 +34,11 @@ const dashboardStubs = new Map<string, string>([
     'export default function RouteRefresh() { return null; }',
   ],
   [
-    "./actions",
+    "../actions",
     "export async function generateMeetingPrepAction() {} export async function prepareQualifiedSignalsAction() {}",
   ],
   [
-    "./server-data",
+    "../server-data",
     'export async function loadDashboardData() { throw new Error("test stub"); }',
   ],
 ]);
@@ -74,7 +74,7 @@ registerHooks({
   },
 });
 
-const { dedupeHotContacts } = await import("../app/dashboard/page.tsx");
+const { dedupeHotContacts } = await import("../app/dashboard/brief/page.tsx");
 
 type BriefHotContact = Parameters<typeof dedupeHotContacts>[0][number];
 
