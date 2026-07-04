@@ -156,8 +156,14 @@ async function createActivationSetup(formData: FormData): Promise<string> {
       ],
     },
     session,
-    { wait: false },
-  );
+    // Wait so default signal sources are seeded before we redirect.
+    // Non-fatal if the workflow times out; a self-heal path runs from the
+    // dashboard on load.
+    { wait: true, timeoutMs: 25_000 },
+  ).catch((error) => {
+    console.error("[onboarding] activation setup did not finish in time", error);
+    return null;
+  });
 
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/profile");
