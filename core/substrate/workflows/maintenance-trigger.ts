@@ -67,10 +67,11 @@ export async function triggerDueWorkspaceMaintenance(
     failures: [],
   };
 
+  const maxWorkspacePolls = positiveLimit(deps.maxWorkspacePolls);
   const [platformCatalog, platformShared, polls, warmups, outlookRepairs] = await Promise.all([
     listEnabledPlatformCatalogTargets(deps.pool),
     listEnabledPlatformSharedTargets(deps.pool),
-    listDueWorkspacePolls(deps.pool, now),
+    listDueWorkspacePolls(deps.pool, now, maxWorkspacePolls),
     listWarmupWorkspaces(deps.pool),
     listOutlookRepairWorkspaces(deps.pool, now),
   ]);
@@ -108,12 +109,7 @@ export async function triggerDueWorkspaceMaintenance(
   });
   if (expiryStarted) summary.platform_expiry_sweeps_started += 1;
 
-  const maxWorkspacePolls = positiveLimit(deps.maxWorkspacePolls);
-  const workspacePolls = maxWorkspacePolls === null
-    ? polls
-    : polls.slice(0, maxWorkspacePolls);
-
-  for (const target of workspacePolls) {
+  for (const target of polls) {
     const cadenceBucket = Math.floor(
       now.getTime() / (target.poll_cadence_sec * 1000),
     );
@@ -224,7 +220,10 @@ async function listEnabledPlatformSharedTargets(
 async function listDueWorkspacePolls(
   pool: Pool,
   now: Date,
+  limit: number | null,
 ): Promise<WorkspacePollTarget[]> {
+  // Oldest last_polled_at first — starves no workspace when limit binds.
+  // Nulls (never polled) win; ties broken deterministically.
   const { rows } = await pool.query<WorkspacePollTarget>(
     `select wsc.workspace_id, wsc.source_id, wsc.poll_cadence_sec
        from workspace_source_configs wsc
@@ -238,8 +237,10 @@ async function listDueWorkspacePolls(
           wsc.last_polled_at is null
           or wsc.last_polled_at <= $1::timestamptz - (wsc.poll_cadence_sec * interval '1 second')
         )
-      order by wsc.workspace_id, wsc.source_id`,
-    [now],
+      order by wsc.last_polled_at asc nulls first,
+               wsc.workspace_id, wsc.source_id
+      limit $2`,
+    [now, limit ?? 1000],
   );
   return rows;
 }

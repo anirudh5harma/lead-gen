@@ -78,7 +78,7 @@ export async function handleMaintenanceRequest(
     const summary = await (deps.trigger ?? triggerDueWorkspaceMaintenance)({
       pool: deps.pool ?? getPool(),
       runtime: workflowRuntime,
-      maxWorkspacePolls: positiveIntegerEnv("MAINTENANCE_WORKSPACE_POLL_LIMIT", 10),
+      maxWorkspacePolls: positiveIntegerEnv("MAINTENANCE_WORKSPACE_POLL_LIMIT", 100),
     });
     return Response.json(summary, {
       status: summary.failures.length === 0 ? 202 : 207,
