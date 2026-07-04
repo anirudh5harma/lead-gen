@@ -74,7 +74,7 @@ registerHooks({
   },
 });
 
-const { dedupeHotContacts } = await import("../app/dashboard/page.tsx");
+const { dedupeHotContacts } = await import("../app/dashboard/brief/page.tsx");
 
 type BriefHotContact = Parameters<typeof dedupeHotContacts>[0][number];
 

@@ -76,13 +76,10 @@ export default async function IntegrationsPage() {
           icon="linkedin"
           title="LinkedIn"
           description="Send DMs and InMails from your own profile. Rate-limited per account to stay safe."
-          status={statusOf(linkedin)}
-          statusLabel={labelFor(linkedin)}
+          status="soon"
+          statusLabel="Coming soon"
           errorHint={linkedin?.last_error ?? null}
-          action={{
-            href: "/api/auth/linkedin?return_to=%2Fdashboard%2Fintegrations",
-            label: linkedin?.status === "connected" ? "Reconnect" : "Connect LinkedIn",
-          }}
+          action={null}
         />
       </Section>
 

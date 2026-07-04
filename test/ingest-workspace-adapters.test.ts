@@ -53,6 +53,7 @@ test("workspace registry: adapters registered with expected kindHints", () => {
       "lever",
       "product_hunt",
       "reddit",
+      "reddit_search",
       "rss",
       "sec_edgar",
       "workable",
@@ -69,6 +70,7 @@ test("workspace registry: adapters registered with expected kindHints", () => {
   assert.equal(workspaceAdapters.hn_whos_hiring.kindHint, "hiring");
   assert.equal(workspaceAdapters.product_hunt.kindHint, "product_launch");
   assert.equal(workspaceAdapters.reddit.kindHint, null);
+  assert.equal(workspaceAdapters.reddit_search.kindHint, null);
   assert.equal(workspaceAdapters.google_news.kindHint, null);
   assert.equal(workspaceAdapters.exa.kindHint, null);
   assert.equal(workspaceAdapters.x_search.kindHint, null);

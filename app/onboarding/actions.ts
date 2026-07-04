@@ -156,14 +156,13 @@ async function createActivationSetup(formData: FormData): Promise<string> {
       ],
     },
     session,
-    // Wait so default signal sources are seeded before we redirect.
-    // Non-fatal if the workflow times out; a self-heal path runs from the
-    // dashboard on load.
-    { wait: true, timeoutMs: 25_000 },
-  ).catch((error) => {
-    console.error("[onboarding] activation setup did not finish in time", error);
-    return null;
-  });
+    // Activation runs Firecrawl + LLM + multiple tool calls; a hard sync
+    // wait risks hitting Vercel's 60s route budget. Instead we redirect
+    // immediately and rely on the idempotent self-heal that runs on every
+    // dashboard load — see `ensureDefaultSignalSources` in the dashboard
+    // layout.
+    { wait: false },
+  );
 
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/profile");
