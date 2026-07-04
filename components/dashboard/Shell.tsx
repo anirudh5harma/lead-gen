@@ -27,22 +27,34 @@ export interface ShellWorkspace {
 
 const NAV: NavItem[] = [
   {
-    href: "/dashboard/brief",
-    label: "Brief",
-    icon: "dashboard",
-    matches: ["/dashboard/brief", "/dashboard"],
+    href: "/dashboard/outreach",
+    label: "Outreach",
+    icon: "send",
+    matches: ["/dashboard/outreach", "/dashboard"],
   },
   {
-    href: "/dashboard/agent",
-    label: "Agent",
-    icon: "auto_awesome",
-    matches: ["/dashboard/agent"],
+    href: "/dashboard/conversations",
+    label: "Conversations",
+    icon: "forum",
+    matches: ["/dashboard/conversations"],
   },
   {
-    href: "/dashboard/profile",
-    label: "Profile",
-    icon: "person",
-    matches: ["/dashboard/profile"],
+    href: "/dashboard/reddit",
+    label: "Reddit marketing",
+    icon: "campaign",
+    matches: ["/dashboard/reddit"],
+  },
+  {
+    href: "/dashboard/integrations",
+    label: "Integrations",
+    icon: "hub",
+    matches: ["/dashboard/integrations"],
+  },
+  {
+    href: "/dashboard/settings",
+    label: "Settings",
+    icon: "settings",
+    matches: ["/dashboard/settings"],
   },
 ];
 
@@ -99,101 +111,58 @@ export function DashboardShell({
   }
 
   return (
-    <div className="canvas-bg relative isolate min-h-[100dvh] overflow-x-clip text-[var(--color-text-1)]">
+    <div className="canvas-bg relative isolate min-h-[100dvh] text-[var(--color-text-1)]">
       {routePending ? (
         <div className="dashboard-route-pending" aria-hidden="true" />
       ) : null}
-      {/* Top nav — Ploy pill-rail pattern, floating */}
-      <header className="fixed left-0 right-0 top-0 z-50 px-4 pt-4 md:px-6">
-        <div className="mx-auto flex w-full max-w-[1280px] items-center justify-between gap-3">
-          <Link
-            href="/dashboard/brief"
-            onClick={(event) =>
-              handleNavClick(event, "/dashboard/brief", [
-                "/dashboard/brief",
-                "/dashboard",
-              ])
-            }
-            className="inline-flex h-12 items-center gap-2 rounded-full bg-[var(--color-ink-0)]/90 px-4 text-[15px] font-semibold tracking-[-0.02em] text-[var(--color-text-1)] backdrop-blur-md ring-1 ring-[var(--color-line-1)]"
-            style={{ fontFamily: "var(--font-display)" }}
-          >
-            <Image
-              src="/logo.svg"
-              alt=""
-              width={22}
-              height={22}
-              priority
-              unoptimized
-              className="size-[22px]"
-            />
-            Bombsell
-          </Link>
 
-          <nav className="hidden h-12 items-center gap-0.5 rounded-full bg-[var(--color-ink-0)]/90 px-2 text-[13.5px] font-medium tracking-[-0.01em] text-[var(--color-text-2)] backdrop-blur-md ring-1 ring-[var(--color-line-1)] md:inline-flex">
-            {NAV.map((item) => {
-              const active = isActivePath(pathname, item.href, item.matches);
-              return (
-            <Link
-              key={item.href}
-              href={item.href}
-              prefetch
-              onClick={(event) => handleNavClick(event, item.href, item.matches)}
-              aria-current={active ? "page" : undefined}
-              className={
-                "inline-flex h-9 items-center gap-1.5 rounded-full px-3.5 transition-colors " +
-                (active
-                  ? "bg-[var(--color-cta-bg)] text-[var(--color-cta-text)]"
-                  : "hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]")
-              }
+      {/* Desktop sidebar */}
+      <aside className="fixed left-0 top-0 z-40 hidden h-[100dvh] w-[240px] flex-col border-r border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-5 md:flex">
+        <Link
+          href="/dashboard/outreach"
+          onClick={(event) =>
+            handleNavClick(event, "/dashboard/outreach", [
+              "/dashboard/outreach",
+              "/dashboard",
+            ])
+          }
+          className="inline-flex items-center gap-2 px-2 pb-2 text-[16px] font-semibold tracking-[-0.02em] text-[var(--color-text-1)]"
+          style={{ fontFamily: "var(--font-display)" }}
+        >
+          <Image
+            src="/logo.svg"
+            alt=""
+            width={22}
+            height={22}
+            priority
+            unoptimized
+            className="size-[22px]"
+          />
+          Bombsell
+        </Link>
+
+        {workspaces.length > 1 ? (
+          <form action={switchWorkspaceAction} className="mt-4 px-1">
+            <label className="sr-only" htmlFor="workspace-switcher">
+              Workspace
+            </label>
+            <select
+              id="workspace-switcher"
+              name="workspace_id"
+              defaultValue={activeWorkspaceId}
+              onChange={(event) => event.currentTarget.form?.requestSubmit()}
+              className="w-full rounded-[10px] bg-[var(--color-ink-2)] px-3 py-2 text-[13px] font-medium tracking-[-0.01em] text-[var(--color-text-2)] outline-none ring-1 ring-[var(--color-line-1)] transition hover:text-[var(--color-text-1)]"
             >
-                  <Icon name={item.icon} size={14} />
-                  <span>{item.label}</span>
-                </Link>
-              );
-            })}
-          </nav>
+              {workspaces.map((workspace) => (
+                <option key={workspace.id} value={workspace.id}>
+                  {workspace.name}
+                </option>
+              ))}
+            </select>
+          </form>
+        ) : null}
 
-          <div className="flex items-center gap-2">
-            {workspaces.length > 1 ? (
-              <form action={switchWorkspaceAction} className="hidden sm:block">
-                <label className="sr-only" htmlFor="workspace-switcher">
-                  Workspace
-                </label>
-                <select
-                  id="workspace-switcher"
-                  name="workspace_id"
-                  defaultValue={activeWorkspaceId}
-                  onChange={(event) =>
-                    event.currentTarget.form?.requestSubmit()
-                  }
-                  className="h-12 max-w-[180px] rounded-full bg-[var(--color-ink-0)]/90 px-4 text-[13px] font-medium tracking-[-0.01em] text-[var(--color-text-2)] outline-none ring-1 ring-[var(--color-line-1)] backdrop-blur-md transition hover:text-[var(--color-text-1)]"
-                >
-                  {workspaces.map((workspace) => (
-                    <option key={workspace.id} value={workspace.id}>
-                      {workspace.name}
-                    </option>
-                  ))}
-                </select>
-              </form>
-            ) : null}
-            <VoiceAssistantDrawer />
-            <form action="/auth/sign-out" method="post">
-              <PendingSubmitButton
-                aria-label="Sign out"
-                title="Sign out"
-                className="grid size-12 place-items-center rounded-full bg-[var(--color-ink-0)]/90 text-[var(--color-text-3)] backdrop-blur-md ring-1 ring-[var(--color-line-1)] transition-colors hover:text-[var(--color-text-1)]"
-                pendingLabel=""
-              >
-                <Icon name="logout" size={16} />
-              </PendingSubmitButton>
-            </form>
-          </div>
-        </div>
-      </header>
-
-      {/* Mobile sub-nav */}
-      <nav className="fixed left-0 right-0 top-[68px] z-40 mx-auto flex w-full max-w-[1280px] gap-1 overflow-x-auto px-4 pb-3 md:hidden">
-        <div className="mx-auto inline-flex h-11 items-center gap-0.5 rounded-full bg-[var(--color-ink-0)]/90 px-1.5 text-[13px] font-medium tracking-[-0.01em] text-[var(--color-text-2)] backdrop-blur-md ring-1 ring-[var(--color-line-1)]">
+        <nav className="mt-6 flex flex-col gap-0.5 text-[14px] font-medium tracking-[-0.01em] text-[var(--color-text-2)]">
           {NAV.map((item) => {
             const active = isActivePath(pathname, item.href, item.matches);
             return (
@@ -204,22 +173,98 @@ export function DashboardShell({
                 onClick={(event) => handleNavClick(event, item.href, item.matches)}
                 aria-current={active ? "page" : undefined}
                 className={
-                  "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 transition-colors " +
+                  "inline-flex h-10 items-center gap-2.5 rounded-[10px] px-3 transition-colors " +
                   (active
                     ? "bg-[var(--color-cta-bg)] text-[var(--color-cta-text)]"
-                    : "hover:text-[var(--color-text-1)]")
+                    : "hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]")
                 }
               >
-                <Icon name={item.icon} size={14} />
+                <Icon name={item.icon} size={16} />
                 <span>{item.label}</span>
               </Link>
             );
           })}
+        </nav>
+
+        <div className="mt-auto flex items-center gap-2 border-t border-[var(--color-line-1)] pt-4">
+          <VoiceAssistantDrawer />
+          <form action="/auth/sign-out" method="post" className="flex-1">
+            <PendingSubmitButton
+              aria-label="Sign out"
+              title="Sign out"
+              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-[10px] bg-[var(--color-ink-2)] text-[13px] font-medium text-[var(--color-text-2)] ring-1 ring-[var(--color-line-1)] transition-colors hover:text-[var(--color-text-1)]"
+              pendingLabel="Signing out"
+            >
+              <Icon name="logout" size={14} />
+              Sign out
+            </PendingSubmitButton>
+          </form>
         </div>
+      </aside>
+
+      {/* Mobile top-bar + drawer */}
+      <header className="fixed left-0 right-0 top-0 z-40 flex h-14 items-center justify-between border-b border-[var(--color-line-1)] bg-[var(--color-ink-0)]/95 px-4 backdrop-blur-md md:hidden">
+        <Link
+          href="/dashboard/outreach"
+          onClick={(event) =>
+            handleNavClick(event, "/dashboard/outreach", [
+              "/dashboard/outreach",
+              "/dashboard",
+            ])
+          }
+          className="inline-flex items-center gap-2 text-[15px] font-semibold tracking-[-0.02em] text-[var(--color-text-1)]"
+          style={{ fontFamily: "var(--font-display)" }}
+        >
+          <Image
+            src="/logo.svg"
+            alt=""
+            width={20}
+            height={20}
+            priority
+            unoptimized
+            className="size-5"
+          />
+          Bombsell
+        </Link>
+        <form action="/auth/sign-out" method="post">
+          <PendingSubmitButton
+            aria-label="Sign out"
+            title="Sign out"
+            className="grid size-9 place-items-center rounded-full bg-[var(--color-ink-2)] text-[var(--color-text-3)] transition-colors hover:text-[var(--color-text-1)]"
+            pendingLabel=""
+          >
+            <Icon name="logout" size={14} />
+          </PendingSubmitButton>
+        </form>
+      </header>
+
+      {/* Mobile sub-nav (horizontal scroll) */}
+      <nav className="fixed left-0 right-0 top-14 z-30 flex gap-1 overflow-x-auto border-b border-[var(--color-line-1)] bg-[var(--color-ink-0)]/95 px-3 py-2 backdrop-blur-md md:hidden">
+        {NAV.map((item) => {
+          const active = isActivePath(pathname, item.href, item.matches);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              prefetch
+              onClick={(event) => handleNavClick(event, item.href, item.matches)}
+              aria-current={active ? "page" : undefined}
+              className={
+                "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium tracking-[-0.01em] transition-colors " +
+                (active
+                  ? "bg-[var(--color-cta-bg)] text-[var(--color-cta-text)]"
+                  : "text-[var(--color-text-2)] hover:text-[var(--color-text-1)]")
+              }
+            >
+              <Icon name={item.icon} size={13} />
+              <span>{item.label}</span>
+            </Link>
+          );
+        })}
       </nav>
 
       <main
-        className="relative z-20 mx-auto w-full min-w-0 max-w-[1280px] overflow-x-clip px-4 pb-16 pt-[140px] md:px-8 md:pt-[96px] lg:px-12"
+        className="relative z-20 mx-auto w-full min-w-0 max-w-[1200px] px-4 pb-16 pt-[124px] md:ml-[240px] md:max-w-none md:px-8 md:pt-8 lg:px-12"
         aria-busy={routePending}
       >
         <BillingBanner billing={billing} />
