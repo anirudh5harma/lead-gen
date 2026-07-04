@@ -11,8 +11,8 @@ import RouteRefresh from "@/components/dashboard/RouteRefresh";
 import {
   generateMeetingPrepAction,
   prepareQualifiedSignalsAction,
-} from "./actions";
-import { loadDashboardData } from "./server-data";
+} from "../actions";
+import { loadDashboardData } from "../server-data";
 
 export const metadata: Metadata = {
   title: "Brief | Bombsell",
