@@ -10,6 +10,7 @@ import { hnFrontAdapter } from "./hn-front.ts";
 import { hnWhosHiringAdapter } from "./hn-whos-hiring.ts";
 import { productHuntAdapter } from "./product-hunt.ts";
 import { redditAdapter } from "./reddit.ts";
+import { redditSearchAdapter } from "./reddit-search.ts";
 import { googleNewsAdapter } from "./google-news.ts";
 import { xSearchAdapter } from "./x-search.ts";
 import { exaAdapter } from "./exa.ts";
@@ -59,6 +60,7 @@ export const workspaceAdapters: Record<string, WorkspaceAdapter> = {
   hn_whos_hiring: hnWhosHiringAdapter,
   product_hunt: productHuntAdapter,
   reddit: redditAdapter,
+  reddit_search: redditSearchAdapter,
   google_news: googleNewsAdapter,
   exa: exaAdapter,
   x_search: xSearchAdapter,

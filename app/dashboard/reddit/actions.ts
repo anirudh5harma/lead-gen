@@ -49,7 +49,7 @@ export async function saveRedditWatchlistAction(formData: FormData) {
   await pool.query(
     `insert into graph_sources (
        id, workspace_id, kind, name, config, enabled, properties
-     ) values ($1, $2, 'social'::source_kind, $3, $4::jsonb, $5, $6::jsonb)
+     ) values ($1, $2, 'other'::source_kind, $3, $4::jsonb, $5, $6::jsonb)
      on conflict (id) do update set
        config = excluded.config,
        enabled = excluded.enabled,
