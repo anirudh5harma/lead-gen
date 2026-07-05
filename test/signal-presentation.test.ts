@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  contactResolutionStatusLabel,
   decodeHtmlEntities,
   signalDisplayTitle,
   signalSourceLabel,
@@ -12,6 +13,17 @@ test("Signal titles decode feed markup and collapse post-like whitespace", () =>
     "Dashdoc | Product/Software Engineer Paris",
   );
   assert.equal(decodeHtmlEntities("R&amp;D &#39;launch&#39;"), "R&D 'launch'");
+});
+
+test("Contact resolution reasons are presented as user-facing explanations", () => {
+  assert.equal(
+    contactResolutionStatusLabel("no_email_ready_contact"),
+    "No contact with a verified email and LinkedIn profile was found.",
+  );
+  assert.equal(
+    contactResolutionStatusLabel("hunter.contact_discovery.provider_unavailable"),
+    "A contact provider is temporarily unavailable. Retry later.",
+  );
 });
 
 test("Signal titles truncate on a word boundary", () => {

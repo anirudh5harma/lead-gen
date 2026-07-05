@@ -45,8 +45,12 @@ async function loadConversations(
             lm.body_preview as last_message_preview,
             lm.direction as last_message_direction
        from conversations c
-       left join graph_persons p on p.id = c.counterparty_person_id
-       left join graph_companies co on co.id = c.counterparty_company_id
+       left join graph_persons p
+         on p.workspace_id = c.workspace_id
+        and p.id = c.counterparty_person_id
+       left join graph_companies co
+         on co.workspace_id = c.workspace_id
+        and co.id = c.counterparty_company_id
        left join lateral (
          select left(coalesce(m.body, m.subject, ''), 180) as body_preview,
                 m.direction::text as direction
@@ -109,7 +113,7 @@ function ConvCard({ row }: { row: ConvRow }) {
     <li>
       <a
         href={`/dashboard/conversations/${row.id}`}
-        className="group grid gap-2 rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 transition-[transform,border-color,box-shadow] duration-300 hover:-translate-y-0.5 hover:border-[var(--color-line-3)] hover:shadow-[0_18px_40px_-24px_rgba(0,0,0,0.22)] md:grid-cols-[minmax(0,1fr)_auto] md:items-start"
+        className="group grid gap-2 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 transition-[transform,border-color,box-shadow] duration-300 hover:-translate-y-0.5 hover:border-[var(--color-line-3)] hover:shadow-[0_18px_40px_-24px_rgba(0,0,0,0.22)] md:grid-cols-[minmax(0,1fr)_auto] md:items-start"
       >
         <div className="min-w-0">
           <p className="flex flex-wrap items-center gap-2 text-[14px] font-semibold text-[var(--color-text-1)]">

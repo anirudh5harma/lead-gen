@@ -4,6 +4,7 @@ import { EmptyState } from "@/components/dashboard/Shell";
 import { resolveQualifiedSignalContactsAction } from "@/app/dashboard/actions";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import {
+  contactResolutionStatusLabel,
   signalDisplayTitle,
   signalSourceLabel,
 } from "@/core/signals/presentation";
@@ -349,9 +350,7 @@ function formatRevenue(value: number): string {
 
 function resolutionLabel(lead: MatchedLeadRow): string {
   if (lead.resolution_status === "contact.resolution.deferred") {
-    return lead.defer_reason
-      ? `Contact search paused: ${lead.defer_reason.replace(/_/g, " ")}.`
-      : "Contact search paused. Retry when ready.";
+    return contactResolutionStatusLabel(lead.defer_reason);
   }
   if (!lead.company_id) return "Company match pending before contact search.";
   return "No enriched contacts yet.";

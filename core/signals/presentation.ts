@@ -34,6 +34,22 @@ export function signalSourceLabel(input: {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+export function contactResolutionStatusLabel(reason: string | null): string {
+  if (reason === "no_email_ready_contact") {
+    return "No contact with a verified email and LinkedIn profile was found.";
+  }
+  if (reason === "no_linkedin_ready_contact") {
+    return "No contact with a LinkedIn profile was found.";
+  }
+  if (reason === "email_auto_enrich_disabled") {
+    return "Email enrichment is disabled in workspace settings.";
+  }
+  if (reason?.includes("provider_")) {
+    return "A contact provider is temporarily unavailable. Retry later.";
+  }
+  return "Contact search paused. Retry when ready.";
+}
+
 export function decodeHtmlEntities(value: string): string {
   return value.replace(/&(#x[\da-f]+|#\d+|[a-z]+);/gi, (entity, key: string) => {
     const lower = key.toLowerCase();

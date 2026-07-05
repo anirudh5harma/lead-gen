@@ -76,6 +76,7 @@ test("dashboard shell keeps route chrome simple and avoids extra flow queries", 
   const workspace = source("lib/workspace.ts");
 
   assert.match(shell, /DashboardShell/);
+  assert.match(shell, /md:w-\[calc\(100%-240px\)\]/);
   assert.match(shell, /const NAV/);
   assert.match(shell, /label: "Outreach"/);
   assert.match(shell, /label: "Conversations"/);
@@ -244,20 +245,18 @@ test("legacy list and Profile routes redirect to current product hubs", () => {
   assert.match(nextConfig, /source: "\/dashboard\/ingestion"/);
   assert.match(nextConfig, /source: "\/dashboard\/prospects"/);
   assert.match(nextConfig, /source: "\/dashboard\/prospects\/:id"/);
-  assert.match(nextConfig, /source: "\/dashboard\/conversations"/);
+  assert.doesNotMatch(nextConfig, /source: "\/dashboard\/conversations"/);
   assert.match(nextConfig, /source: "\/dashboard\/conversations\/:id"/);
   assert.match(nextConfig, /source: "\/dashboard\/review"/);
   assert.match(nextConfig, /source: "\/dashboard\/approvals"/);
   assert.match(nextConfig, /source: "\/dashboard\/outcomes"/);
-  assert.match(nextConfig, /source: "\/dashboard\/integrations"/);
+  assert.doesNotMatch(nextConfig, /source: "\/dashboard\/integrations"/);
   assert.match(nextConfig, /destination: "\/dashboard\/brief"/);
   assert.match(nextConfig, /destination: "\/dashboard\/profile#profile"/);
   assert.match(nextConfig, /destination: "\/dashboard\/profile#channels"/);
-  assert.match(nextConfig, /destination: "\/dashboard\/profile#tools"/);
   assert.match(nextConfig, /destination: "\/dashboard\/agent#qualified-signals"/);
   assert.match(nextConfig, /destination: "\/dashboard\/agent#verified-contacts"/);
   assert.match(nextConfig, /destination: "\/dashboard\/agent\/contacts\/:id"/);
-  assert.match(nextConfig, /destination: "\/dashboard\/agent#outreach"/);
   assert.match(nextConfig, /destination: "\/dashboard\/agent\/outreach\/:id"/);
 
   const actions = source("app/dashboard/actions.ts");
@@ -1116,11 +1115,11 @@ test("dashboard surface verifier covers the simplified product flow", () => {
   assert.match(verifier, /"\/dashboard\/signals", destination: "\/dashboard\/agent#qualified-signals"/);
   assert.match(verifier, /"\/dashboard\/ingestion", destination: "\/dashboard\/agent#qualified-signals"/);
   assert.match(verifier, /"\/dashboard\/prospects", destination: "\/dashboard\/agent#verified-contacts"/);
-  assert.match(verifier, /"\/dashboard\/conversations", destination: "\/dashboard\/agent#outreach"/);
+  assert.doesNotMatch(verifier, /"\/dashboard\/conversations", destination:/);
   assert.match(verifier, /"\/dashboard\/review", destination: "\/dashboard\/agent#review-queue"/);
   assert.match(verifier, /"\/dashboard\/approvals", destination: "\/dashboard\/agent#review-queue"/);
   assert.doesNotMatch(verifier, /"\/dashboard\/settings", destination:/);
-  assert.match(verifier, /"\/dashboard\/integrations", destination: "\/dashboard\/profile#tools"/);
+  assert.doesNotMatch(verifier, /"\/dashboard\/integrations", destination:/);
   assert.match(verifier, /"\/dashboard\/deliverability", destination: "\/dashboard\/profile#channels"/);
   assert.match(verifier, /"\/dashboard\/prospecting", destination: "\/dashboard\/profile#profile"/);
   assert.match(verifier, /"\/dashboard\/setup", destination: "\/dashboard\/profile#profile"/);
