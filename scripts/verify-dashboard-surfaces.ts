@@ -80,7 +80,6 @@ const redirectChecks: RedirectCheck[] = [
   { path: "/dashboard/conversations", destination: "/dashboard/agent#outreach" },
   { path: "/dashboard/review", destination: "/dashboard/agent#review-queue" },
   { path: "/dashboard/approvals", destination: "/dashboard/agent#review-queue" },
-  { path: "/dashboard/settings", destination: "/dashboard/profile#tools" },
   { path: "/dashboard/integrations", destination: "/dashboard/profile#tools" },
   { path: "/dashboard/deliverability", destination: "/dashboard/profile#channels" },
   { path: "/dashboard/prospecting", destination: "/dashboard/profile#profile" },

@@ -153,6 +153,7 @@ test("Agent is the canonical dashboard surface route", () => {
     source("app/dashboard/settings/page.tsx"),
     /Settings \| Bombsell/,
   );
+  assert.doesNotMatch(source("next.config.ts"), /source: "\/dashboard\/settings"/);
   assert.equal(exists("app/dashboard/agent/[id]/loading.tsx"), false);
   assert.equal(exists("app/dashboard/agent/contacts/[id]/loading.tsx"), true);
 
@@ -237,7 +238,7 @@ test("legacy list and Profile routes redirect to current product hubs", () => {
   assert.match(source("app/dashboard/outcomes/loading.tsx"), /surface="brief"/);
   assert.match(nextConfig, /source: "\/dashboard\/prospecting"/);
   assert.match(nextConfig, /source: "\/dashboard\/setup"/);
-  assert.match(nextConfig, /source: "\/dashboard\/settings"/);
+  assert.doesNotMatch(nextConfig, /source: "\/dashboard\/settings"/);
   assert.match(nextConfig, /source: "\/dashboard\/deliverability"/);
   assert.match(nextConfig, /source: "\/dashboard\/signals"/);
   assert.match(nextConfig, /source: "\/dashboard\/ingestion"/);
@@ -1118,7 +1119,7 @@ test("dashboard surface verifier covers the simplified product flow", () => {
   assert.match(verifier, /"\/dashboard\/conversations", destination: "\/dashboard\/agent#outreach"/);
   assert.match(verifier, /"\/dashboard\/review", destination: "\/dashboard\/agent#review-queue"/);
   assert.match(verifier, /"\/dashboard\/approvals", destination: "\/dashboard\/agent#review-queue"/);
-  assert.match(verifier, /"\/dashboard\/settings", destination: "\/dashboard\/profile#tools"/);
+  assert.doesNotMatch(verifier, /"\/dashboard\/settings", destination:/);
   assert.match(verifier, /"\/dashboard\/integrations", destination: "\/dashboard\/profile#tools"/);
   assert.match(verifier, /"\/dashboard\/deliverability", destination: "\/dashboard\/profile#channels"/);
   assert.match(verifier, /"\/dashboard\/prospecting", destination: "\/dashboard\/profile#profile"/);

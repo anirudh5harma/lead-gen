@@ -47,11 +47,6 @@ const nextConfig: NextConfig = {
         permanent: false,
       },
       {
-        source: "/dashboard/settings",
-        destination: "/dashboard/profile#tools",
-        permanent: false,
-      },
-      {
         source: "/dashboard/integrations",
         destination: "/dashboard/profile#tools",
         permanent: false,

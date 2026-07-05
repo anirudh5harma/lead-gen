@@ -12,6 +12,26 @@ test("billing routes gate portal and checkout behind workspace billing access", 
   assert.match(checkout, /owner or admin role/);
 });
 
+test("Settings exposes upgrade and subscription management without redirecting", () => {
+  const settings = readFileSync("app/dashboard/settings/page.tsx", "utf8");
+  const planSection = readFileSync("components/dashboard/PlanSection.tsx", "utf8");
+  const nextConfig = readFileSync("next.config.ts", "utf8");
+
+  assert.match(settings, /<PlanSection billing=\{billing\} \/>/);
+  assert.match(planSection, /label="Upgrade to Pro"/);
+  assert.match(planSection, /label="Manage \/ cancel subscription"/);
+  assert.doesNotMatch(nextConfig, /source: "\/dashboard\/settings"/);
+});
+
+test("billing portal falls back to Dodo login for a known subscription", () => {
+  const portal = readFileSync("app/api/billing/portal/route.ts", "utf8");
+
+  assert.match(portal, /subscription_external_id/);
+  assert.match(portal, /if \(!customerId && !subscriptionId\)/);
+  assert.match(portal, /getPortalUrl\(\{\s*customerId,/);
+  assert.match(portal, /new URL\("\/dashboard\/settings", url\)/);
+});
+
 test("visitor collector requires a bound public host before accepting browser traffic", () => {
   const collector = readFileSync("app/api/collect/visitors/route.ts", "utf8");
   const dashboardActions = readFileSync("app/dashboard/actions.ts", "utf8");

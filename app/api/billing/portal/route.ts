@@ -22,12 +22,18 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  const { rows } = await getPool().query<{ dodo_customer_id: string | null }>(
-    `select dodo_customer_id from workspaces where id = $1`,
+  const { rows } = await getPool().query<{
+    dodo_customer_id: string | null;
+    subscription_external_id: string | null;
+  }>(
+    `select dodo_customer_id, subscription_external_id
+       from workspaces
+      where id = $1`,
     [workspace.workspace.id],
   );
   const customerId = rows[0]?.dodo_customer_id ?? null;
-  if (!customerId) {
+  const subscriptionId = rows[0]?.subscription_external_id ?? null;
+  if (!customerId && !subscriptionId) {
     return Response.json(
       { error: "No active subscription to manage." },
       { status: 400 },
@@ -38,7 +44,7 @@ export async function POST(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const portalUrl = await getPortalUrl({
       customerId,
-      returnUrl: new URL("/dashboard/profile#plan", url).toString(),
+      returnUrl: new URL("/dashboard/settings", url).toString(),
     });
     return Response.json({ url: portalUrl });
   } catch (err) {

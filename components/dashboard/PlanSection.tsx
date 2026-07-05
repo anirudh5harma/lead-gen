@@ -16,7 +16,7 @@ function formatDate(iso: string | null): string {
 }
 
 /**
- * Profile → Plan card. Trial users see usage + upgrade; Pro users see status
+ * Settings plan card. Trial users see usage + upgrade; Pro users see status
  * and a manage/cancel entry to the Dodo customer portal. Cancel keeps access
  * until the period end (state reflected here once the webhook lands).
  */
@@ -25,7 +25,23 @@ export default function PlanSection({
 }: {
   billing: WorkspaceBillingState | null;
 }) {
-  if (!billing) return null;
+  if (!billing) {
+    return (
+      <div className="section-note flex items-start gap-3">
+        <span className="brief-note-icon shrink-0">
+          <Icon name="warning" size={18} />
+        </span>
+        <div>
+          <p className="text-sm font-semibold text-[var(--color-text-1)]">
+            Plan status unavailable
+          </p>
+          <p className="mt-1 text-sm text-[var(--color-text-3)]">
+            Refresh this page before changing your subscription.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const isPro = billing.tier === "pro";
   const legacyPro = billing.source === "legacy_override";
@@ -76,7 +92,7 @@ export default function PlanSection({
           {isPro ? (
             <p className="mt-1 text-sm leading-6 text-[var(--color-text-3)]">
               {legacyPro
-                ? "Grandfathered Pro access from the pre-pivot Bombsell plan is active on this workspace."
+                ? "Grandfathered Pro access is active. No paid subscription is attached, so there is nothing to cancel."
                 : billing.canceled
                 ? `Unlimited sending stays on until ${formatDate(billing.renews_at)}. After that, outreach pauses until you resubscribe.`
                 : `Unlimited sending. Renews ${formatDate(billing.renews_at)}.`}
