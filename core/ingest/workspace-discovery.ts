@@ -15,7 +15,10 @@ import { allMatchingIcps } from "./icp-filter.ts";
 import { listIcps } from "./icps.ts";
 import { deriveSignalQualityMetadata } from "./source-quality.ts";
 import { normalizeCompanyDomain } from "./company-domain.ts";
-import { socialCompanyHintFromStructured } from "./social-signals.ts";
+import {
+  socialCompanyHintFromEvidence,
+  socialCompanyHintFromStructured,
+} from "./social-signals.ts";
 
 export interface WorkspaceSignalSourceRow {
   id: string;
@@ -323,6 +326,17 @@ export function deriveSignalCompanyHint(input: {
   const structured = recordValue(input.item.structured);
   const socialHint = hintFromSocial(structured);
   if (socialHint) return socialHint;
+  const socialEvidenceHint = socialCompanyHintFromEvidence({
+    title: input.item.title,
+    content: input.item.content,
+    highlights: stringArray(structured?.exa_highlights),
+  });
+  if (socialEvidenceHint && socialPlatformFromStructured(structured)) {
+    return {
+      ...socialEvidenceHint,
+      description: null,
+    };
+  }
   const structuredHint = hintFromStructured(structured);
   if (structuredHint) return structuredHint;
 
@@ -345,6 +359,15 @@ export function deriveSignalCompanyHint(input: {
   }
 
   if (adapter === "rss") {
+    if (isProductHuntFeed(input.source_config)) {
+      return makeSignalCompanyHint({
+        name: productHuntCompanyName(input.item.title),
+        domain: null,
+        description: stringValue(input.item.content),
+        source: "product_hunt_rss",
+        confidence: "derived",
+      });
+    }
     const domain = firstDomain(
       input.source_config.company_domain,
       input.source_config.target_company_domain,
@@ -358,6 +381,19 @@ export function deriveSignalCompanyHint(input: {
         domain,
         description: stringValue(input.source_config.description),
         source: "rss_source_config",
+        confidence: "derived",
+      });
+    }
+    const eventName = companyNameFromEventText(
+      input.item.title,
+      input.item.content,
+    );
+    if (eventName) {
+      return makeSignalCompanyHint({
+        name: eventName,
+        domain: firstDomainInText(input.item.content),
+        description: stringValue(input.item.content),
+        source: "rss_event_text",
         confidence: "derived",
       });
     }
@@ -750,6 +786,57 @@ function sanitizeCompanyName(value: unknown): string | null {
   if (/^https?:\/\//i.test(text)) return null;
   if (text.length > 120) return null;
   return text;
+}
+
+function socialPlatformFromStructured(
+  structured: Record<string, unknown> | null,
+): boolean {
+  const source = stringValue(structured?.source)?.toLowerCase();
+  const platform = stringValue(structured?.platform)?.toLowerCase();
+  return source === "social" || platform === "linkedin" || platform === "x";
+}
+
+function isProductHuntFeed(config: Record<string, unknown>): boolean {
+  const url = stringValue(config.url) ?? stringValue(config.feed_url);
+  if (!url) return false;
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+    return host === "producthunt.com";
+  } catch {
+    return false;
+  }
+}
+
+function productHuntCompanyName(title: unknown): string | null {
+  const value = stringValue(title);
+  if (!value) return null;
+  return sanitizeCompanyName(value.split(/\s+[\u2014-]\s+/)[0]);
+}
+
+function companyNameFromEventText(title: unknown, content: unknown): string | null {
+  const headline = stringValue(title);
+  const body = stringValue(content);
+  const eventText = `${headline ?? ""} ${body ?? ""}`;
+  if (!/(?:\b(rais(?:e[sd]?|ing)|funding|financing|series\s+[a-z]|secures?|lands?|launch(?:es|ed)?|acquir(?:es|ed)|hires?|appoints?|expands?)\b|[$\u20ac\u00a3]\s?\d+(?:[.,]\d+)?\s*[kmb]?\b)/i.test(eventText)) {
+    return null;
+  }
+
+  const headlineName = headline?.match(
+    /^(.{2,100}?)\s+(?:reports|lands|raises|raised|secures|secured|closes|closed|announces|announced|launches|launched|acquires|acquired|hires|hired|appoints|appointed|expands|expanded)\b/i,
+  )?.[1];
+  const bodyName = body?.match(
+    /^(?:[A-Z][A-Za-z .-]+-based\s+)?([A-Z][A-Za-z0-9&.'\u2019-]*(?:\s+[A-Z][A-Za-z0-9&.'\u2019-]*){0,4})(?:,|\s+is\b)/,
+  )?.[1];
+  return sanitizeCompanyName(headlineName) ?? sanitizeCompanyName(bodyName);
+}
+
+function stringArray(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  const values = value.flatMap((item) => {
+    const text = stringValue(item);
+    return text ? [text] : [];
+  });
+  return values.length ? values : null;
 }
 
 function recordValue(value: unknown): Record<string, unknown> | null {

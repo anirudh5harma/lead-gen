@@ -27,6 +27,21 @@ export function googleAuthPath(next: string): string {
   return `/auth/google?next=${encodeURIComponent(safeNextPath(next))}`;
 }
 
+export function canonicalAuthStartUrl({
+  canonicalOrigin,
+  next,
+  requestUrl,
+}: {
+  canonicalOrigin: string;
+  next: string;
+  requestUrl: string;
+}): string | null {
+  const requestOrigin = originFromRequest(requestUrl);
+  const normalizedCanonicalOrigin = canonicalOrigin.replace(/\/$/, "");
+  if (requestOrigin === normalizedCanonicalOrigin) return null;
+  return new URL(googleAuthPath(next), normalizedCanonicalOrigin).toString();
+}
+
 export function authCallbackOrigin({
   appOrigin = process.env.APP_ORIGIN,
   headers,

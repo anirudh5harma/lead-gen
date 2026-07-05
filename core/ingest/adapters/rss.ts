@@ -35,7 +35,7 @@ const MAX_FETCH_TIMEOUT_MS = 30_000;
 interface RssItem {
   guid?: string | { _: string; $?: Record<string, string> };
   id?: string;
-  link?: string | string[];
+  link?: string | RssLink | Array<string | RssLink>;
   title?: string | { _: string };
   description?: string;
   summary?: string | { _: string };
@@ -46,6 +46,11 @@ interface RssItem {
   "content:encoded"?: string;
   author?: string;
   "dc:creator"?: string;
+}
+
+interface RssLink {
+  _?: string;
+  $?: { href?: string };
 }
 
 interface Rss20Channel {
@@ -74,7 +79,16 @@ function asString(value: unknown): string | undefined {
 
 function pickLink(value: RssItem["link"]): string | undefined {
   if (typeof value === "string") return value;
-  if (Array.isArray(value)) return value[0];
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const link = pickLink(item);
+      if (link) return link;
+    }
+    return undefined;
+  }
+  if (value && typeof value === "object") {
+    return value.$?.href ?? value._;
+  }
   return undefined;
 }
 

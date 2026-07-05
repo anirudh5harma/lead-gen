@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import Icon from "@/components/Icon";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
 import PlanSection from "@/components/dashboard/PlanSection";
@@ -186,13 +187,13 @@ export default async function SettingsPage() {
             />
           </Field>
           <div className="flex items-center justify-between gap-3">
-            <a
+            <Link
               href="/dashboard/agent#icp"
               className="btn-quiet-sm inline-flex"
             >
               <Icon name="tune" size={12} />
               Advanced tuning
-            </a>
+            </Link>
             <PendingSubmitButton
               className="btn-solid-sm"
               icon="save"

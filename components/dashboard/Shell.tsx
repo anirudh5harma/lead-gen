@@ -186,21 +186,25 @@ export function DashboardShell({
           })}
         </nav>
 
-        <div className="mt-auto flex items-center gap-2 border-t border-[var(--color-line-1)] pt-4">
+        <div className="mt-auto border-t border-[var(--color-line-1)] pt-4">
           <VoiceAssistantDrawer />
-          <form action="/auth/sign-out" method="post" className="flex-1">
-            <PendingSubmitButton
-              aria-label="Sign out"
-              title="Sign out"
-              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-[10px] bg-[var(--color-ink-2)] text-[13px] font-medium text-[var(--color-text-2)] ring-1 ring-[var(--color-line-1)] transition-colors hover:text-[var(--color-text-1)]"
-              pendingLabel="Signing out"
-            >
-              <Icon name="logout" size={14} />
-              Sign out
-            </PendingSubmitButton>
-          </form>
         </div>
       </aside>
+
+      <form
+        action="/auth/sign-out"
+        method="post"
+        className="fixed right-6 top-5 z-40 hidden md:block"
+      >
+        <PendingSubmitButton
+          aria-label="Sign out"
+          title="Sign out"
+          className="grid size-10 place-items-center rounded-[10px] bg-[var(--color-ink-2)] text-[var(--color-text-3)] ring-1 ring-[var(--color-line-1)] transition-colors hover:text-[var(--color-text-1)]"
+          pendingLabel=""
+        >
+          <Icon name="logout" size={15} />
+        </PendingSubmitButton>
+      </form>
 
       {/* Mobile top-bar + drawer */}
       <header className="fixed left-0 right-0 top-0 z-40 flex h-14 items-center justify-between border-b border-[var(--color-line-1)] bg-[var(--color-ink-0)]/95 px-4 backdrop-blur-md md:hidden">

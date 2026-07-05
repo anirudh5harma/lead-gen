@@ -205,3 +205,75 @@ test("workspace discovery company hints: derives social company hints from norma
     confidence: "derived",
   });
 });
+
+test("workspace discovery company hints: recognizes Product Hunt delivered through RSS", () => {
+  const hint = deriveSignalCompanyHint({
+    adapter_id: "rss",
+    source_name: "Product Hunt launch feed",
+    source_config: { url: "https://www.producthunt.com/feed" },
+    item: {
+      title: "Glaze by Raycast",
+      content: "Create your own Mac apps by chatting with AI",
+      freshness_at: "2026-07-06T00:00:00.000Z",
+      structured: { author: { name: "Thomas Paul Mann" } },
+    },
+  });
+
+  assert.equal(hint?.name, "Glaze by Raycast");
+  assert.equal(hint?.source, "product_hunt_rss");
+});
+
+test("workspace discovery company hints: extracts companies from RSS event headlines", () => {
+  const hint = deriveSignalCompanyHint({
+    adapter_id: "rss",
+    source_name: "EU Startups",
+    source_config: { url: "https://www.eu-startups.com/feed/" },
+    item: {
+      title: "Quantum Systems lands EUR1 billion Series D",
+      content: "The German powerhouse Quantum Systems has announced new financing.",
+      freshness_at: "2026-07-06T00:00:00.000Z",
+    },
+  });
+
+  assert.equal(hint?.name, "Quantum Systems");
+  assert.equal(hint?.source, "rss_event_text");
+});
+
+test("workspace discovery company hints: extracts a funded company named in RSS content", () => {
+  const hint = deriveSignalCompanyHint({
+    adapter_id: "rss",
+    source_name: "TechCrunch",
+    source_config: { url: "https://techcrunch.com/feed/" },
+    item: {
+      title: "Founder bets $30M to build an AI office suite",
+      content: "Neo is the founder's latest enterprise software venture.",
+      freshness_at: "2026-07-06T00:00:00.000Z",
+    },
+  });
+
+  assert.equal(hint?.name, "Neo");
+  assert.equal(hint?.source, "rss_event_text");
+});
+
+test("workspace discovery company hints: extracts LinkedIn companies from Exa evidence", () => {
+  const hint = deriveSignalCompanyHint({
+    adapter_id: "exa",
+    source_name: "LinkedIn hiring posts",
+    source_config: {},
+    item: {
+      title: "We're hiring an Account Manager | Fiscal AI",
+      content: "The post from Fiscal AI (via LinkedIn) links to fiscal.ai/careers.",
+      url: "https://www.linkedin.com/posts/fiscaldotai_hiring-activity-1",
+      freshness_at: "2026-07-06T00:00:00.000Z",
+      structured: {
+        source: "social",
+        platform: "linkedin",
+        author_kind: "unknown",
+      },
+    },
+  });
+
+  assert.equal(hint?.name, "Fiscal AI");
+  assert.equal(hint?.domain, "fiscal.ai");
+  assert.equal(hint?.source, "social_evidence");
+});

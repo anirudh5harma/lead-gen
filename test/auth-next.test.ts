@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   authCallbackOrigin,
+  canonicalAuthStartUrl,
   googleAuthPath,
   onboardingPathForWebsite,
   postAuthDestination,
@@ -25,6 +26,25 @@ test("googleAuthPath encodes sanitized next path", () => {
     "/auth/google?next=%2Fonboarding%3Furl%3Dhttps%253A%252F%252Facme.com",
   );
   assert.equal(googleAuthPath("https://evil.example"), "/auth/google?next=%2Fdashboard");
+});
+
+test("OAuth starts on the callback host so the PKCE verifier reaches the callback", () => {
+  assert.equal(
+    canonicalAuthStartUrl({
+      canonicalOrigin: "https://www.bombsell.com",
+      next: "/dashboard",
+      requestUrl: "https://bombsell.com/auth/google?next=%2Fdashboard",
+    }),
+    "https://www.bombsell.com/auth/google?next=%2Fdashboard",
+  );
+  assert.equal(
+    canonicalAuthStartUrl({
+      canonicalOrigin: "https://www.bombsell.com",
+      next: "/dashboard",
+      requestUrl: "https://www.bombsell.com/auth/google?next=%2Fdashboard",
+    }),
+    null,
+  );
 });
 
 test("authCallbackOrigin uses loopback request origin during local development", () => {

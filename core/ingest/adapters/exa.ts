@@ -5,6 +5,7 @@ import {
 import {
   buildSocialStructured,
   matchedKeywordsFromQuery,
+  socialCompanyHintFromEvidence,
   socialPlatformFromUrl,
 } from "../social-signals.ts";
 import type {
@@ -89,6 +90,13 @@ function candidateFromResult(
     context.query,
     `${title}\n${content ?? ""}`,
   );
+  const socialCompany = socialPlatform
+    ? socialCompanyHintFromEvidence({
+        title,
+        content,
+        highlights: result.highlights,
+      })
+    : null;
   return [{
     external_id: result.id ?? result.url,
     title,
@@ -103,6 +111,8 @@ function candidateFromResult(
             source_name: context.sourceName,
             post_url: result.url,
             author_name: result.author,
+            company_name: socialCompany?.name,
+            company_domain: socialCompany?.domain,
             matched_keywords: matchedKeywords,
           }),
           exa_author: result.author ?? null,

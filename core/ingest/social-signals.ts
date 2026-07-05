@@ -26,6 +26,24 @@ export interface SocialCompanyHint {
   confidence: "explicit" | "derived";
 }
 
+export function socialCompanyHintFromEvidence(input: {
+  title?: string | null;
+  content?: string | null;
+  highlights?: string[] | null;
+}): SocialCompanyHint | null {
+  const evidence = [input.title, input.content, ...(input.highlights ?? [])]
+    .map(cleanString)
+    .filter((value): value is string => Boolean(value));
+  const name = firstSocialCompanyName(evidence);
+  if (!name) return null;
+  return {
+    name,
+    domain: firstCompanyDomain(evidence),
+    source: "social_evidence",
+    confidence: "derived",
+  };
+}
+
 export function socialPlatformFromUrl(url: string | null | undefined): SocialPlatform | null {
   const text = cleanString(url);
   if (!text) return null;
@@ -171,6 +189,31 @@ function cleanedStringArray(
 
 function cleanString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function firstSocialCompanyName(evidence: string[]): string | null {
+  const patterns = [
+    /(?:^|\n)#\s+([^\n]{2,100}?)[\u2019']s Post(?:\n|$)/i,
+    /\bpost from ([A-Z][A-Za-z0-9&.\- ]{1,80}?) \(via LinkedIn\)/i,
+    /\s\|\s([^|\n]{2,100})\s*$/,
+  ];
+  for (const text of evidence) {
+    for (const pattern of patterns) {
+      const candidate = cleanString(text.match(pattern)?.[1]);
+      if (candidate && !/^(linkedin|x|twitter)$/i.test(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
+function firstCompanyDomain(evidence: string[]): string | null {
+  for (const text of evidence) {
+    for (const match of text.matchAll(/\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)+\b/gi)) {
+      const domain = normalizeCompanyDomain(match[0]);
+      if (domain) return domain;
+    }
+  }
+  return null;
 }
 
 function recordValue(value: unknown): Record<string, unknown> | null {

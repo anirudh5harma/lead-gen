@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
-import { authCallbackOrigin, safeNextPath } from "@/lib/auth/next";
+import {
+  authCallbackOrigin,
+  canonicalAuthStartUrl,
+  safeNextPath,
+} from "@/lib/auth/next";
 import {
   applySupabaseCookieCapture,
   createServerSupabaseClient,
@@ -27,6 +31,17 @@ export async function GET(request: Request) {
   } catch (err) {
     console.error("[auth/google] origin resolve failed", err);
     return authFailureResponse(next, "origin");
+  }
+
+  const canonicalStartUrl = canonicalAuthStartUrl({
+    canonicalOrigin: originBase,
+    next,
+    requestUrl: request.url,
+  });
+  if (canonicalStartUrl) {
+    const response = NextResponse.redirect(canonicalStartUrl);
+    response.headers.set("Cache-Control", "private, no-store");
+    return response;
   }
 
   let signInUrl: string | null = null;

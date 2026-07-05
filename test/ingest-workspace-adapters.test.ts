@@ -304,6 +304,7 @@ test("rss adapter: parses Atom <feed><entry>", async () => {
   assert.equal(items.length, 1);
   assert.equal(items[0].external_id, "tag:example.com,2026:1");
   assert.equal(items[0].title, "Atom Title");
+  assert.equal(items[0].url, "https://example.com/atom-1");
 });
 
 test("rss adapter: poll fetches the config.url and applies novelty_domain", async () => {
