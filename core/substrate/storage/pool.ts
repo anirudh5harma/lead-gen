@@ -77,9 +77,9 @@ export function tryGetPool(): Pool | null {
   _pool = createPool({
     connectionString,
     // Reasonable defaults; tune via env when the production deployment lands.
-    max: Number(process.env.DATABASE_POOL_MAX ?? 10),
-    idleTimeoutMillis: 30_000,
-    connectionTimeoutMillis: 5_000,
+    max: positiveIntegerEnv("DATABASE_POOL_MAX", 10),
+    idleTimeoutMillis: positiveIntegerEnv("DATABASE_POOL_IDLE_TIMEOUT_MS", 30_000),
+    connectionTimeoutMillis: positiveIntegerEnv("DATABASE_POOL_CONNECTION_TIMEOUT_MS", 5_000),
   });
   return _pool;
 }
@@ -156,4 +156,11 @@ export async function resetPool(): Promise<void> {
       }
     }
   }
+}
+
+function positiveIntegerEnv(key: string, fallback: number): number {
+  const raw = process.env[key]?.trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  return Number.isInteger(value) && value > 0 ? value : fallback;
 }

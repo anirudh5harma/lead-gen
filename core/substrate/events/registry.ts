@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+const WorkflowRunId = z.string().min(1);
+
 /**
  * The typed event registry. Every state change in pivot-v2 flows through
  * one of these events. `EventBus.publish()` rejects unknown event_types
@@ -135,7 +137,7 @@ const RepRoleCompleted = z.object({
   signal_id: z.string().uuid().nullable().optional(),
   play_id: z.string().uuid().nullable().optional(),
   play_run_id: z.string().uuid().nullable().optional(),
-  workflow_run_id: z.string().uuid().nullable().optional(),
+  workflow_run_id: WorkflowRunId.nullable().optional(),
   summary: z.string().nullable().optional(),
   output: z.record(z.string(), z.unknown()).optional(),
   completed_at: z.string().datetime().optional(),
@@ -576,7 +578,7 @@ const SignalFeedbackUpdated = z.object({
 const PlayRunStarted = z.object({
   play_id: z.string().uuid(),
   play_run_id: z.string().uuid(),
-  workflow_run_id: z.string().uuid(),
+  workflow_run_id: WorkflowRunId,
   trigger_event_id: z.string().uuid().nullable(),
 });
 
@@ -594,33 +596,33 @@ const PlayConfigured = z.object({
 const PlayRunCompleted = z.object({
   play_id: z.string().uuid(),
   play_run_id: z.string().uuid(),
-  workflow_run_id: z.string().uuid(),
+  workflow_run_id: WorkflowRunId,
   output: z.record(z.string(), z.unknown()).optional(),
 });
 
 const PlayRunFailed = z.object({
   play_id: z.string().uuid(),
   play_run_id: z.string().uuid(),
-  workflow_run_id: z.string().uuid(),
+  workflow_run_id: WorkflowRunId,
   error: z.string(),
 });
 
 const WorkflowStepStarted = z.object({
-  run_id: z.string().uuid(),
+  run_id: WorkflowRunId,
   step_id: z.string().uuid(),
   step_name: z.string(),
   attempt: z.number().int().positive(),
 });
 
 const WorkflowStepCompleted = z.object({
-  run_id: z.string().uuid(),
+  run_id: WorkflowRunId,
   step_id: z.string().uuid(),
   step_name: z.string(),
   attempt: z.number().int().positive(),
 });
 
 const WorkflowStepFailed = z.object({
-  run_id: z.string().uuid(),
+  run_id: WorkflowRunId,
   step_id: z.string().uuid(),
   step_name: z.string(),
   attempt: z.number().int().positive(),
@@ -628,15 +630,15 @@ const WorkflowStepFailed = z.object({
 });
 
 const WorkflowRunFailed = z.object({
-  run_id: z.string().uuid(),
+  run_id: WorkflowRunId,
   workflow_name: z.string(),
   error: z.string(),
 });
 
 const WorkflowRunRetried = z.object({
-  run_id: z.string().uuid(),
+  run_id: WorkflowRunId,
   workflow_name: z.string(),
-  retry_run_id: z.string().uuid(),
+  retry_run_id: WorkflowRunId,
 });
 
 const EventDispatchRedriven = z.object({
@@ -880,7 +882,7 @@ const ReplyClassified = z.object({
 
 const ApprovalRequested = z.object({
   approval_id: z.string().uuid(),
-  run_id: z.string().uuid(),
+  run_id: WorkflowRunId,
   step_id: z.string().uuid().nullable(),
   kind: z.string(),
 });

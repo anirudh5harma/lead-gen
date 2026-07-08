@@ -144,7 +144,7 @@ export function createHunterContactDiscoveryProvider(
       const domain = contactDiscoveryDomain(context.company?.domain);
       if (!domain) return [];
       const people: ContactResolutionProviderPerson[] = [];
-      const domainSearch = await hunterGet(fetchImpl, baseUrl, "/domain-search", apiKey, {
+      const domainSearch = await hunterGet(fetchImpl, providerName, baseUrl, "/domain-search", apiKey, {
         domain,
         limit: "10",
       }, timeoutMs);
@@ -154,7 +154,7 @@ export function createHunterContactDiscoveryProvider(
       for (const person of graphPeople) {
         const parsedName = splitPersonName(person.full_name);
         if (!parsedName) continue;
-        const found = await hunterGet(fetchImpl, baseUrl, "/email-finder", apiKey, {
+        const found = await hunterGet(fetchImpl, providerName, baseUrl, "/email-finder", apiKey, {
           domain,
           first_name: parsedName.firstName,
           last_name: parsedName.lastName,
@@ -182,7 +182,7 @@ export function createHunterEmailVerifier(
         console.warn(`[${providerName}] deferred: missing HUNTER_API_KEY`);
         throw new ContactProviderDeferredError(providerName, "provider_unconfigured", "missing HUNTER_API_KEY");
       }
-      const raw = await hunterGet(fetchImpl, baseUrl, "/email-verifier", apiKey, { email }, timeoutMs);
+      const raw = await hunterGet(fetchImpl, providerName, baseUrl, "/email-verifier", apiKey, { email }, timeoutMs);
       const data = recordValue(raw.data) ?? raw;
       const status = cleanString(data.status) ?? "unknown";
       const score = numberValue(data.score);
@@ -216,7 +216,7 @@ export function createZeroBounceEmailVerifier(
         api_key: apiKey,
         email,
         timeout: String(timeout),
-      }, timeoutMs);
+      }, timeoutMs, providerName);
       const status = cleanString(raw.status) ?? "unknown";
       return {
         status: status.toLowerCase(),
@@ -422,13 +422,14 @@ async function loadHighValuePeopleMissingEmail(
 
 async function hunterGet(
   fetchImpl: typeof fetch,
+  providerName: string,
   baseUrl: string,
   path: string,
   apiKey: string,
   params: Record<string, string>,
   timeoutMs: number,
 ): Promise<Record<string, unknown>> {
-  return getJson(fetchImpl, `${baseUrl}${path}`, { ...params, api_key: apiKey }, timeoutMs);
+  return getJson(fetchImpl, `${baseUrl}${path}`, { ...params, api_key: apiKey }, timeoutMs, providerName);
 }
 
 async function getJson(
@@ -436,6 +437,7 @@ async function getJson(
   url: string,
   params: Record<string, string>,
   timeoutMs: number,
+  providerName?: string,
 ): Promise<Record<string, unknown>> {
   const request = new URL(url);
   for (const [key, value] of Object.entries(params)) {
@@ -443,7 +445,7 @@ async function getJson(
   }
   return fetchJsonWithRetry(fetchImpl, request, {
     headers: { Accept: "application/json" },
-  }, timeoutMs);
+  }, timeoutMs, providerName);
 }
 
 async function fetchJsonWithRetry(
@@ -451,6 +453,7 @@ async function fetchJsonWithRetry(
   request: URL,
   init: RequestInit,
   timeoutMs: number,
+  providerName?: string,
 ): Promise<Record<string, unknown>> {
   let lastError: unknown = null;
   for (let attempt = 0; attempt <= MAX_PROVIDER_RETRIES; attempt += 1) {
@@ -472,8 +475,12 @@ async function fetchJsonWithRetry(
     }
 
     if (response.ok) return raw;
-    const error = providerHttpError(request, raw, response.status);
-    if (!shouldRetryResponse(response.status) || attempt === MAX_PROVIDER_RETRIES) {
+    const error = providerHttpError(request, raw, response.status, providerName);
+    if (
+      error instanceof ContactProviderDeferredError ||
+      !shouldRetryResponse(response.status) ||
+      attempt === MAX_PROVIDER_RETRIES
+    ) {
       throw error;
     }
     lastError = error;
@@ -486,14 +493,40 @@ function providerHttpError(
   request: URL,
   raw: Record<string, unknown>,
   status: number,
+  providerName?: string,
 ): Error {
-  const error = recordValue(raw.errors)?.[0];
+  const error = arrayValue(raw.errors).map(recordValue).find(Boolean);
+  const code = cleanString(recordValue(error)?.id) ??
+    cleanString(recordValue(error)?.code);
   const message = cleanString(recordValue(error)?.details) ??
-    cleanString(recordValue(error)?.code) ??
+    code ??
     cleanString(raw.error) ??
     cleanString(raw.message) ??
     "request failed";
+  if (providerName && status === 429 && isQuotaMessage(code, message)) {
+    return new ContactProviderDeferredError(
+      providerName,
+      "quota_exceeded",
+      message,
+    );
+  }
+  if (providerName && (status === 401 || status === 403)) {
+    return new ContactProviderDeferredError(
+      providerName,
+      "auth_failed",
+      message,
+    );
+  }
   return new Error(`${request.hostname}: ${message} (${status})`);
+}
+
+function isQuotaMessage(
+  code: string | null | undefined,
+  message: string,
+): boolean {
+  return /quota|limit|billing period|plan|too_many_requests/i.test(
+    [code, message].filter(Boolean).join(" "),
+  );
 }
 
 function shouldRetryResponse(status: number): boolean {

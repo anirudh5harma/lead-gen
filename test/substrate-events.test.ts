@@ -141,6 +141,26 @@ test("event bus: Rep role completion is a typed trust event", async () => {
   assert.equal(event.payload.action, "compose_email");
 });
 
+test("event bus: workflow lifecycle accepts Restate invocation ids", async () => {
+  const bus = createInMemoryEventBus();
+  const event = await bus.publish({
+    workspace_id: randomUUID(),
+    event_type: "play.run.started",
+    source: "system",
+    payload: {
+      play_id: randomUUID(),
+      play_run_id: randomUUID(),
+      workflow_run_id: "inv_14WQcnCYKEox10Gt8BNn2OhNDgcxcGYYxw",
+      trigger_event_id: null,
+    },
+  });
+
+  assert.equal(
+    event.payload.workflow_run_id,
+    "inv_14WQcnCYKEox10Gt8BNn2OhNDgcxcGYYxw",
+  );
+});
+
 test("event bus: wildcard subscriber receives every event", async () => {
   const bus = createInMemoryEventBus();
   const seen: string[] = [];

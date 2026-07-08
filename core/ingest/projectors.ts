@@ -367,6 +367,44 @@ export async function projectSignalCompanyLinked(
   if (!linkedCompanyId) {
     throw new Error(`Signal company link projection rejected signal ${payload.signal_id}`);
   }
+  if (linkedCompanyId !== company.id && payload.company.domain) {
+    await pool.query(
+      `update graph_companies
+          set domain = coalesce(domain, $3::citext),
+              description = coalesce(description, $4),
+              properties = coalesce(properties, '{}'::jsonb) || $5::jsonb,
+              provenance = coalesce(provenance, '{}'::jsonb) || $6::jsonb,
+              updated_at = now()
+        where workspace_id = $1
+          and id = $2
+          and domain is null`,
+      [
+        workspaceId,
+        linkedCompanyId,
+        payload.company.domain,
+        payload.company.description ?? null,
+        JSON.stringify({
+          signal_link_repair: {
+            signal_id: payload.signal_id,
+            source_id: payload.source_id,
+            adapter: payload.adapter,
+            hint_source: payload.hint_source,
+            confidence: payload.confidence,
+            event_id: eventId ?? null,
+          },
+        }),
+        JSON.stringify({
+          source: "projection:signal.company.linked",
+          signal_id: payload.signal_id,
+          source_id: payload.source_id,
+          adapter: payload.adapter,
+          hint_source: payload.hint_source,
+          confidence: payload.confidence,
+          event_id: eventId ?? null,
+        }),
+      ],
+    );
+  }
   if (linkedCompanyId !== company.id) return;
 
   await connect(pool, {

@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import { upsertCompany } from "../graph/nodes/companies.ts";
+import {
+  createExaClientFromEnv,
+  exaApiKeyFromEnv,
+  searchExaWithWorkspaceCache,
+} from "../exa/index.ts";
 import type { EventBus } from "../substrate/events/index.ts";
 import type { SignalKind } from "../primitives/signal.ts";
 import type { EmbeddingClient } from "./embeddings.ts";
@@ -62,6 +67,7 @@ export interface SignalCompanyHint {
 export interface MatchedSignalCompanyLinkRepairOptions {
   workspace_id?: string | null;
   limit?: number;
+  fetchImpl?: typeof fetch;
 }
 
 export type WorkspaceSignalDiscoveryResult =
@@ -459,6 +465,8 @@ export async function repairMatchedSignalCompanyLinksOnce(
     source_kind: string | null;
     source_name: string | null;
     source_config: Record<string, unknown> | null;
+    related_company_id: string | null;
+    related_company_domain: string | null;
   }>(
     `select s.id::text as signal_id,
             s.workspace_id::text as workspace_id,
@@ -471,13 +479,21 @@ export async function repairMatchedSignalCompanyLinksOnce(
             s.audience_hint,
             gs.kind::text as source_kind,
             gs.name as source_name,
-            gs.config as source_config
+            gs.config as source_config,
+            s.related_company_id::text as related_company_id,
+            gc.domain::text as related_company_domain
        from signals s
        left join graph_sources gs
          on gs.workspace_id = s.workspace_id
         and gs.id = s.source_id
+       left join graph_companies gc
+         on gc.workspace_id = s.workspace_id
+        and gc.id = s.related_company_id
       where s.status in ('matched', 'in_play')
-        and s.related_company_id is null
+        and (
+          s.related_company_id is null
+          or gc.domain is null
+        )
         and ($2::uuid is null or s.workspace_id = $2)
         and not exists (
           select 1
@@ -485,6 +501,10 @@ export async function repairMatchedSignalCompanyLinksOnce(
            where e.workspace_id = s.workspace_id
              and e.event_type = 'signal.company.linked'
              and e.payload->>'signal_id' = s.id::text
+             and (
+               s.related_company_id is null
+               or e.payload #>> '{company,domain}' is not null
+             )
         )
       order by s.freshness_at desc nulls last, s.ingested_at desc
       limit $1`,
@@ -496,8 +516,9 @@ export async function repairMatchedSignalCompanyLinksOnce(
     const sourceConfig = row.source_config ?? {};
     const properties = row.properties ?? {};
     const provenance = row.provenance ?? {};
+    const structured = signalRepairStructured(properties, provenance) ?? null;
     const adapter = signalRepairAdapterId(row.source_kind, sourceConfig, provenance);
-    const hint = deriveSignalCompanyHint({
+    let hint = deriveSignalCompanyHint({
       adapter_id: adapter,
       source_name: row.source_name ?? adapter,
       source_config: sourceConfig,
@@ -505,10 +526,33 @@ export async function repairMatchedSignalCompanyLinksOnce(
         title: row.title,
         content: row.content ?? undefined,
         url: row.url ?? undefined,
-        structured: signalRepairStructured(properties, provenance),
+        structured: structured ?? undefined,
         novelty_hint: signalRepairNoveltyHint(properties, row.audience_hint),
       },
     });
+    if (hint && !hint.domain) {
+      hint = await enrichSignalCompanyHintWithRedirectDomain(
+        hint,
+        structured,
+        opts.fetchImpl ?? globalThis.fetch,
+      );
+    }
+    if (hint && !hint.domain) {
+      hint = await enrichSignalCompanyHintWithExaDomain(deps.pool, {
+        workspace_id: row.workspace_id,
+        hint,
+        signal_title: row.title,
+        signal_content: row.content,
+        fetchImpl: opts.fetchImpl ?? globalThis.fetch,
+      });
+    }
+    if (
+      row.related_company_id &&
+      row.related_company_domain &&
+      (!hint || !hint.domain)
+    ) {
+      continue;
+    }
     if (!hint) continue;
 
     await deps.bus.publish({
@@ -534,6 +578,105 @@ export async function repairMatchedSignalCompanyLinksOnce(
     published++;
   }
   return published;
+}
+
+async function enrichSignalCompanyHintWithExaDomain(
+  pool: Pool,
+  input: {
+    workspace_id: string;
+    hint: SignalCompanyHint;
+    signal_title: string;
+    signal_content: string | null;
+    fetchImpl: typeof fetch;
+  },
+): Promise<SignalCompanyHint> {
+  if (!exaApiKeyFromEnv()) return input.hint;
+  const query = [
+    `${input.hint.name} official company website`,
+    input.signal_title,
+    input.signal_content ?? "",
+  ].filter(Boolean).join(" ");
+  try {
+    const result = await searchExaWithWorkspaceCache({
+      pool,
+      workspace_id: input.workspace_id,
+      intent: "company_domain_repair",
+      client: createExaClientFromEnv({ fetchImpl: input.fetchImpl }),
+      search: {
+        query,
+        type: "auto",
+        numResults: 5,
+        includeText: false,
+        highlights: false,
+        excludeDomains: [
+          "crunchbase.com",
+          "facebook.com",
+          "linkedin.com",
+          "producthunt.com",
+          "twitter.com",
+          "wikipedia.org",
+          "x.com",
+        ],
+      },
+    });
+    const domain = result.response.results
+      .map((candidate) => normalizeCompanyDomain(candidate.url))
+      .find((candidate): candidate is string => Boolean(candidate));
+    return domain ? { ...input.hint, domain } : input.hint;
+  } catch (error) {
+    console.warn(
+      `[signal-company-repair] Exa domain lookup skipped for ${input.hint.name}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    return input.hint;
+  }
+}
+
+async function enrichSignalCompanyHintWithRedirectDomain(
+  hint: SignalCompanyHint,
+  structured: Record<string, unknown> | null,
+  fetchImpl: typeof fetch,
+): Promise<SignalCompanyHint> {
+  const redirectUrl = stringValue(structured?.website);
+  if (!redirectUrl || !isProductHuntRedirectUrl(redirectUrl)) return hint;
+  const domain = await resolveRedirectDomain(redirectUrl, fetchImpl);
+  return domain ? { ...hint, domain } : hint;
+}
+
+function isProductHuntRedirectUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    const hostname = url.hostname.replace(/^www\./, "").toLowerCase();
+    return hostname === "producthunt.com" && url.pathname.startsWith("/r/");
+  } catch {
+    return false;
+  }
+}
+
+async function resolveRedirectDomain(
+  url: string,
+  fetchImpl: typeof fetch,
+): Promise<string | null> {
+  try {
+    const response = await fetchImpl(url, {
+      method: "HEAD",
+      redirect: "follow",
+      signal: AbortSignal.timeout(10_000),
+    });
+    return normalizeCompanyDomain(response.url);
+  } catch {
+    try {
+      const response = await fetchImpl(url, {
+        method: "GET",
+        redirect: "follow",
+        signal: AbortSignal.timeout(10_000),
+      });
+      return normalizeCompanyDomain(response.url);
+    } catch {
+      return null;
+    }
+  }
 }
 
 export async function discoverWorkspaceSignalOnce(

@@ -130,6 +130,7 @@ export function createRunContext<I, O>(
     | undefined;
   let eventWaitPosition = -1;
   let publishedEventPosition = -1;
+  const stepStack: Array<{ name: string; publishedEventPosition: number }> = [];
 
   return {
     run_id,
@@ -143,7 +144,15 @@ export function createRunContext<I, O>(
       stepOpts?: StepOptions,
     ): Promise<T> {
       try {
-        return await ctx.run(name, fn, toRunOptions(stepOpts));
+        return await ctx.run(name, async () => {
+          const frame = { name, publishedEventPosition: -1 };
+          stepStack.push(frame);
+          try {
+            return await fn();
+          } finally {
+            stepStack.pop();
+          }
+        }, toRunOptions(stepOpts));
       } catch (err) {
         if (stepOpts?.on_failure === "skip") {
           return undefined as T;
@@ -240,6 +249,21 @@ export function createRunContext<I, O>(
       );
       if (!publish) {
         throw new restate.TerminalError("ctx.publish requires an EventBus");
+      }
+      const currentStep = stepStack[stepStack.length - 1];
+      if (currentStep) {
+        currentStep.publishedEventPosition += 1;
+        const position = currentStep.publishedEventPosition;
+        return publish({
+          workspace_id: eventWorkspaceId,
+          event_type: event_type as never,
+          source: "system",
+          producer_ref: `workflow:${definition.name}:${run_id}`,
+          correlation_id,
+          causation_id,
+          idempotency_key: `workflow:${run_id}:step:${currentStep.name}:event:${position}`,
+          payload: payload as never,
+        }) as Promise<PublishedEvent<typeof payload>>;
       }
       publishedEventPosition += 1;
       const position = publishedEventPosition;

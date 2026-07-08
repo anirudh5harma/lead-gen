@@ -318,8 +318,8 @@ export const DEFAULT_PRODUCT_WORKSPACE_SLUG = DEFAULT_WORKSPACE_SLUG;
 const DEFAULT_WORKFLOW_LEASE_MS = 2 * 60 * 1000;
 const EMAIL_ACCOUNT_CONFIGURATION_PROJECTION =
   "channel.email_account_configuration.v1";
-const CONTACT_RESOLUTION_REPAIR_KEY = "verified-contact-v2";
-const SIGNAL_PLAY_REPAIR_KEY = "draft-grounding-skip-v1";
+const CONTACT_RESOLUTION_REPAIR_KEY = "restate-step-publish-v1";
+const SIGNAL_PLAY_REPAIR_KEY = "restate-step-publish-v1";
 const SIGNAL_PLAY_REJUDGE_REPAIR_KEY = "judge-fallback-v1";
 const REPAIRABLE_DRAFT_REJECTION_PATTERN =
   "(being an AI|as an AI|AI language model|language model|judge returned non-JSON response)";
@@ -11048,6 +11048,7 @@ export async function dispatchSignalPlaysOnce(
          on wr.workspace_id = e.workspace_id
         and wr.workflow_name = coalesce(p.compiled->>'workflow', $1)
         and wr.idempotency_key = concat('signal:', e.payload->>'signal_id', ':play:', p.id::text)
+        and $12::boolean
        left join workflow_runs repair_wr
          on repair_wr.workspace_id = e.workspace_id
         and repair_wr.workflow_name = coalesce(p.compiled->>'workflow', $1)
@@ -11057,6 +11058,7 @@ export async function dispatchSignalPlaysOnce(
           ':repair:',
           $9::text
        )
+        and $12::boolean
        left join workflow_runs rejudge_wr
          on rejudge_wr.workspace_id = e.workspace_id
         and rejudge_wr.workflow_name = coalesce(p.compiled->>'workflow', $1)
@@ -11066,6 +11068,7 @@ export async function dispatchSignalPlaysOnce(
           ':repair:',
           $10::text
        )
+        and $12::boolean
        left join lateral (
          select m.id as message_id
            from conversations c
@@ -11096,6 +11099,7 @@ export async function dispatchSignalPlaysOnce(
            from workflow_runs wr
           where wr.workspace_id = e.workspace_id
             and wr.workflow_name = $5
+            and $12::boolean
             and wr.idempotency_key in (
               concat(
                 'contact:', e.payload->>'signal_id',
@@ -11171,6 +11175,7 @@ export async function dispatchSignalPlaysOnce(
       SIGNAL_PLAY_REPAIR_KEY,
       SIGNAL_PLAY_REJUDGE_REPAIR_KEY,
       REPAIRABLE_DRAFT_REJECTION_PATTERN,
+      engine.substrateMode === "postgres",
     ],
   );
 

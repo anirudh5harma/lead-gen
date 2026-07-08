@@ -70,6 +70,20 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     example: "30",
   },
   {
+    name: "DATABASE_POOL_CONNECTION_TIMEOUT_MS",
+    requirement: "optional",
+    category: "database",
+    description: "Milliseconds to wait for a new Postgres connection before surfacing a pool timeout.",
+    example: "20000",
+  },
+  {
+    name: "DATABASE_POOL_IDLE_TIMEOUT_MS",
+    requirement: "optional",
+    category: "database",
+    description: "Milliseconds an idle Postgres client can remain in the process pool.",
+    example: "60000",
+  },
+  {
     name: "APP_ORIGIN",
     requirement: "production",
     category: "runtime",

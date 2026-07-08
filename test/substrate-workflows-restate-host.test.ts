@@ -196,6 +196,35 @@ test("Restate RunContext publishes workflow events with correlation metadata", a
   assert.equal(fx.runs[0].name, "publish:0:signal.dismissed");
 });
 
+test("Restate RunContext publishes inside a step without nesting Restate runs", async () => {
+  const bus = captureBus();
+  const fx = fakeCtx({ invocationId: "inv-step-publish" });
+  const definition = defineWorkflow<null, void>({
+    name: "publisher",
+    version: "1",
+    async run() {},
+  });
+  const ctx = createRunContext(fx.ctx, definition, {
+    request: null,
+    metadata: { workspace_id: request.metadata.workspace_id },
+  }, { bus });
+
+  await ctx.step("conversation.open", async () => {
+    await ctx.publish("signal.dismissed", {
+      signal_id: randomUUID(),
+      reason: "test",
+    });
+    return true;
+  });
+
+  assert.equal(bus.events.length, 1);
+  assert.equal(
+    (bus.events[0] as { idempotency_key: string }).idempotency_key,
+    "workflow:inv-step-publish:step:conversation.open:event:0",
+  );
+  assert.deepEqual(fx.runs, [{ name: "conversation.open", options: {} }]);
+});
+
 test("Restate platform context checkpoints work but rejects unscoped event publication", async () => {
   const bus = captureBus();
   const fx = fakeCtx({ invocationId: "inv-platform" });

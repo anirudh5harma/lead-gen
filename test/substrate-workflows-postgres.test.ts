@@ -365,6 +365,77 @@ test("postgres workflow runtime: resume continues after a pre-checkpoint step ro
   }
 });
 
+test("postgres workflow runtime: resume skips an abandoned single-attempt skippable step", async (t) => {
+  const fx = await setupPg("pg_wf_resume_skip_row");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  const bus = await createPostgresEventBus({
+    pool: fx.pool,
+    listenConnectionString: process.env.DATABASE_URL,
+  });
+  try {
+    const ws = await seedWorkspace(fx.pool);
+    const runtime = createPostgresWorkflowRuntime({ pool: fx.pool, bus });
+    runtime.register(
+      defineWorkflow<unknown, string>({
+        name: "demo_resume_skip_row",
+        version: "1",
+        async run(_input, ctx) {
+          await ctx.step("optional", async () => "grounded", {
+            on_failure: "skip",
+            retry: { max_attempts: 1, backoff: "fixed", base_ms: 1 },
+          });
+          return ctx.step("after", async () => "continued");
+        },
+      }),
+    );
+
+    const runId = randomUUID();
+    const staleStepId = randomUUID();
+    await fx.pool.query(
+      `insert into workflow_runs (
+         id, workspace_id, workflow_name, workflow_version, status, input,
+         started_at, created_at
+       ) values ($1, $2, 'demo_resume_skip_row', '1', 'running', 'null'::jsonb, now(), now())`,
+      [runId, ws],
+    );
+    await fx.pool.query(
+      `insert into workflow_steps (
+         id, run_id, workspace_id, step_name, step_position, attempt,
+         status, started_at, created_at
+       ) values ($1, $2, $3, 'optional', 0, 1, 'running', now(), now())`,
+      [staleStepId, runId, ws],
+    );
+
+    await runtime.resume(runId);
+    await until(async () => (await runtime.get(runId))?.status === "completed");
+
+    const final = await runtime.get(runId);
+    assert.equal(final?.output, "continued");
+    const steps = await fx.pool.query<{
+      step_name: string;
+      attempt: number;
+      status: string;
+    }>(
+      `select step_name, attempt, status
+         from workflow_steps
+        where run_id = $1
+        order by step_position, attempt`,
+      [runId],
+    );
+    assert.deepEqual(
+      steps.rows.map((row) => [row.step_name, row.attempt, row.status]),
+      [
+        ["optional", 1, "failed"],
+        ["after", 1, "completed"],
+      ],
+    );
+  } finally {
+    await bus.close();
+    await fx.close();
+  }
+});
+
 test("postgres workflow runtime: concurrent resume reuses duplicate step and checkpoint rows", async (t) => {
   const fx = await setupPg("pg_wf_resume_race");
   if (!fx) return t.skip("DATABASE_URL not set");

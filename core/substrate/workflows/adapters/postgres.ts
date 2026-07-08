@@ -178,6 +178,32 @@ export function createPostgresWorkflowRuntime(
         );
         const firstAttempt = Math.max(1, (prior.rows[0]?.max_attempt ?? 0) + 1);
         if (firstAttempt > retry.max_attempts) {
+          if (stepOpts?.on_failure === "skip") {
+            await pool.query(
+              `update workflow_steps
+                  set status = 'failed',
+                      error = $1::jsonb,
+                      ended_at = coalesce(ended_at, now())
+                where run_id = $2
+                  and step_position = $3
+                  and status = 'running'`,
+              [
+                JSON.stringify({
+                  message: `Recovered abandoned running step ${name} before skipping`,
+                }),
+                rec.run.id,
+                pos,
+              ],
+            );
+            await recordCheckpoint(
+              pool,
+              rec.run.id,
+              rec.run.workspace_id!,
+              pos,
+              null,
+            );
+            return undefined as O;
+          }
           throw new Error(
             `Step ${name} exhausted retry attempts for workflow run ${rec.run.id}`,
           );

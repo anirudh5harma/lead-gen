@@ -800,6 +800,48 @@ test("Hunter discovery uses a registrable contact domain", async () => {
   assert.deepEqual([...new Set(requestedDomains)], ["anthropic.com"]);
 });
 
+test("Hunter discovery classifies billing-period caps as quota exceeded", async () => {
+  const workspaceId = randomUUID();
+  const companyId = randomUUID();
+  const signalId = randomUUID();
+  const playId = randomUUID();
+  const repId = randomUUID();
+  const pool = mockContactProviderPool({
+    company_id: companyId,
+    company_name: "Acme",
+    domain: "acme.example",
+    signal_id: signalId,
+  });
+  const provider = createHunterContactDiscoveryProvider({
+    pool,
+    apiKey: "hunter-key",
+    baseUrl: "https://hunter.test/v2",
+    fetchImpl: async () =>
+      jsonResponse({
+        errors: [{
+          id: "too_many_requests",
+          code: 429,
+          details: "You've reached the limit for the number of searches per billing period included in your plan.",
+        }],
+      }, 429),
+  });
+
+  await assert.rejects(
+    provider.discover({
+      workspace_id: workspaceId,
+      company_id: companyId,
+      signal_id: signalId,
+      play_id: playId,
+      rep_id: repId,
+      channel: "email",
+    }),
+    (error: unknown) =>
+      error instanceof ContactProviderDeferredError &&
+      error.provider === "hunter.contact_discovery" &&
+      error.reason === "quota_exceeded",
+  );
+});
+
 test("contact discovery domain rejects junk and keeps registrable domains", () => {
   assert.equal(contactDiscoveryDomain("www-cdn.anthropic.com"), "anthropic.com");
   assert.equal(contactDiscoveryDomain("https://careers.example.co.uk/jobs"), "example.co.uk");
