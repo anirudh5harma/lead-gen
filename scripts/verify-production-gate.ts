@@ -10,6 +10,11 @@
 import fs from "node:fs";
 import { pathToFileURL } from "node:url";
 import {
+  readEventDispatchTransportHealth,
+} from "../core/product/health.ts";
+import { resolveProductSubstrateMode } from "../core/product/substrate.ts";
+import { tryGetPool } from "../core/substrate/storage/index.ts";
+import {
   runAwsSesReadinessProbe,
   type AwsSesReadinessResult,
 } from "./verify-aws-ses.ts";
@@ -48,6 +53,12 @@ export interface ProductionGateResult {
   ok: boolean;
   launchReady: boolean;
   decisions: ProductionGateDecision[];
+}
+
+export interface EventDispatchGateProbe {
+  ok: boolean;
+  status: "ok" | "external" | "fail";
+  detail: string;
 }
 
 export function classifyFlyWorkerHostGate(
@@ -177,12 +188,14 @@ export function summarizeProductionGate(input: {
   ses: AwsSesReadinessResult;
   sharedX: SharedXReadinessResult;
   workspaceIsolation: WorkspaceIsolationResult;
+  eventDispatch: EventDispatchGateProbe;
 }): ProductionGateResult {
   const decisions = [
     classifyWorkerHostGate({
       fly: input.workerHost,
       legacyEcs: input.legacyEcs,
     }),
+    classifyEventDispatchGate(input.eventDispatch),
     classifyOutlookGate(input.outlook),
     classifySharedXGate(input.sharedX),
     classifyAwsSesGate(input.ses),
@@ -202,6 +215,7 @@ async function main(): Promise<void> {
     legacyEcs: shouldRunAwsEcsLegacyGate(process.env)
       ? await runRestateEcsHealthProbe()
       : null,
+    eventDispatch: await runEventDispatchGateProbe(),
     outlook: await runOutlookReadinessProbe(),
     sharedX: await runSharedXReadinessProbe(),
     ses: shouldRunAwsSesGate(process.env)
@@ -272,6 +286,35 @@ export function classifyOutlookGate(
       `${step.label}${step.detail ? `: ${step.detail}` : ""}`
     ).join(" | "),
     next: "Repair Outlook subscription/account state before sending customer outbound through Microsoft Graph.",
+  };
+}
+
+export function classifyEventDispatchGate(
+  result: EventDispatchGateProbe,
+): ProductionGateDecision {
+  if (result.status === "external") {
+    return {
+      name: "Event dispatch transport",
+      status: "external",
+      detail: result.detail,
+      next: "Run verify:production-gate with DATABASE_URL loaded, or inspect product Health from an environment that can query production event dispatch rows.",
+    };
+  }
+
+  if (result.ok) {
+    return {
+      name: "Event dispatch transport",
+      status: "ok",
+      detail: result.detail,
+      next: "Keep monitoring product Health for dead-lettered or repeatedly flapping NATS dispatch rows.",
+    };
+  }
+
+  return {
+    name: "Event dispatch transport",
+    status: "fail",
+    detail: result.detail,
+    next: "Restart or redeploy the worker, then confirm event_nats_dispatches no longer accumulate transient CONNECTION_CLOSED/TIMEOUT failures.",
   };
 }
 
@@ -388,6 +431,33 @@ function skippedAwsSesReadiness(): AwsSesReadinessResult {
         detail: "Not required; customer-connected Outlook mailboxes are the primary outbound path.",
       },
     ],
+  };
+}
+
+async function runEventDispatchGateProbe(): Promise<EventDispatchGateProbe> {
+  const pool = tryGetPool();
+  if (!pool) {
+    return {
+      ok: false,
+      status: "external",
+      detail: "Production database was not available for the event dispatch transport probe.",
+    };
+  }
+
+  const substrate = resolveProductSubstrateMode(process.env.BOMBSELL_SUBSTRATE, process.env);
+  const health = await readEventDispatchTransportHealth(pool, substrate);
+  if (health.status === "ok") {
+    return {
+      ok: true,
+      status: "ok",
+      detail: health.detail,
+    };
+  }
+
+  return {
+    ok: false,
+    status: "fail",
+    detail: health.detail,
   };
 }
 

@@ -26,6 +26,7 @@ export type { NatsEventBus, NatsEventBusOptions } from "./adapters/nats.ts";
 export {
   createJournaledNatsEventBus,
   listDeadLetteredDispatches,
+  recoverTransientDeadLetterDispatches,
   redriveDeadLetteredDispatch,
 } from "./adapters/journaled-nats.ts";
 export { createJournaledDispatchEventBus } from "./adapters/journaled-dispatch.ts";

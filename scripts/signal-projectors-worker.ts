@@ -56,6 +56,12 @@ const signalMatchingSubscription = await registerSignalMatchingEventDispatcher(
 );
 
 async function redrivePendingDispatches(): Promise<void> {
+  const recovered = await bus.recoverTransientDeadLetters();
+  if (recovered > 0) {
+    console.log(
+      `[signal-projectors] recovered ${recovered} transient NATS dead-letter dispatches`,
+    );
+  }
   const result = await bus.redrivePending();
   if (result.attempted > 0) {
     console.log(

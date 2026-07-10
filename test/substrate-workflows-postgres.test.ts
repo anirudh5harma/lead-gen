@@ -509,6 +509,61 @@ test("postgres workflow runtime: concurrent resume reuses duplicate step and che
   }
 });
 
+test("postgres workflow runtime: resume is a no-op while the run is already active in memory", async (t) => {
+  const fx = await setupPg("pg_wf_resume_active");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  const bus = await createPostgresEventBus({
+    pool: fx.pool,
+    listenConnectionString: process.env.DATABASE_URL,
+  });
+  try {
+    const ws = await seedWorkspace(fx.pool);
+    const runtime = createPostgresWorkflowRuntime({ pool: fx.pool, bus });
+    let sideEffects = 0;
+    runtime.register(
+      defineWorkflow<unknown, string>({
+        name: "demo_resume_active",
+        version: "1",
+        async run(_input, ctx) {
+          return ctx.step("only-once", async () => {
+            sideEffects++;
+            await new Promise((resolve) => setTimeout(resolve, 25));
+            return "ok";
+          });
+        },
+      }),
+    );
+
+    const run = await runtime.start({
+      workspace_id: ws,
+      workflow_name: "demo_resume_active",
+      input: null,
+    });
+
+    const resumed = await runtime.resume(run.id);
+    assert.equal(resumed?.id, run.id);
+    await runtime.drain?.();
+    await until(async () => (await runtime.get(run.id))?.status === "completed");
+
+    assert.equal(sideEffects, 1);
+    const steps = await fx.pool.query<{ attempt: number; status: string }>(
+      `select attempt, status
+         from workflow_steps
+        where run_id = $1
+        order by attempt`,
+      [run.id],
+    );
+    assert.deepEqual(
+      steps.rows.map((row) => [row.attempt, row.status]),
+      [[1, "completed"]],
+    );
+  } finally {
+    await bus.close();
+    await fx.close();
+  }
+});
+
 
 test("postgres workflow runtime: idempotency_key collapses duplicate starts", async (t) => {
   const fx = await setupPg("pg_wf_idem");

@@ -23,6 +23,7 @@ import {
   recordProductPersonFitFeedback,
   recordProductRecommendationOutcome,
   retryFailedWorkflowRun,
+  recoverTransientEventDispatches,
   reviewProductRecommendation,
   runWorkspaceSignalIngestion,
   runWorkspaceSourcePollNow,
@@ -987,6 +988,39 @@ export async function decideApprovalWithDraftAction(formData: FormData) {
     returnTo,
     decision === "rejected" ? "Draft rejected." : "Draft approved.",
   );
+}
+
+export async function recoverTransientDispatchesAction(formData: FormData) {
+  const returnTo = dashboardReturnPath(formData, "/dashboard/health");
+  try {
+    const session = await requireDashboardSession();
+    const recovered = await recoverTransientEventDispatches(session, {
+      limit: numberValue(formData, "limit", 100),
+    });
+    revalidateProductPaths();
+    if (recovered === 0) {
+      redirectWithToast(
+        returnTo,
+        "No transient dispatch failures needed recovery.",
+        "info",
+      );
+    }
+    redirectWithToast(
+      returnTo,
+      `Recovered ${recovered} transient dispatch failure${recovered === 1 ? "" : "s"}.`,
+    );
+  } catch (error) {
+    unstable_rethrow(error);
+    console.error("Transient dispatch recovery failed", error);
+    redirectWithToast(
+      returnTo,
+      dashboardActionErrorMessage(
+        error,
+        "Could not recover transient dispatch failures yet. Refresh and try again.",
+      ),
+      "error",
+    );
+  }
 }
 
 function revalidateProductPaths() {

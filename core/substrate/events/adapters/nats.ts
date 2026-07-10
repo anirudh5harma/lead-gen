@@ -6,10 +6,12 @@ import {
   connect,
   type Codec,
   credsAuthenticator,
+  ErrorCode,
   type JetStreamClient,
   type JetStreamManager,
   type JetStreamSubscription,
   JSONCodec,
+  type NatsConnection,
 } from "nats";
 import type { EventBus } from "../bus.ts";
 import { eventRegistry, isKnownEventType } from "../registry.ts";
@@ -63,6 +65,8 @@ export interface NatsEventBusOptions {
   streamMaxBytes?: number;
   /** If true, ensure the stream exists at construct time. Defaults to true. */
   ensureStream?: boolean;
+  /** Test seam for injecting a fake connector. */
+  connectImpl?: typeof connect;
   /**
    * Override nats.js hostname pre-resolution. Synadia NGS expects the client
    * to dial the advertised hostname first so TLS/auth negotiation happens
@@ -89,24 +93,100 @@ export async function createNatsEventBus(
   const prefix = opts.streamPrefix ?? "events";
   const codec = JSONCodec();
   const authenticator = buildAuthenticator(opts.credentials);
-  const nc = await connect({
-    servers: opts.servers,
-    name: "bombsell-event-bus",
-    resolve: opts.resolve ?? shouldResolveServers(opts.servers),
-    ignoreClusterUpdates: shouldIgnoreClusterUpdates(opts.servers),
-    ...(authenticator ? { authenticator } : {}),
-  });
-  const jsm = await nc.jetstreamManager();
-  const js = nc.jetstream();
+  const connectImpl = opts.connectImpl ?? connect;
+  const streamConfig = {
+    max_age: (opts.streamMaxAgeMs ?? 30 * 24 * 60 * 60 * 1000) * 1_000_000, // nanoseconds
+    max_bytes: opts.streamMaxBytes ?? DEFAULT_STREAM_MAX_BYTES,
+  };
 
-  if (opts.ensureStream !== false) {
-    await ensureStream(jsm, prefix, {
-      max_age: (opts.streamMaxAgeMs ?? 30 * 24 * 60 * 60 * 1000) * 1_000_000, // nanoseconds
-      max_bytes: opts.streamMaxBytes ?? DEFAULT_STREAM_MAX_BYTES,
+  interface ConnectionState {
+    nc: NatsConnection;
+    jsm: JetStreamManager;
+    js: JetStreamClient;
+  }
+
+  interface SubscriptionRecord {
+    filterSubject: string;
+    handler: EventHandler;
+    codec: Codec<unknown>;
+    durableName?: string;
+    sub?: JetStreamSubscription;
+    active: boolean;
+  }
+
+  let closing = false;
+  let reconnecting: Promise<void> | null = null;
+  const records: SubscriptionRecord[] = [];
+
+  async function openConnection(): Promise<ConnectionState> {
+    const nc = await connectImpl({
+      servers: opts.servers,
+      name: "bombsell-event-bus",
+      resolve: opts.resolve ?? shouldResolveServers(opts.servers),
+      ignoreClusterUpdates: shouldIgnoreClusterUpdates(opts.servers),
+      ...(authenticator ? { authenticator } : {}),
+    });
+    const jsm = await nc.jetstreamManager();
+    const js = nc.jetstream();
+
+    if (opts.ensureStream !== false) {
+      await ensureStream(jsm, prefix, streamConfig);
+    }
+    watchConnection(nc);
+    return { nc, jsm, js };
+  }
+
+  let state = await openConnection();
+
+  function watchConnection(nc: NatsConnection): void {
+    void nc.closed().then((err) => {
+      if (closing || state.nc !== nc) return;
+      if (err) {
+        console.warn("[nats event bus] connection closed; rebuilding client", err);
+      }
+      void rebuildConnection();
     });
   }
 
-  const subs: JetStreamSubscription[] = [];
+  async function rebuildConnection(): Promise<void> {
+    if (closing) return;
+    if (reconnecting) return reconnecting;
+    reconnecting = (async () => {
+      const previous = state;
+      const next = await openConnection();
+      state = next;
+      for (const record of records) {
+        if (!record.active) continue;
+        record.sub = await startSubscription({
+          js: next.js,
+          jsm: next.jsm,
+          prefix,
+          filterSubject: record.filterSubject,
+          handler: record.handler,
+          codec: record.codec,
+          durableName: record.durableName,
+        });
+      }
+      if (!previous.nc.isClosed()) {
+        await previous.nc.drain().catch(() => undefined);
+      }
+    })().finally(() => {
+      reconnecting = null;
+    });
+    return reconnecting;
+  }
+
+  async function ensureConnection(): Promise<ConnectionState> {
+    if (closing) {
+      throw new Error("NATS event bus is closed");
+    }
+    if (state.nc.isClosed()) {
+      await rebuildConnection();
+    } else if (reconnecting) {
+      await reconnecting;
+    }
+    return state;
+  }
 
   async function publish(input: EventInput): Promise<PublishedEvent> {
     if (!isKnownEventType(input.event_type)) {
@@ -130,9 +210,19 @@ export async function createNatsEventBus(
     };
 
     const subject = subjectFor(prefix, event.workspace_id, event.event_type);
-    await js.publish(subject, codec.encode(event), {
-      msgID: input.idempotency_key ?? event.id,
-    });
+    try {
+      const current = await ensureConnection();
+      await current.js.publish(subject, codec.encode(event), {
+        msgID: input.idempotency_key ?? event.id,
+      });
+    } catch (err) {
+      if (!shouldRebuildConnection(err)) throw err;
+      await rebuildConnection();
+      const current = await ensureConnection();
+      await current.js.publish(subject, codec.encode(event), {
+        msgID: input.idempotency_key ?? event.id,
+      });
+    }
     return event;
   }
 
@@ -140,23 +230,30 @@ export async function createNatsEventBus(
     event_type: string,
     handler: EventHandler,
   ): Promise<Subscription> {
-    return startSubscription({
-      js,
-      jsm,
-      prefix,
+    const current = await ensureConnection();
+    const record: SubscriptionRecord = {
       filterSubject: subscribeSubject(prefix, "*", event_type),
       handler,
       codec,
-    }).then((sub) => {
-      subs.push(sub);
-      return {
-        unsubscribe: async () => {
-          await sub.drain();
-          const idx = subs.indexOf(sub);
-          if (idx >= 0) subs.splice(idx, 1);
-        },
-      };
+      active: true,
+    };
+    record.sub = await startSubscription({
+      js: current.js,
+      jsm: current.jsm,
+      prefix,
+      filterSubject: record.filterSubject,
+      handler,
+      codec,
     });
+    records.push(record);
+    return {
+      unsubscribe: async () => {
+        record.active = false;
+        await record.sub?.drain().catch(() => undefined);
+        const idx = records.indexOf(record);
+        if (idx >= 0) records.splice(idx, 1);
+      },
+    };
   }
 
   async function subscribeScoped(
@@ -165,21 +262,30 @@ export async function createNatsEventBus(
     handler: EventHandler,
     scopedOpts?: { durableName?: string },
   ): Promise<Subscription> {
-    const sub = await startSubscription({
-      js,
-      jsm,
-      prefix,
+    const current = await ensureConnection();
+    const record: SubscriptionRecord = {
       filterSubject: subscribeSubject(prefix, workspace_id, event_type),
       handler,
       codec,
       durableName: scopedOpts?.durableName,
+      active: true,
+    };
+    record.sub = await startSubscription({
+      js: current.js,
+      jsm: current.jsm,
+      prefix,
+      filterSubject: record.filterSubject,
+      handler,
+      codec,
+      durableName: record.durableName,
     });
-    subs.push(sub);
+    records.push(record);
     return {
       unsubscribe: async () => {
-        await sub.drain();
-        const idx = subs.indexOf(sub);
-        if (idx >= 0) subs.splice(idx, 1);
+        record.active = false;
+        await record.sub?.drain().catch(() => undefined);
+        const idx = records.indexOf(record);
+        if (idx >= 0) records.splice(idx, 1);
       },
     };
   }
@@ -189,15 +295,20 @@ export async function createNatsEventBus(
     subscribe: subscribe as EventBus["subscribe"],
     subscribeScoped: subscribeScoped as NatsEventBus["subscribeScoped"],
     async close() {
+      closing = true;
+      if (reconnecting) {
+        await reconnecting.catch(() => undefined);
+      }
       // Drain consumers, then drain the connection.
-      for (const s of subs.splice(0)) {
+      for (const record of records.splice(0)) {
         try {
-          await s.drain();
+          record.active = false;
+          await record.sub?.drain();
         } catch {
           /* ignore */
         }
       }
-      await nc.drain();
+      await state.nc.drain();
     },
   };
 }
@@ -205,6 +316,21 @@ export async function createNatsEventBus(
 // ─── Internals ─────────────────────────────────────────────────────────────
 
 const DEFAULT_STREAM_MAX_BYTES = 1024 * 1024 * 1024;
+
+function shouldRebuildConnection(err: unknown): boolean {
+  if (
+    err instanceof Error &&
+    "code" in err &&
+    (err as Error & { code?: string }).code
+  ) {
+    return (
+      (err as Error & { code?: string }).code === ErrorCode.ConnectionClosed ||
+      (err as Error & { code?: string }).code === ErrorCode.Timeout
+    );
+  }
+  if (!(err instanceof Error)) return false;
+  return /CONNECTION_CLOSED|TIMEOUT/.test(err.message);
+}
 
 interface SubscriptionStartOptions {
   js: JetStreamClient;

@@ -35,14 +35,22 @@ const SUPPORTED_PRODUCT_SUBSTRATES = new Set<ProductSubstrateMode>([
 
 export function resolveProductSubstrateMode(
   raw = process.env.BOMBSELL_SUBSTRATE,
+  env: Record<string, string | undefined> = process.env,
 ): ProductSubstrateResolution {
-  const value = (raw?.trim().toLowerCase() || "postgres") as ProductSubstrateMode;
+  const requested = (raw?.trim().toLowerCase() || "postgres") as ProductSubstrateMode;
+  const promotedToDurable =
+    requested === "postgres" &&
+    env.NODE_ENV === "production" &&
+    Boolean(env.RESTATE_INGRESS_URL?.trim());
+  const value = (promotedToDurable ? "nats_restate" : requested) as ProductSubstrateMode;
   if (SUPPORTED_PRODUCT_SUBSTRATES.has(value)) {
     return {
       mode: value,
       status: "ok",
       detail:
-        value === "nats_restate"
+        promotedToDurable
+          ? "Production auto-promoted from postgres to durable Restate workflow ingress"
+          : value === "nats_restate"
           ? "Journaled NATS event bus + Restate workflow ingress"
           : "Postgres event bus + Postgres workflow journal",
     };
@@ -62,6 +70,14 @@ export async function createProductSubstrate(
   const resolution = resolveProductSubstrateMode();
   if (resolution.status !== "ok" || !resolution.mode) {
     throw new Error(resolution.detail);
+  }
+  if (
+    process.env.NODE_ENV === "production" &&
+    resolution.mode === "postgres"
+  ) {
+    throw new Error(
+      "Production requires the durable nats_restate substrate. Configure RESTATE_INGRESS_URL or remove the postgres override.",
+    );
   }
   if (resolution.mode === "nats_restate") {
     const ingressUrl = process.env.RESTATE_INGRESS_URL?.trim();

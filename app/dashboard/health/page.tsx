@@ -2,12 +2,12 @@ import { redirect } from "next/navigation";
 import { EmptyState } from "@/components/dashboard/Shell";
 import Icon from "@/components/Icon";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
+import { recoverTransientDispatchesAction } from "../actions";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import {
   canUseWorkspaceOps,
   getActiveWorkspaceSessionForDashboard,
 } from "@/lib/workspace";
-import { listDeadLetteredDispatches } from "@/core/substrate/events/index.ts";
 import {
   checkProductReadinessCached,
   type ProductReadiness,
@@ -26,6 +26,7 @@ interface DispatchCounts {
   pending: number;
   delivered_24h: number;
   dead_lettered: number;
+  retrying_transient_pending: number;
 }
 
 function emptyDispatchCounts(): DispatchCounts {
@@ -33,7 +34,19 @@ function emptyDispatchCounts(): DispatchCounts {
     pending: 0,
     delivered_24h: 0,
     dead_lettered: 0,
+    retrying_transient_pending: 0,
   };
+}
+
+interface TransportAlert {
+  kind: "dead_lettered" | "retrying";
+  event_id: string;
+  event_type: string;
+  attempts: number;
+  last_error: string | null;
+  happened_at: string;
+  source: string;
+  producer_ref: string | null;
 }
 
 function unavailableReadiness(): ProductReadiness {
@@ -85,6 +98,7 @@ async function loadDispatchCounts(workspaceId: string): Promise<DispatchCounts> 
     pending: string;
     delivered_24h: string;
     dead_lettered: string;
+    retrying_transient_pending: string;
   }>(
     `select
        (select count(*)::text from event_nats_dispatches
@@ -93,7 +107,12 @@ async function loadDispatchCounts(workspaceId: string): Promise<DispatchCounts> 
          where workspace_id = $1 and status = 'delivered'
            and delivered_at >= now() - interval '24 hours') as delivered_24h,
        (select count(*)::text from event_nats_dispatches
-         where workspace_id = $1 and status = 'dead_lettered') as dead_lettered`,
+         where workspace_id = $1 and status = 'dead_lettered') as dead_lettered,
+       (select count(*)::text from event_nats_dispatches
+         where workspace_id = $1
+           and status = 'pending'
+           and last_error in ('CONNECTION_CLOSED', 'TIMEOUT')
+           and attempts >= 3) as retrying_transient_pending`,
     [workspaceId],
   );
   const row = rows[0] ?? null;
@@ -101,7 +120,71 @@ async function loadDispatchCounts(workspaceId: string): Promise<DispatchCounts> 
     pending: Number(row?.pending ?? 0),
     delivered_24h: Number(row?.delivered_24h ?? 0),
     dead_lettered: Number(row?.dead_lettered ?? 0),
+    retrying_transient_pending: Number(row?.retrying_transient_pending ?? 0),
   };
+}
+
+async function loadTransportAlerts(workspaceId: string): Promise<TransportAlert[]> {
+  const pool = getPool();
+  const { rows } = await pool.query<{
+    kind: "dead_lettered" | "retrying";
+    event_id: string;
+    event_type: string;
+    attempts: number;
+    last_error: string | null;
+    happened_at: Date | string;
+    source: string;
+    producer_ref: string | null;
+  }>(
+    `select *
+       from (
+         select
+           'dead_lettered'::text as kind,
+           d.event_id,
+           e.event_type,
+           d.attempts,
+           d.last_error,
+           d.dead_lettered_at as happened_at,
+           e.source,
+           e.producer_ref
+         from event_nats_dispatches d
+         join events e on e.id = d.event_id
+        where d.workspace_id = $1
+          and d.status = 'dead_lettered'
+        union all
+        select
+           'retrying'::text as kind,
+           d.event_id,
+           e.event_type,
+           d.attempts,
+           d.last_error,
+           d.updated_at as happened_at,
+           e.source,
+           e.producer_ref
+         from event_nats_dispatches d
+         join events e on e.id = d.event_id
+        where d.workspace_id = $1
+          and d.status = 'pending'
+          and d.last_error in ('CONNECTION_CLOSED', 'TIMEOUT')
+          and d.attempts >= 3
+       ) alerts
+      order by happened_at desc nulls last
+      limit 100`,
+    [workspaceId],
+  );
+  return rows.map((row) => ({
+    kind: row.kind,
+    event_id: row.event_id,
+    event_type: row.event_type,
+    attempts: row.attempts,
+    last_error: row.last_error,
+    happened_at:
+      row.happened_at instanceof Date
+        ? row.happened_at.toISOString()
+        : String(row.happened_at),
+    source: row.source,
+    producer_ref: row.producer_ref,
+  }));
 }
 
 function timeAgo(d: string | Date | null): string {
@@ -130,7 +213,7 @@ export default async function HealthPage() {
   if (!canUseWorkspaceOps(session)) redirect("/dashboard/brief");
 
   const pool = getPool();
-  const [counts, dead, readiness, observability] = await Promise.all([
+  const [counts, alerts, readiness, observability] = await Promise.all([
     loadDashboardData(
       "health",
       "dispatch counts",
@@ -139,9 +222,9 @@ export default async function HealthPage() {
     ),
     loadDashboardData(
       "health",
-      "dead-lettered dispatches",
+      "transport alerts",
       [],
-      () => listDeadLetteredDispatches(pool, session.workspace.id, 100),
+      () => loadTransportAlerts(session.workspace.id),
     ),
     loadDashboardData(
       "health",
@@ -178,8 +261,9 @@ export default async function HealthPage() {
           </div>
           <div className="section-note">
             <p className="text-sm font-semibold text-[var(--color-text-1)]">Work health</p>
-            <div className="mt-4 grid grid-cols-3 gap-2">
+            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
               <State label="Waiting" value={counts.pending} />
+              <State label="Retrying" value={counts.retrying_transient_pending} />
               <State label="Moved" value={counts.delivered_24h} />
               <State label="Needs review" value={counts.dead_lettered} />
             </div>
@@ -208,22 +292,39 @@ export default async function HealthPage() {
       </section>
 
       <section className="mt-6 section-canvas p-5">
-        <div className="mb-4 flex items-center gap-3">
-          <span className="brief-note-icon">
-            <Icon name="report" size={18} />
-          </span>
-          <h2 className="text-lg font-semibold text-[var(--color-text-1)]">Needs attention</h2>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="brief-note-icon">
+              <Icon name="report" size={18} />
+            </span>
+            <h2 className="text-lg font-semibold text-[var(--color-text-1)]">Needs attention</h2>
+          </div>
+          {alerts.length > 0 ? (
+            <form action={recoverTransientDispatchesAction}>
+              <input type="hidden" name="return_to" value="/dashboard/health" />
+              <input type="hidden" name="limit" value="100" />
+              <PendingSubmitButton
+                className="rounded-[8px] bg-[var(--color-accent-bg)] px-3 py-1.5 text-xs font-semibold text-[var(--color-accent)]"
+                pendingLabel="Recovering"
+              >
+                Recover transient failures
+              </PendingSubmitButton>
+            </form>
+          ) : null}
         </div>
-        {dead.length === 0 ? (
+        {alerts.length === 0 ? (
           <EmptyState
             title="Nothing needs attention"
             hint="Background work and recovery health are normal."
           />
         ) : (
           <ul className="grid gap-2">
-            {dead.map((d) => (
-              <li key={d.event_id} className="rounded-[12px] bg-[var(--color-ink-0)] px-4 py-3">
+            {alerts.map((d) => (
+              <li key={`${d.kind}:${d.event_id}`} className="rounded-[12px] bg-[var(--color-ink-0)] px-4 py-3">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 sm:flex-nowrap">
+                  <span className="rounded-full bg-[var(--color-surface-2)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-3)] sm:w-24 sm:text-center">
+                    {d.kind === "retrying" ? "retrying" : "dead letter"}
+                  </span>
                   <span className="min-w-0 max-w-full truncate text-xs text-[var(--color-text-3)] sm:w-44 sm:shrink-0">
                     {d.event_type}
                   </span>
@@ -234,25 +335,27 @@ export default async function HealthPage() {
                     {d.attempts} tries
                   </span>
                   <span className="text-xs tabular-nums text-[var(--color-text-3)] sm:w-20 sm:text-right">
-                    {timeAgo(d.dead_lettered_at)}
+                    {timeAgo(d.happened_at)}
                   </span>
                 </div>
                 <p className="mt-1 truncate text-xs text-[var(--color-text-4)]">
                   Event {d.event_id}. Source {d.source}
                   {d.producer_ref ? `. Producer ${d.producer_ref}` : ""}
                 </p>
-                <form
-                  action={`/api/internal/ops/dead-letter/redrive?event_id=${encodeURIComponent(d.event_id)}`}
-                  method="POST"
-                  className="mt-2"
-                >
-                  <PendingSubmitButton
-                    className="rounded-[8px] bg-[var(--color-accent-bg)] px-3 py-1.5 text-xs font-semibold text-[var(--color-accent)]"
-                    pendingLabel="Retrying"
+                {d.kind === "dead_lettered" ? (
+                  <form
+                    action={`/api/internal/ops/dead-letter/redrive?event_id=${encodeURIComponent(d.event_id)}`}
+                    method="POST"
+                    className="mt-2"
                   >
-                    Retry
-                  </PendingSubmitButton>
-                </form>
+                    <PendingSubmitButton
+                      className="rounded-[8px] bg-[var(--color-accent-bg)] px-3 py-1.5 text-xs font-semibold text-[var(--color-accent)]"
+                      pendingLabel="Retrying"
+                    >
+                      Retry
+                    </PendingSubmitButton>
+                  </form>
+                ) : null}
               </li>
             ))}
           </ul>

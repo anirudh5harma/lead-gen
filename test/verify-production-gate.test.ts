@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   classifyAwsSesGate,
+  classifyEventDispatchGate,
   classifyFlyWorkerHostGate,
   classifyOutlookGate,
   classifySharedXGate,
@@ -15,6 +16,7 @@ import type { OutlookReadinessResult } from "../scripts/verify-outlook-readiness
 import type { RestateEcsHealthResult } from "../scripts/verify-restate-ecs-health.ts";
 import type { SharedXReadinessResult } from "../scripts/verify-shared-x-readiness.ts";
 import type { WorkspaceIsolationResult } from "../scripts/verify-workspace-isolation.ts";
+import type { EventDispatchGateProbe } from "../scripts/verify-production-gate.ts";
 
 function healthyFlyWorkerHost(): FlyWorkerHostProbeResult {
   return {
@@ -156,6 +158,14 @@ function healthyWorkspaceIsolation(): WorkspaceIsolationResult {
   };
 }
 
+function healthyEventDispatch(): EventDispatchGateProbe {
+  return {
+    ok: true,
+    status: "ok",
+    detail: "No dead-lettered or repeatedly flapping NATS dispatch rows are present.",
+  };
+}
+
 test("production gate classifies a healthy Fly worker host as ok", () => {
   const decision = classifyFlyWorkerHostGate(healthyFlyWorkerHost());
 
@@ -180,6 +190,28 @@ test("production gate fails when the canonical Fly worker host fails", () => {
 
   assert.equal(decision.status, "fail");
   assert.match(decision.detail, /fly\.worker\.health/);
+});
+
+test("production gate classifies flapping event dispatch transport as fail", () => {
+  const decision = classifyEventDispatchGate({
+    ok: false,
+    status: "fail",
+    detail: "2 transient dead-lettered dispatches; 5 transient dispatches still retrying",
+  });
+
+  assert.equal(decision.status, "fail");
+  assert.match(decision.next, /Restart or redeploy the worker/);
+});
+
+test("production gate classifies missing event dispatch database access as external", () => {
+  const decision = classifyEventDispatchGate({
+    ok: false,
+    status: "external",
+    detail: "Production database was not available for the event dispatch transport probe.",
+  });
+
+  assert.equal(decision.status, "external");
+  assert.match(decision.next, /DATABASE_URL/);
 });
 
 test("production gate only consults legacy ECS when explicitly requested", () => {
@@ -411,6 +443,7 @@ test("production gate is operator-ok but not launch-ready for known blockers", (
   const result = summarizeProductionGate({
     workerHost: healthyFlyWorkerHost(),
     legacyEcs: restate,
+    eventDispatch: healthyEventDispatch(),
     outlook: healthyOutlook(),
     sharedX: healthySharedX(),
     ses,
@@ -421,6 +454,6 @@ test("production gate is operator-ok but not launch-ready for known blockers", (
   assert.equal(result.launchReady, false);
   assert.deepEqual(
     result.decisions.map((decision) => decision.status),
-    ["wait", "ok", "ok", "external", "ok"],
+    ["wait", "ok", "ok", "ok", "external", "ok"],
   );
 });

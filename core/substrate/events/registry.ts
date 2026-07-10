@@ -647,6 +647,12 @@ const EventDispatchRedriven = z.object({
   status: z.literal("pending"),
 });
 
+const EventDispatchTransientRecovered = z.object({
+  recovered_count: z.number().int().positive(),
+  recovered_by: z.string().uuid(),
+  limit: z.number().int().positive(),
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Draft / send pipeline — the hot-path eval lives here.
 // `draft.judged` ALWAYS fires before `message.queued` or `message.sent`.
@@ -1782,6 +1788,7 @@ export const eventRegistry = {
   "workflow.run.failed": WorkflowRunFailed,
   "workflow.run.retried": WorkflowRunRetried,
   "event.dispatch.redriven": EventDispatchRedriven,
+  "event.dispatch.transient_recovered": EventDispatchTransientRecovered,
 
   "draft.proposed": DraftProposed,
   "message.personalized": MessagePersonalized,

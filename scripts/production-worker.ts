@@ -377,6 +377,12 @@ async function runStartupTask(name: string, task: () => Promise<void>): Promise<
 
 async function redrivePendingDispatches(): Promise<void> {
   if (natsDispatchRedriveLimit === 0) return;
+  const recovered = await bus.recoverTransientDeadLetters(natsDispatchRedriveLimit);
+  if (recovered > 0) {
+    console.log(
+      `[production-worker] recovered ${recovered} transient NATS dead-letter dispatches`,
+    );
+  }
   const result = await bus.redrivePending(natsDispatchRedriveLimit);
   if (result.attempted > 0) {
     console.log(

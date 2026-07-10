@@ -49,6 +49,7 @@ export interface DeadLetteredDispatch {
 export interface JournaledNatsEventBus extends NatsEventBus {
   redrivePending(limit?: number): Promise<DispatchRedriveResult>;
   redriveDeadLettered(event_id: string): Promise<boolean>;
+  recoverTransientDeadLetters(limit?: number): Promise<number>;
 }
 
 interface DispatchRow {
@@ -64,6 +65,8 @@ interface DispatchRow {
   payload: unknown;
   occurred_at: Date | string;
 }
+
+const TRANSIENT_DEAD_LETTER_ERRORS = ["CONNECTION_CLOSED", "TIMEOUT"] as const;
 
 export async function createJournaledNatsEventBus(
   opts: JournaledNatsEventBusOptions,
@@ -202,11 +205,16 @@ export async function createJournaledNatsEventBus(
     return redriveDeadLetteredDispatch(pool, event_id);
   }
 
+  async function recoverTransientDeadLetters(limit = 100): Promise<number> {
+    return recoverTransientDeadLetterDispatches(pool, { limit });
+  }
+
   return {
     ...delivery,
     publish: publish as EventBus["publish"],
     redrivePending,
     redriveDeadLettered,
+    recoverTransientDeadLetters,
   };
 }
 
@@ -232,6 +240,36 @@ export async function redriveDeadLetteredDispatch(
     [event_id, opts.workspace_id ?? null],
   );
   return (result.rowCount ?? 0) > 0;
+}
+
+export async function recoverTransientDeadLetterDispatches(
+  pool: Pool,
+  opts: { limit?: number; workspace_id?: string } = {},
+): Promise<number> {
+  const bounded = Math.max(1, Math.min(1000, Math.trunc(opts.limit ?? 100)));
+  const { rowCount } = await pool.query(
+    `with candidates as (
+       select d.event_id
+         from event_nats_dispatches d
+        where d.status = 'dead_lettered'
+          and ($2::uuid is null or d.workspace_id = $2)
+          and d.last_error = any($3::text[])
+        order by d.dead_lettered_at asc nulls first, d.created_at asc
+        limit $1
+        for update skip locked
+     )
+     update event_nats_dispatches d
+        set status = 'pending',
+            attempts = 0,
+            next_attempt_at = now(),
+            last_error = null,
+            dead_lettered_at = null,
+            updated_at = now()
+       from candidates c
+      where d.event_id = c.event_id`,
+    [bounded, opts.workspace_id ?? null, [...TRANSIENT_DEAD_LETTER_ERRORS]],
+  );
+  return rowCount ?? 0;
 }
 
 /**

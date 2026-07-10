@@ -254,3 +254,49 @@ test("nats event bus: idempotent publish (msgID) collapses retries", async (t) =
     await bus.close();
   }
 });
+
+test("nats event bus: rebuilds the client after a CONNECTION_CLOSED publish failure", async () => {
+  const publishAttempts: string[] = [];
+  let connectCalls = 0;
+
+  function fakeConnection(name: string, behavior: "closed-on-publish" | "ok") {
+    return {
+      jetstreamManager: async () => ({}),
+      jetstream: () => ({
+        publish: async () => {
+          publishAttempts.push(name);
+          if (behavior === "closed-on-publish") {
+            throw new Error("CONNECTION_CLOSED");
+          }
+        },
+      }),
+      isClosed: () => false,
+      closed: () => new Promise<void | Error>(() => {}),
+      drain: async () => {},
+    };
+  }
+
+  const bus = await createNatsEventBus({
+    servers: NATS_URL,
+    ensureStream: false,
+    connectImpl: async () => {
+      connectCalls++;
+      return connectCalls === 1
+        ? fakeConnection("first", "closed-on-publish") as never
+        : fakeConnection("second", "ok") as never;
+    },
+  });
+
+  try {
+    await bus.publish({
+      workspace_id: randomUUID(),
+      event_type: "signal.dismissed",
+      source: "system",
+      payload: { signal_id: randomUUID(), reason: "reconnect" },
+    });
+    assert.equal(connectCalls, 2);
+    assert.deepEqual(publishAttempts, ["first", "second"]);
+  } finally {
+    await bus.close();
+  }
+});

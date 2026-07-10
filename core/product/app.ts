@@ -297,6 +297,7 @@ import {
 } from "./env.ts";
 import {
   listDeadLetteredDispatches,
+  recoverTransientDeadLetterDispatches,
   runDurableEventProjectionsOnce,
   redriveDeadLetteredDispatch,
   type DeadLetteredDispatch,
@@ -12618,6 +12619,32 @@ export async function redriveDeadLetteredEventDispatch(
     },
   });
   return true;
+}
+
+export async function recoverTransientEventDispatches(
+  session: ProductWorkspaceSession,
+  input: { limit?: number } = {},
+): Promise<number> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const recovered = await recoverTransientDeadLetterDispatches(engine.pool, {
+    workspace_id: session.workspace_id,
+    limit: input.limit ?? 100,
+  });
+  if (recovered <= 0) return 0;
+  await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "event.dispatch.transient_recovered",
+    source: "user",
+    producer_ref: session.user_id,
+    correlation_id: session.workspace_id,
+    payload: {
+      recovered_count: recovered,
+      recovered_by: session.user_id,
+      limit: input.limit ?? 100,
+    },
+  });
+  return recovered;
 }
 
 export async function listDeadLetteredEventDispatches(

@@ -22,6 +22,20 @@ test("product substrate: supports production NATS + Restate mode", () => {
   });
 });
 
+test("product substrate: production auto-promotes postgres to durable Restate mode when ingress is configured", () => {
+  assert.deepEqual(
+    resolveProductSubstrateMode("postgres", {
+      NODE_ENV: "production",
+      RESTATE_INGRESS_URL: "https://restate.example.com",
+    }),
+    {
+      mode: "nats_restate",
+      status: "ok",
+      detail: "Production auto-promoted from postgres to durable Restate workflow ingress",
+    },
+  );
+});
+
 test("product substrate: rejects aspirational adapter modes explicitly", () => {
   const resolution = resolveProductSubstrateMode("nats");
 
@@ -48,6 +62,26 @@ test("product substrate: nats_restate web ingress does not require a NATS dial",
     restoreEnv("BOMBSELL_SUBSTRATE", previousSubstrate);
     restoreEnv("RESTATE_INGRESS_URL", previousRestate);
     restoreEnv("NATS_URL", previousNats);
+  }
+});
+
+test("product substrate: production refuses the non-durable postgres bridge when Restate is unavailable", async () => {
+  const previousSubstrate = process.env.BOMBSELL_SUBSTRATE;
+  const previousRestate = process.env.RESTATE_INGRESS_URL;
+  const previousNodeEnv = process.env.NODE_ENV;
+  try {
+    process.env.BOMBSELL_SUBSTRATE = "postgres";
+    delete process.env.RESTATE_INGRESS_URL;
+    process.env.NODE_ENV = "production";
+
+    await assert.rejects(
+      () => createProductSubstrate({} as Pool),
+      /Production requires the durable nats_restate substrate/,
+    );
+  } finally {
+    restoreEnv("BOMBSELL_SUBSTRATE", previousSubstrate);
+    restoreEnv("RESTATE_INGRESS_URL", previousRestate);
+    restoreEnv("NODE_ENV", previousNodeEnv);
   }
 });
 

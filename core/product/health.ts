@@ -20,6 +20,17 @@ export interface ProductReadiness {
   checks: ProductReadinessCheck[];
 }
 
+export interface EventDispatchTransportHealth {
+  status: ProductReadinessStatus;
+  detail: string;
+  counts: {
+    dead_lettered: number;
+    transient_dead_lettered: number;
+    permanent_dead_lettered: number;
+    retrying_transient_pending: number;
+  };
+}
+
 interface ProductReadinessDeps {
   probeNatsConnection?: (env: Record<string, string | undefined>) => Promise<void>;
   probeRestateIngress?: (env: Record<string, string | undefined>) => Promise<void>;
@@ -87,6 +98,7 @@ const REQUIRED_TABLES = [
   "sending_domains",
   "workspace_llm_usage",
   "event_projection_jobs",
+  "event_nats_dispatches",
   "rep_memory_procedural_applications",
 ];
 
@@ -101,6 +113,7 @@ const REQUIRED_MIGRATIONS = [
 
 const READINESS_CACHE_TTL_MS = 15_000;
 const READINESS_EXTERNAL_PROBE_TIMEOUT_MS = 2_500;
+const TRANSIENT_DISPATCH_ERRORS = ["CONNECTION_CLOSED", "TIMEOUT"] as const;
 
 interface ProductReadinessCacheEntry {
   value?: ProductReadiness;
@@ -276,6 +289,8 @@ export async function checkProductReadiness(
             detail: `Missing migrations: ${missingMigrations.join(", ")}`,
           },
     );
+
+    checks.push(await formatEventDispatchTransportCheck(pool, substrate));
   } catch (err) {
     checks.push({
       name: "readiness",
@@ -285,6 +300,83 @@ export async function checkProductReadiness(
   }
 
   return formatReadiness(checks);
+}
+
+export async function readEventDispatchTransportHealth(
+  pool: Pool,
+  substrate: ReturnType<typeof resolveProductSubstrateMode>,
+): Promise<EventDispatchTransportHealth> {
+  if (substrate.status !== "ok" || substrate.mode !== "nats_restate") {
+    return {
+      status: "ok",
+      detail: "Event dispatch transport health is enforced when the durable NATS/Restate substrate is active.",
+      counts: {
+        dead_lettered: 0,
+        transient_dead_lettered: 0,
+        permanent_dead_lettered: 0,
+        retrying_transient_pending: 0,
+      },
+    };
+  }
+
+  const result = await pool.query<{
+    dead_lettered: number | string | null;
+    transient_dead_lettered: number | string | null;
+    permanent_dead_lettered: number | string | null;
+    retrying_transient_pending: number | string | null;
+  }>(
+    `select
+       count(*) filter (where status = 'dead_lettered')::int as dead_lettered,
+       count(*) filter (
+         where status = 'dead_lettered'
+           and last_error = any($1::text[])
+       )::int as transient_dead_lettered,
+       count(*) filter (
+         where status = 'dead_lettered'
+           and (last_error is null or last_error <> all($1::text[]))
+       )::int as permanent_dead_lettered,
+       count(*) filter (
+         where status = 'pending'
+           and last_error = any($1::text[])
+           and attempts >= 3
+       )::int as retrying_transient_pending
+     from event_nats_dispatches`,
+    [[...TRANSIENT_DISPATCH_ERRORS]],
+  );
+
+  const row = result.rows[0];
+  const counts = {
+    dead_lettered: numericCount(row?.dead_lettered),
+    transient_dead_lettered: numericCount(row?.transient_dead_lettered),
+    permanent_dead_lettered: numericCount(row?.permanent_dead_lettered),
+    retrying_transient_pending: numericCount(row?.retrying_transient_pending),
+  };
+  if (
+    counts.dead_lettered === 0 &&
+    counts.retrying_transient_pending === 0
+  ) {
+    return {
+      status: "ok",
+      detail: "No dead-lettered or repeatedly flapping NATS dispatch rows are present.",
+      counts,
+    };
+  }
+
+  const issues: string[] = [];
+  if (counts.transient_dead_lettered > 0) {
+    issues.push(`${counts.transient_dead_lettered} transient dead-lettered dispatches`);
+  }
+  if (counts.retrying_transient_pending > 0) {
+    issues.push(`${counts.retrying_transient_pending} transient dispatches still retrying`);
+  }
+  if (counts.permanent_dead_lettered > 0) {
+    issues.push(`${counts.permanent_dead_lettered} non-transient dead-lettered dispatches`);
+  }
+  return {
+    status: "degraded",
+    detail: issues.join("; "),
+    counts,
+  };
 }
 
 function formatEnvironmentCheck(
@@ -721,6 +813,18 @@ function formatSubstrateCheck(
   };
 }
 
+async function formatEventDispatchTransportCheck(
+  pool: Pool,
+  substrate: ReturnType<typeof resolveProductSubstrateMode>,
+): Promise<ProductReadinessCheck> {
+  const health = await readEventDispatchTransportHealth(pool, substrate);
+  return {
+    name: "event.dispatch",
+    status: health.status,
+    detail: health.detail,
+  };
+}
+
 async function missingRequiredTables(pool: Pool): Promise<string[]> {
   const result = await pool.query<{ name: string }>(
     `select required.name
@@ -794,4 +898,10 @@ function readinessErrorMessage(err: unknown): string {
     return err.message;
   }
   return String(err);
+}
+
+function numericCount(value: number | string | null | undefined): number {
+  if (typeof value === "number") return value;
+  if (typeof value === "string" && value.trim()) return Number(value) || 0;
+  return 0;
 }

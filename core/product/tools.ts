@@ -33,6 +33,7 @@ import {
   optimizeProductPlaySkills,
   personalizeProductMessage,
   queueWorkspaceCrmHandoff,
+  recoverTransientEventDispatches,
   researchWorkspaceWithExa,
   redriveDeadLetteredEventDispatch,
   recordProductCampaignOutcome,
@@ -2373,6 +2374,25 @@ export function registerProductTools(): void {
         redriven: await redriveDeadLetteredEventDispatch(
           input.event_id,
           sessionFromContext(ctx),
+        ),
+      };
+    },
+  });
+
+  registerTool({
+    name: "product.event_dispatch.transient_recover",
+    description:
+      "Recover transient event-bus delivery failures for the active workspace in bulk by moving CONNECTION_CLOSED/TIMEOUT dead letters back to pending.",
+    kind: "write",
+    input: z.object({
+      limit: z.number().int().positive().max(1000).optional(),
+    }),
+    output: z.object({ recovered: z.number().int().nonnegative() }),
+    async handler(input, ctx) {
+      return {
+        recovered: await recoverTransientEventDispatches(
+          sessionFromContext(ctx),
+          { limit: input.limit },
         ),
       };
     },

@@ -48,6 +48,7 @@ interface RunRecord {
     predicate?: (p: unknown) => boolean;
     resolve: (p: unknown) => void;
   }>;
+  execution?: Promise<void>;
 }
 
 function delay(ms: number): Promise<void> {
@@ -393,6 +394,7 @@ export function createPostgresWorkflowRuntime(
     rec: RunRecord,
     def: WorkflowDefinition<I, O>,
   ): void {
+    if (rec.execution) return;
     const ctx = makeContext(rec);
     const execution = (async () => {
       try {
@@ -444,8 +446,10 @@ export function createPostgresWorkflowRuntime(
         rec.run.ended_at = endedAt;
       }
     })();
+    rec.execution = execution;
     activeExecutions.add(execution);
     void execution.finally(() => {
+      rec.execution = undefined;
       activeExecutions.delete(execution);
     });
   }
@@ -483,6 +487,8 @@ export function createPostgresWorkflowRuntime(
           ],
         );
         if (existing.rows[0]) {
+          const inMemory = runs.get(existing.rows[0].id)?.run;
+          if (inMemory) return inMemory as WorkflowRun<I, O>;
           const ws = await loadRun<I, O>(pool, existing.rows[0].id);
           if (ws) return ws;
         }
@@ -579,6 +585,8 @@ export function createPostgresWorkflowRuntime(
     async resume<I = unknown, O = unknown>(
       run_id: string,
     ): Promise<WorkflowRun<I, O> | null> {
+      const active = runs.get(run_id)?.run;
+      if (active) return active as WorkflowRun<I, O>;
       const run = await loadRun<I, O>(pool, run_id);
       if (!run) return null;
       if (["completed", "cancelled"].includes(run.status)) return run;

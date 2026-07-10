@@ -6,6 +6,7 @@ import { setupPg } from "./_pg.ts";
 import {
   appendPostgresEvent,
   listDeadLetteredDispatches,
+  recoverTransientDeadLetterDispatches,
   redriveDeadLetteredDispatch,
 } from "../core/substrate/events/index.ts";
 
@@ -225,6 +226,45 @@ test("dispatch DLQ: operator redrive is scoped to the requested workspace", asyn
     const statuses = new Map(rows.rows.map((row) => [row.event_id, row.status]));
     assert.equal(statuses.get(own.event_id), "pending");
     assert.equal(statuses.get(other.event_id), "dead_lettered");
+  } finally {
+    await fx.close();
+  }
+});
+
+test("dispatch DLQ: transient dead letters can be auto-recovered back to pending", async (t) => {
+  const fx = await setupPg("dlq_transient_recover");
+  if (!fx) return t.skip("DATABASE_URL not set");
+  try {
+    const transient = await seedWorkspaceAndEvent(fx.pool);
+    const permanent = await seedWorkspaceAndEvent(fx.pool);
+    await simulateFailedAttempt(fx.pool, transient.event_id, 1, "CONNECTION_CLOSED");
+    await simulateFailedAttempt(fx.pool, permanent.event_id, 1, "Unknown event_type: agent.trace.span.recorded");
+
+    const recovered = await recoverTransientDeadLetterDispatches(fx.pool, {
+      limit: 10,
+    });
+    assert.equal(recovered, 1);
+
+    const rows = await fx.pool.query<{
+      event_id: string;
+      status: string;
+      attempts: number;
+      last_error: string | null;
+      dead_lettered_at: Date | null;
+    }>(
+      `select event_id, status, attempts, last_error, dead_lettered_at
+         from event_nats_dispatches
+        where event_id = any($1::uuid[])
+        order by event_id`,
+      [[transient.event_id, permanent.event_id]],
+    );
+    const byId = new Map(rows.rows.map((row) => [row.event_id, row]));
+    assert.equal(byId.get(transient.event_id)?.status, "pending");
+    assert.equal(byId.get(transient.event_id)?.attempts, 0);
+    assert.equal(byId.get(transient.event_id)?.last_error, null);
+    assert.equal(byId.get(transient.event_id)?.dead_lettered_at, null);
+    assert.equal(byId.get(permanent.event_id)?.status, "dead_lettered");
+    assert.equal(byId.get(permanent.event_id)?.attempts, 1);
   } finally {
     await fx.close();
   }

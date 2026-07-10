@@ -5,6 +5,7 @@ import {
   REQUIRED_RESTATE_SERVICES,
   checkProductReadiness,
   checkProductReadinessCached,
+  readEventDispatchTransportHealth,
   resetProductReadinessCacheForTests,
 } from "../core/product/health.ts";
 import { checkProductLiveness } from "../core/product/liveness.ts";
@@ -29,7 +30,7 @@ test("product health: reports ready against a migrated schema", async (t) => {
     assert.equal(readiness.ready, true);
     assert.deepEqual(
       readiness.checks.map((check) => check.status),
-      ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+      ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
     );
   } finally {
     await fx.close();
@@ -193,6 +194,38 @@ test("product health: production NATS Restate mode is ready when NATS probe pass
   const nats = readiness.checks.find((check) => check.name === "nats.credentials");
   assert.equal(nats?.status, "ok");
   assert.match(nats?.detail ?? "", /authenticated/);
+});
+
+test("product health: event dispatch transport degrades on transient dead letters", async () => {
+  const health = await readEventDispatchTransportHealth(
+    transportHealthPool({
+      dead_lettered: 3,
+      transient_dead_lettered: 2,
+      permanent_dead_lettered: 1,
+      retrying_transient_pending: 4,
+    }),
+    resolveDurableSubstrate(),
+  );
+
+  assert.equal(health.status, "degraded");
+  assert.match(health.detail, /2 transient dead-lettered dispatches/);
+  assert.match(health.detail, /4 transient dispatches still retrying/);
+  assert.match(health.detail, /1 non-transient dead-lettered dispatches/);
+});
+
+test("product health: event dispatch transport is ok when the durable bus is clean", async () => {
+  const health = await readEventDispatchTransportHealth(
+    transportHealthPool({
+      dead_lettered: 0,
+      transient_dead_lettered: 0,
+      permanent_dead_lettered: 0,
+      retrying_transient_pending: 0,
+    }),
+    resolveDurableSubstrate(),
+  );
+
+  assert.equal(health.status, "ok");
+  assert.match(health.detail, /No dead-lettered or repeatedly flapping/);
 });
 
 test("product health: production Restate Cloud ingress requires bearer token", async () => {
@@ -458,6 +491,30 @@ function readyPool(): Pool {
   return {
     query: async () => ({ rows: [] }),
   } as unknown as Pool;
+}
+
+function transportHealthPool(counts: {
+  dead_lettered: number;
+  transient_dead_lettered: number;
+  permanent_dead_lettered: number;
+  retrying_transient_pending: number;
+}): Pool {
+  return {
+    query: async (sql: string) => {
+      if (sql.includes("from event_nats_dispatches")) {
+        return { rows: [counts] };
+      }
+      return { rows: [] };
+    },
+  } as unknown as Pool;
+}
+
+function resolveDurableSubstrate() {
+  return {
+    mode: "nats_restate" as const,
+    status: "ok" as const,
+    detail: "Journaled NATS event bus + Restate workflow ingress",
+  };
 }
 
 function productionEnv(): Record<string, string> {
