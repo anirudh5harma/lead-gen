@@ -146,6 +146,68 @@ test("fanout: workspace with no ICPs receives every candidate that survives budg
   }
 });
 
+test("fanout: product launch catalog names use organization domain names", async (t) => {
+  const fx = await setupPg("fan_launch_company");
+  if (!fx) return t.skip("DATABASE_URL not set");
+  const bus = await createProjectingBus(fx.pool);
+  try {
+    const s = await seed(fx.pool);
+    const tracked = await upsertTrackedCompany(fx.pool, {
+      name: "GPT-5.6",
+      domain: "openai.com",
+      properties: { source: "product_hunt", kind: "product_launch" },
+    });
+    await addCompanyExplicit(fx.pool, s.workspace_id, tracked.id);
+    const cand_id = await insertCandidate(
+      fx.pool,
+      s.source_id,
+      tracked.id,
+      { name: "GPT-5.6", website: "https://openai.com" },
+    );
+
+    const results = await fanoutCandidate(
+      { pool: fx.pool, bus },
+      {
+        id: cand_id,
+        source_id: s.source_id,
+        kind: "product_launch",
+        company_id: tracked.id,
+        title: "GPT-5.6",
+        content: null,
+        url: "https://www.producthunt.com/posts/gpt-5-6",
+        structured: { name: "GPT-5.6", website: "https://openai.com" },
+        novelty_count: 1,
+        freshness_at: new Date().toISOString(),
+      },
+    );
+    assert.equal(results[0].outcome, "created");
+    await until(async () => {
+      const r = await fx.pool.query<{ company_name: string | null }>(
+        `select gc.name as company_name
+           from signals s
+           join graph_companies gc on gc.id = s.related_company_id
+          where s.id = $1`,
+        [results[0].signal_id],
+      );
+      return r.rows[0]?.company_name ?? null;
+    });
+    const { rows } = await fx.pool.query<{
+      company_name: string | null;
+      company_domain: string | null;
+    }>(
+      `select gc.name as company_name, gc.domain as company_domain
+         from signals s
+         join graph_companies gc on gc.id = s.related_company_id
+        where s.id = $1`,
+      [results[0].signal_id],
+    );
+    assert.equal(rows[0].company_name, "OpenAI");
+    assert.equal(rows[0].company_domain, "openai.com");
+  } finally {
+    await fx.close();
+  }
+});
+
 test("fanout: ICP must_haves filter skips candidates that don't pass", async (t) => {
   const fx = await setupPg("fan_must");
   if (!fx) return t.skip("DATABASE_URL not set");

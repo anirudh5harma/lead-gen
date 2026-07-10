@@ -6,6 +6,7 @@ import { setupPg, until } from "./_pg.ts";
 import { createInMemoryEventBus } from "../core/substrate/events/adapters/in-memory.ts";
 import { createMockEmbeddingClient } from "../core/ingest/embeddings.ts";
 import {
+  deriveSignalCompanyHint,
   discoverWorkspaceSignalOnce,
   repairMatchedSignalCompanyLinksOnce,
 } from "../core/ingest/workspace-discovery.ts";
@@ -61,6 +62,32 @@ async function seedPushSource(
   );
   return { workspace_id, source_id };
 }
+
+test("workspace discovery: Product Hunt company hint uses website domain over launch name", () => {
+  const hint = deriveSignalCompanyHint({
+    adapter_id: "product_hunt",
+    source_name: "Product Hunt",
+    source_config: {},
+    item: {
+      title: "Ship OS by Notion - coordinate product launches",
+      content: "A Product Hunt launch for Ship OS.",
+      url: "https://www.producthunt.com/posts/ship-os-by-notion",
+      structured: {
+        name: "Ship OS by Notion",
+        website: "https://www.notion.com/product/ship-os",
+        tagline: "Coordinate product launches",
+      },
+    },
+  });
+
+  assert.deepEqual(hint, {
+    name: "Notion",
+    domain: "notion.com",
+    description: "Coordinate product launches",
+    source: "product_hunt",
+    confidence: "derived",
+  });
+});
 
 test("workspace discovery: push item emits signal.discovered and materializes once", async (t) => {
   const fx = await setupPg("wsp_push");
@@ -147,14 +174,14 @@ test("workspace discovery: product launch hints create company-backed signal gra
       workspace_id,
       source_id,
       external_id: "ph-launch-1",
-      title: "LaunchCo - turn signals into outreach",
-      content: "LaunchCo helps GTM teams act on open-web buying signals.",
-      url: "https://www.producthunt.com/posts/launchco",
+      title: "Ship OS by Notion - coordinate product launches",
+      content: "Ship OS helps product teams coordinate launches.",
+      url: "https://www.producthunt.com/posts/ship-os-by-notion",
       freshness_at: "2026-06-12T00:00:00.000Z",
       structured: {
-        name: "LaunchCo",
-        tagline: "Turn signals into outreach",
-        website: "https://www.launchco.ai/?ref=producthunt",
+        name: "Ship OS by Notion",
+        tagline: "Coordinate product launches",
+        website: "https://www.notion.com/product/ship-os?ref=producthunt",
       },
       provenance: { provider: "product_hunt" },
     });
@@ -192,11 +219,11 @@ test("workspace discovery: product launch hints create company-backed signal gra
     assert.equal(rows.length, 1);
     assert.equal(rows[0].kind, "product_launch");
     assert.ok(rows[0].related_company_id);
-    assert.equal(rows[0].company_name, "LaunchCo");
-    assert.equal(rows[0].company_domain, "launchco.ai");
+    assert.equal(rows[0].company_name, "Notion");
+    assert.equal(rows[0].company_domain, "notion.com");
     assert.deepEqual(rows[0].properties.related_company_hint, {
-      name: "LaunchCo",
-      domain: "launchco.ai",
+      name: "Notion",
+      domain: "notion.com",
       source: "product_hunt",
       confidence: "derived",
     });

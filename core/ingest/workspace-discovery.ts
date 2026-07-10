@@ -19,7 +19,10 @@ import {
 import { allMatchingIcps } from "./icp-filter.ts";
 import { listIcps } from "./icps.ts";
 import { deriveSignalQualityMetadata } from "./source-quality.ts";
-import { normalizeCompanyDomain } from "./company-domain.ts";
+import {
+  companyNameFromDomain,
+  normalizeCompanyDomain,
+} from "./company-domain.ts";
 import {
   socialCompanyHintFromEvidence,
   socialCompanyHintFromStructured,
@@ -330,6 +333,24 @@ export function deriveSignalCompanyHint(input: {
   if (configHint) return configHint;
 
   const structured = recordValue(input.item.structured);
+  const adapter = input.adapter_id.trim().toLowerCase();
+  if (adapter === "product_hunt") {
+    const domain = firstDomain(
+      structured?.website,
+      structured?.company_website,
+      structured?.domain,
+    );
+    return makeSignalCompanyHint({
+      name: domain ? companyNameFromDomain(domain) : null,
+      domain,
+      description:
+        stringValue(structured?.description) ??
+        stringValue(structured?.tagline) ??
+        stringValue(input.item.content),
+      source: "product_hunt",
+      confidence: "derived",
+    });
+  }
   const socialHint = hintFromSocial(structured);
   if (socialHint) return socialHint;
   const socialEvidenceHint = socialCompanyHintFromEvidence({
@@ -345,24 +366,6 @@ export function deriveSignalCompanyHint(input: {
   }
   const structuredHint = hintFromStructured(structured);
   if (structuredHint) return structuredHint;
-
-  const adapter = input.adapter_id.trim().toLowerCase();
-  if (adapter === "product_hunt") {
-    return makeSignalCompanyHint({
-      name: stringValue(structured?.name),
-      domain: firstDomain(
-        structured?.website,
-        structured?.company_website,
-        structured?.domain,
-      ),
-      description:
-        stringValue(structured?.description) ??
-        stringValue(structured?.tagline) ??
-        stringValue(input.item.content),
-      source: "product_hunt",
-      confidence: "derived",
-    });
-  }
 
   if (adapter === "rss") {
     if (isProductHuntFeed(input.source_config)) {
@@ -435,7 +438,7 @@ export function deriveSignalCompanyHint(input: {
     );
     if (domain) {
       return makeSignalCompanyHint({
-        name: nameFromDomain(domain),
+        name: companyNameFromDomain(domain),
         domain,
         description: null,
         source: "linked_domain",
@@ -811,7 +814,7 @@ function makeSignalCompanyHint(input: {
   confidence: "explicit" | "derived";
 }): SignalCompanyHint | null {
   const domain = input.domain ?? null;
-  const name = sanitizeCompanyName(input.name) ?? (domain ? nameFromDomain(domain) : null);
+  const name = sanitizeCompanyName(input.name) ?? (domain ? companyNameFromDomain(domain) : null);
   if (!name) return null;
   return {
     name,
@@ -854,19 +857,6 @@ function domainFromUrl(value: unknown): string | null {
   return normalizeCompanyDomain(value);
 }
 
-function nameFromDomain(domain: string): string {
-  const labels = domain.split(".").filter(Boolean);
-  let label = labels.length >= 2 ? labels[labels.length - 2] : labels[0] ?? domain;
-  if (labels.length >= 3 && ["co", "com", "net", "org"].includes(label)) {
-    label = labels[labels.length - 3] ?? label;
-  }
-  return label
-    .split(/[-_]/)
-    .filter(Boolean)
-    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
-    .join(" ");
-}
-
 function hiringCompanyNameFromText(
   title: unknown,
   content: unknown,
@@ -887,7 +877,7 @@ function hiringCompanyNameFromText(
     const name = sanitizeCompanyName(firstClause);
     if (name) return name;
   }
-  return domain ? nameFromDomain(domain) : null;
+  return domain ? companyNameFromDomain(domain) : null;
 }
 
 function signalRepairAdapterId(

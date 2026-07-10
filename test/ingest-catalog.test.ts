@@ -100,6 +100,23 @@ test("catalog: normalized domains collapse subdomains for tracked companies", as
   }
 });
 
+test("catalog: launch-like names fall back to the organization domain name", async (t) => {
+  const fx = await setupPg("cat_launch_name");
+  if (!fx) return t.skip("DATABASE_URL not set");
+  try {
+    const launch = await upsertTrackedCompany(fx.pool, {
+      name: "GPT-5.6",
+      domain: "https://openai.com/research",
+      properties: { source: "product_hunt", kind: "product_launch" },
+    });
+
+    assert.equal(launch.name, "OpenAI");
+    assert.equal(launch.domain, "openai.com");
+  } finally {
+    await fx.close();
+  }
+});
+
 test("catalog: listCatalogForAdapter filters to companies with that ATS id", async (t) => {
   const fx = await setupPg("cat_for_adapter");
   if (!fx) return t.skip("DATABASE_URL not set");

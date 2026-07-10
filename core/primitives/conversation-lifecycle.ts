@@ -30,9 +30,34 @@ async function projectConversationOpened(
   event: ConversationOpenedEvent,
 ): Promise<void> {
   const payload = event.payload;
+  const existing = await pool.query<{ id: string }>(
+    `select id
+       from conversations
+      where workspace_id = $1
+        and (
+          id = $2
+          or (
+            $5::uuid is not null
+            and rep_id = $3
+            and counterparty_person_id = $4
+            and origin_signal_id = $5::uuid
+          )
+        )
+      order by case when id = $2 then 0 else 1 end
+      limit 1`,
+    [
+      event.workspace_id,
+      payload.conversation_id,
+      payload.rep_id,
+      payload.counterparty_person_id,
+      payload.origin_signal_id,
+    ],
+  );
+  const conversationId = existing.rows[0]?.id ?? payload.conversation_id;
   const properties = {
     ...(payload.properties ?? {}),
     conversation_opened_event_id: event.id,
+    requested_conversation_id: payload.conversation_id,
   };
   await pool.query(
     `insert into conversations (
@@ -54,7 +79,7 @@ async function projectConversationOpened(
        last_activity_at = greatest(conversations.last_activity_at, excluded.last_activity_at)
      where conversations.workspace_id = excluded.workspace_id`,
     [
-      payload.conversation_id,
+      conversationId,
       event.workspace_id,
       payload.rep_id,
       payload.counterparty_person_id,

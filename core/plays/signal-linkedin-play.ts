@@ -39,6 +39,7 @@ import {
   outreachSkillProvenance,
   type SelectedOutreachSkill,
 } from "../agents/skills/outreach.ts";
+import { deterministicConversationId } from "../primitives/conversation-identity.ts";
 
 export const SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW = "play.signal_to_linkedin.v1";
 
@@ -159,8 +160,14 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
       };
 
       const conversation = await ctx.step("conversation.open", async () => {
+        const conversation_id = deterministicConversationId({
+          workspace_id: input.workspace_id,
+          rep_id: rep.id,
+          counterparty_person_id: person.id,
+          origin_signal_id: signal.id,
+        });
         const event = await ctx.publish("conversation.opened", {
-          conversation_id: randomUUID(),
+          conversation_id,
           rep_id: rep.id,
           counterparty_person_id: person.id,
           counterparty_company_id: company?.id ?? null,

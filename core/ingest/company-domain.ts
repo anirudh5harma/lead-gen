@@ -45,6 +45,10 @@ const BLOCKED_COMPANY_DOMAINS = new Set([
   "youtube.com",
 ]);
 
+const COMPANY_NAME_OVERRIDES = new Map<string, string>([
+  ["openai.com", "OpenAI"],
+]);
+
 export function contactDiscoveryDomain(
   value: string | null | undefined,
 ): string | null {
@@ -79,6 +83,21 @@ export function normalizeCompanyDomain(value: unknown): string | null {
   const domain = contactDiscoveryDomain(value);
   if (!domain) return null;
   return isBlockedCompanyDomain(domain) ? null : domain;
+}
+
+export function companyNameFromDomain(domain: string): string {
+  const override = COMPANY_NAME_OVERRIDES.get(domain.toLowerCase());
+  if (override) return override;
+  const labels = domain.split(".").filter(Boolean);
+  let label = labels.length >= 2 ? labels[labels.length - 2] : labels[0] ?? domain;
+  if (labels.length >= 3 && ["co", "com", "net", "org"].includes(label)) {
+    label = labels[labels.length - 3] ?? label;
+  }
+  return label
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
 }
 
 export function isBlockedCompanyDomain(domain: string): boolean {

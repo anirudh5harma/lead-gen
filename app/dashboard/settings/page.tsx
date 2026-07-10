@@ -6,40 +6,33 @@ import PlanSection from "@/components/dashboard/PlanSection";
 import { editCompanyProfileAction } from "@/app/dashboard/actions";
 import { updateIcpTextAction } from "./actions";
 import { getPool } from "@/core/substrate/storage/index.ts";
+import {
+  getProductCompanyProfile,
+  verifiedProductWorkspaceSession,
+  type ProductCompanyProfile,
+} from "@/core/product/app";
 import { getWorkspaceBillingState } from "@/core/billing/index.ts";
-import { getActiveWorkspaceSessionForDashboard } from "@/lib/workspace";
+import {
+  getActiveWorkspaceSessionForDashboard,
+  type ActiveWorkspaceSession,
+} from "@/lib/workspace";
 
 export const metadata: Metadata = { title: "Settings | Bombsell" };
 export const dynamic = "force-dynamic";
-
-interface ProfileRow {
-  company_name: string | null;
-  website_url: string | null;
-  description: string | null;
-  message_tone: string | null;
-  outreach_goal: string | null;
-}
 
 interface IcpRow {
   name: string | null;
   description: string | null;
 }
 
-async function loadProfile(workspaceId: string): Promise<ProfileRow | null> {
-  const pool = getPool();
-  const { rows } = await pool.query<ProfileRow>(
-    `select company_name,
-            website_url,
-            description,
-            message_tone,
-            outreach_goal
-       from workspace_company_profiles
-      where workspace_id = $1
-      order by created_at asc
-      limit 1`,
-    [workspaceId],
-  );
-  return rows[0] ?? null;
+async function loadProfile(
+  session: ActiveWorkspaceSession,
+): Promise<ProductCompanyProfile | null> {
+  const productSession = verifiedProductWorkspaceSession({
+    workspace_id: session.workspace.id,
+    user_id: session.user_id,
+  });
+  return getProductCompanyProfile(getPool(), productSession);
 }
 
 async function loadIcp(workspaceId: string): Promise<IcpRow | null> {
@@ -70,7 +63,7 @@ export default async function SettingsPage() {
   if (!session) return <SettingsEmpty />;
 
   const [profile, icp, billing] = await Promise.all([
-    loadProfile(session.workspace.id).catch(() => null),
+    loadProfile(session).catch(() => null),
     loadIcp(session.workspace.id).catch(() => null),
     getWorkspaceBillingState(getPool(), session.workspace.id).catch(() => null),
   ]);

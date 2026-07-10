@@ -15,5 +15,6 @@ export * from "./rep";
 export * from "./signal";
 export * from "./play";
 export * from "./conversation";
+export * from "./conversation-identity";
 export * from "./conversation-lifecycle";
 export * from "./outcome";

@@ -34,6 +34,7 @@ import {
   type SelectedOutreachSkill,
 } from "../agents/skills/outreach.ts";
 import type { SignalEmailWriterDraft } from "../agents/reps/index.ts";
+import { deterministicConversationId } from "../primitives/conversation-identity.ts";
 
 export const SIGNAL_TO_EMAIL_PLAY_WORKFLOW = "play.signal_to_email.v1";
 
@@ -195,8 +196,14 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
       };
 
       const conversation = await ctx.step("conversation.open", async () => {
+        const conversation_id = deterministicConversationId({
+          workspace_id: input.workspace_id,
+          rep_id: rep.id,
+          counterparty_person_id: person.id,
+          origin_signal_id: signal.id,
+        });
         const event = await ctx.publish("conversation.opened", {
-          conversation_id: randomUUID(),
+          conversation_id,
           rep_id: rep.id,
           counterparty_person_id: person.id,
           counterparty_company_id: company?.id ?? null,

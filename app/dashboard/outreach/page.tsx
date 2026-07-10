@@ -252,9 +252,9 @@ function LeadRow({ lead }: { lead: MatchedLeadRow }) {
       <div className="min-w-0 text-[12px] leading-5 text-[var(--color-text-3)]">
         <p className="truncate text-[13px] font-medium text-[var(--color-text-1)]">{company}</p>
         {lead.company_domain ? <p className="truncate">{lead.company_domain}</p> : null}
-        <p className="mt-1">
-          {companyFacts(lead).join(" · ") || "Company details pending"}
-        </p>
+        {companyFacts(lead).length > 0 ? (
+          <p className="mt-1">{companyFacts(lead).join(" · ")}</p>
+        ) : null}
         {lead.location ? <p className="truncate">{lead.location}</p> : null}
       </div>
       <div className="min-w-0 space-y-1.5">

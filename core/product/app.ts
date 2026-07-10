@@ -35,6 +35,7 @@ import {
   type SignalKind as SignalKindValue,
 } from "../primitives/signal.ts";
 import type { Signal } from "../primitives/index.ts";
+import { deterministicConversationId } from "../primitives/conversation-identity.ts";
 import {
   createWorkspaceActivationSetupWorkflow,
   createWorkspaceCampaignStrategyWorkflow,
@@ -3884,7 +3885,13 @@ export async function draftProductRecommendation(
       { channel, purpose: "recommendation_draft" },
     ),
     payload: {
-      conversation_id: randomUUID(),
+      conversation_id: deterministicConversationId({
+        workspace_id: session.workspace_id,
+        rep_id: repId,
+        counterparty_person_id: target.person_id,
+        origin_signal_id: null,
+        thread_key: `recommendation:${reviewId}:${channel}`,
+      }),
       rep_id: repId,
       counterparty_person_id: target.person_id,
       counterparty_company_id: target.company_id,

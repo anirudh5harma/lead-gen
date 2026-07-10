@@ -17,6 +17,7 @@ import { createEmailSender } from "../agents/reps/roles/sender.ts";
 import { evalGate } from "../agents/eval/gate.ts";
 import { projectMessageLifecycleEvent } from "../channels/message-lifecycle.ts";
 import { projectConversationLifecycleEvent } from "../primitives/conversation-lifecycle.ts";
+import { deterministicConversationId } from "../primitives/conversation-identity.ts";
 import type { EmailChannelDeps, EmailSubChannel } from "../channels/email/index.ts";
 import type { Rep } from "../primitives/index.ts";
 
@@ -332,7 +333,12 @@ export function createSeriesAColdOpenPlay(
           if (existing.rows[0]) {
             convId = existing.rows[0].id;
           } else {
-            convId = randomUUID();
+            convId = deterministicConversationId({
+              workspace_id,
+              rep_id: loaded.rep.id,
+              counterparty_person_id: loaded.person.id,
+              origin_signal_id: loaded.signal.id,
+            });
             const conversationEvent = await ctx.publish("conversation.opened", {
               conversation_id: convId,
               rep_id: loaded.rep.id,

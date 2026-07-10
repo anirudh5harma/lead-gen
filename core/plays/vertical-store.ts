@@ -833,8 +833,25 @@ export function createPostgresVerticalSliceStore(pool: Pool): VerticalSliceStore
                 counterparty_company_id, status, origin_signal_id, topic,
                 started_at, last_activity_at, closed_at, properties
            from conversations
-          where id = $1 and workspace_id = $2`,
-        [event.payload.conversation_id, event.workspace_id],
+          where workspace_id = $2
+            and (
+              id = $1
+              or (
+                $5::uuid is not null
+                and rep_id = $3
+                and counterparty_person_id = $4
+                and origin_signal_id = $5::uuid
+              )
+            )
+          order by case when id = $1 then 0 else 1 end
+          limit 1`,
+        [
+          event.payload.conversation_id,
+          event.workspace_id,
+          event.payload.rep_id,
+          event.payload.counterparty_person_id,
+          event.payload.origin_signal_id,
+        ],
       );
       return rows[0] ? conversationFromRow(rows[0]) : null;
     },

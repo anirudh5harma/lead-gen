@@ -1,5 +1,8 @@
 import type { Pool } from "pg";
-import { normalizeCompanyDomain } from "./company-domain.ts";
+import {
+  companyNameFromDomain,
+  normalizeCompanyDomain,
+} from "./company-domain.ts";
 
 /**
  * Tracked-companies catalog management. The catalog itself is workspace-
@@ -71,6 +74,10 @@ export async function upsertTrackedCompany(
   input: UpsertTrackedCompanyInput,
 ): Promise<TrackedCompany> {
   const normalizedDomain = normalizeCompanyDomain(input.domain ?? null) ?? null;
+  const catalogName =
+    normalizedDomain && shouldPreferDomainCompanyName(input)
+      ? companyNameFromDomain(normalizedDomain)
+      : input.name;
 
   if (normalizedDomain) {
     const existingByName = await pool.query<TrackedCompanyRow>(
@@ -99,7 +106,7 @@ export async function upsertTrackedCompany(
           returning *`,
         [
           existingByName.rows[0].id,
-          input.name,
+          catalogName,
           normalizedDomain,
           input.industry ?? null,
           input.size_bucket ?? null,
@@ -135,7 +142,7 @@ export async function upsertTrackedCompany(
          refreshed_at   = now()
        returning *`,
       [
-        input.name,
+        catalogName,
         normalizedDomain,
         input.industry ?? null,
         input.size_bucket ?? null,
@@ -177,6 +184,33 @@ export async function upsertTrackedCompany(
     ],
   );
   return rowToCompany(rows[0]!);
+}
+
+function shouldPreferDomainCompanyName(input: UpsertTrackedCompanyInput): boolean {
+  const properties = input.properties ?? {};
+  const source = stringProperty(properties, "source") ?? stringProperty(properties, "adapter");
+  const kind = stringProperty(properties, "kind") ?? stringProperty(properties, "signal_kind");
+  if (source === "product_hunt" || kind === "product_launch") return true;
+  return looksLikeProductLaunchName(input.name);
+}
+
+function looksLikeProductLaunchName(name: string): boolean {
+  const trimmed = name.trim();
+  return (
+    /\s+by\s+[A-Z0-9][A-Za-z0-9 .&'-]{1,80}$/i.test(trimmed) ||
+    /\bv?\d+(?:\.\d+){1,3}\b/i.test(trimmed) ||
+    /\bgpt-\d/i.test(trimmed)
+  );
+}
+
+function stringProperty(
+  record: Record<string, unknown>,
+  key: string,
+): string | null {
+  const value = record[key];
+  return typeof value === "string" && value.trim()
+    ? value.trim().toLowerCase()
+    : null;
 }
 
 export async function getTrackedCompany(
