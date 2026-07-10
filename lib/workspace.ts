@@ -1,6 +1,9 @@
 import { cookies } from "next/headers";
 import { cache } from "react";
-import { getPool } from "@/core/substrate/storage/index.ts";
+import {
+  getPool,
+  withTransientConnectionRetry,
+} from "@/core/substrate/storage/index.ts";
 import { AUTH_SESSION_MAX_AGE_SECONDS } from "@/lib/auth/session-cookie";
 import { getRequestUserId, validUuid } from "@/lib/auth";
 import {
@@ -50,9 +53,11 @@ export const getActiveWorkspaceSession = cache(async (): Promise<ActiveWorkspace
   const jar = await cookies();
   const selected = validUuid(jar.get(ACTIVE_WORKSPACE_COOKIE_NAME)?.value);
   const lookup = activeWorkspaceLookup(userId, selected);
-  const { rows } = await getPool().query<ActiveWorkspace & { role: WorkspaceRole }>(
-    lookup.sql,
-    lookup.params,
+  const { rows } = await withTransientConnectionRetry(() =>
+    getPool().query<ActiveWorkspace & { role: WorkspaceRole }>(
+      lookup.sql,
+      lookup.params,
+    ),
   );
   if (!rows[0]) return null;
   const { role, ...workspace } = rows[0];
@@ -77,16 +82,18 @@ export async function getActiveWorkspace(): Promise<ActiveWorkspace | null> {
 export const listWorkspaces = cache(async (): Promise<ActiveWorkspace[]> => {
   const userId = await getRequestUserId();
   if (!userId) return [];
-  const { rows } = await getPool().query<ActiveWorkspace>(
-    `select w.id, w.slug::text as slug, w.name
-       from workspaces w
-       join workspace_members wm on wm.workspace_id = w.id
-      where wm.user_id = $1
-        and wm.accepted_at is not null
-        and w.archived_at is null
-        and ${excludeLegacySharedDefaultWorkspace("w", "wm")}
-      order by w.created_at desc`,
-    [userId],
+  const { rows } = await withTransientConnectionRetry(() =>
+    getPool().query<ActiveWorkspace>(
+      `select w.id, w.slug::text as slug, w.name
+         from workspaces w
+         join workspace_members wm on wm.workspace_id = w.id
+        where wm.user_id = $1
+          and wm.accepted_at is not null
+          and w.archived_at is null
+          and ${excludeLegacySharedDefaultWorkspace("w", "wm")}
+        order by w.created_at desc`,
+      [userId],
+    ),
   );
   return rows;
 });

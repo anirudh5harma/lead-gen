@@ -308,6 +308,9 @@ fail the platform closed; **RECOMMENDED** items degrade gracefully.
 - `SNS_VERIFY_SIGNATURES=1` — keep on in production; only the local test
   harness sets this to `0`.
 - `DATABASE_POOL_MAX` — defaults to 10.
+- `DASHBOARD_DATA_CONCURRENCY` — optional cap for concurrent dashboard
+  derived-data reads; defaults to 4 while leaving pool room for auth/workspace
+  lookups.
 - `NATS_STREAM_MAX_BYTES` — JetStream events stream byte cap. Hosted NATS
   accounts may require a bounded value such as `67108864`.
 - `NATS_STREAM_MAX_AGE_MS` — JetStream events stream max age, default 30 days.

@@ -122,6 +122,21 @@ test("dashboard shell mounts the global voice assistant drawer", () => {
   assert.match(transport, /input_audio_transcription/);
 });
 
+test("dashboard data loaders preserve pool capacity for route-critical workspace lookups", () => {
+  const serverData = source("app/dashboard/server-data.ts");
+  const workspace = source("lib/workspace.ts");
+  const env = source("core/config/env.ts");
+
+  assert.match(serverData, /DASHBOARD_DATA_CONCURRENCY/);
+  assert.match(serverData, /DEFAULT_DASHBOARD_DATA_CONCURRENCY = 4/);
+  assert.match(serverData, /dashboardLoadWaiters/);
+  assert.match(serverData, /acquireDashboardDataSlot/);
+  assert.match(serverData, /releaseDashboardDataSlot/);
+  assert.match(serverData, /DATABASE_POOL_MAX/);
+  assert.match(workspace, /withTransientConnectionRetry/);
+  assert.match(env, /DASHBOARD_DATA_CONCURRENCY/);
+});
+
 test("Agent is the canonical dashboard surface route", () => {
   const agentPage = source("app/dashboard/agent/page.tsx");
   const agentDetailPage = source("app/dashboard/agent/[id]/page.tsx");

@@ -14,6 +14,7 @@ export const ENVIRONMENT_KEYS: readonly EnvironmentKey[] = [
   { key: "NODE_ENV", tier: "platform", purpose: "Production safety mode" },
   { key: "DATABASE_URL", tier: "required", purpose: "Postgres substrate" },
   { key: "DATABASE_POOL_MAX", tier: "optional", purpose: "Postgres pool sizing" },
+  { key: "DASHBOARD_DATA_CONCURRENCY", tier: "optional", purpose: "Dashboard derived-data Postgres concurrency guard" },
   { key: "WORKER_DATABASE_POOL_MAX", tier: "optional", purpose: "Worker-specific Postgres pool sizing" },
   { key: "APP_ORIGIN", tier: "required", purpose: "Public callback and webhook origin" },
   { key: "NEXT_PUBLIC_APP_URL", tier: "optional", purpose: "Public MCP OAuth metadata origin override" },
