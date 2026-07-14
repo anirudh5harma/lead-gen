@@ -52,6 +52,7 @@ const WORKFLOW_FACTORIES: WorkerServiceContract[] = [
   { service: "channel.email_domain_warmup.v1", factory: "createSendingDomainWarmupWorkflow" },
   { service: "email_domain_warmup_sweep", factory: "createWarmupSweepWorkflow" },
   { service: "email_outlook_subscription_repair", factory: "createOutlookSubscriptionRepairWorkflow" },
+  { service: "billing_trial_week_reminder", factory: "createTrialWeekReminderWorkflow" },
   { service: "profile.bootstrap.exa", factory: "createExaProfileBootstrapWorkflow" },
   { service: "rep.brief.refresh.exa", factory: "createExaBriefRefreshWorkflow" },
   { service: "rep.research.exa", factory: "createExaRepResearchWorkflow" },
@@ -86,6 +87,20 @@ export function checkWorkerReleaseContract(
 
   for (const entrypoint of RESTATE_CAPABLE_ENTRYPOINTS) {
     const source = readFile(entrypoint);
+    checks.push({
+      name: `${entrypoint} registers workflow approval projectors`,
+      ok: source.includes("registerWorkflowApprovalProjectors"),
+      detail: source.includes("registerWorkflowApprovalProjectors")
+        ? "approval gates are materialized from typed events"
+        : "missing registerWorkflowApprovalProjectors",
+    });
+    checks.push({
+      name: `${entrypoint} registers workflow approval resolver`,
+      ok: source.includes("registerWorkflowApprovalResolver"),
+      detail: source.includes("registerWorkflowApprovalResolver")
+        ? "durable approval decisions resolve runtime gates"
+        : "missing registerWorkflowApprovalResolver",
+    });
     for (const contract of WORKFLOW_FACTORIES) {
       checks.push({
         name: `${entrypoint} registers ${contract.service}`,

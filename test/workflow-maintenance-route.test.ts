@@ -32,7 +32,7 @@ function summary(
     workspace_polls_started: 0,
     warmup_sweeps_started: 0,
     outlook_repairs_started: 0,
-    trial_week_reminders_sent: 0,
+    trial_week_reminder_sweeps_started: 0,
     failures: [],
     ...overrides,
   };

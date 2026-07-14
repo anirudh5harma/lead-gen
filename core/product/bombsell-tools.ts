@@ -127,7 +127,7 @@ const ApprovalListSchema = WorkspaceResultSchema.extend({
   pending_count: z.number().int().nonnegative(),
   approvals: z.array(
     z.object({
-      approval_id: z.string().uuid(),
+      approval_id: z.string().min(1).max(2048),
       run_id: z.string(),
       kind: z.string(),
       reason: z.string().nullable(),
@@ -140,7 +140,7 @@ const ApprovalListSchema = WorkspaceResultSchema.extend({
 });
 
 const ApprovalDecisionSchema = WorkspaceResultSchema.extend({
-  approval_id: z.string().uuid(),
+  approval_id: z.string().min(1).max(2048),
   decision: z.enum(["approved", "rejected"]),
   ok: z.boolean(),
   next_action: z.enum(["refresh_approvals", "inspect_agent"]),
@@ -259,7 +259,7 @@ const SignalDraftSummarySchema = z.object({
   subject: z.string().nullable(),
   eval_score: z.number().nullable(),
   eval_passed: z.boolean().nullable(),
-  pending_approval_id: z.string().uuid().nullable(),
+  pending_approval_id: z.string().min(1).max(2048).nullable(),
   defer_reason: z.string().nullable(),
   href: z.string(),
 });
@@ -1062,7 +1062,7 @@ export function registerBombsellAliasTools(): void {
       "Approve or reject one Bombsell approval gate from Claude Code. Approvals require confirm_channel_effects=true because approved work can continue through Bombsell's channel, readiness, and eval-gated workflow.",
     kind: "write",
     input: z.object({
-      approval_id: z.string().uuid(),
+      approval_id: z.string().min(1).max(2048),
       decision: z.enum(["approved", "rejected"]),
       note: z.string().min(1).max(500).optional(),
       confirm_channel_effects: z.boolean().optional(),
@@ -1074,7 +1074,7 @@ export function registerBombsellAliasTools(): void {
           "Approving a Bombsell gate can continue outreach through channel workflows. Set confirm_channel_effects=true to approve explicitly.",
         );
       }
-      const result = await invokeTool<{ ok: true }>(
+      const result = await invokeTool<{ ok: boolean }>(
         "product.approval.decide",
         {
           approval_id: input.approval_id,

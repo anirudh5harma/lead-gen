@@ -5,6 +5,7 @@ import {
   type DodoProBillingPeriod,
 } from "@/core/billing/index.ts";
 import {
+  captureWorkspaceOwnerEmail,
   createProductWorkspaceForUser,
 } from "@/core/product/app";
 import { getRequestAuthIdentity } from "@/lib/auth";
@@ -14,7 +15,6 @@ import {
   getActiveWorkspaceSession,
   setActiveWorkspaceCookie,
 } from "@/lib/workspace";
-import { getPool } from "@/core/substrate/storage/index.ts";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -41,28 +41,19 @@ export async function POST(request: Request): Promise<Response> {
       { status: 403 },
     );
   }
-  // Persist the owner email so trial/billing reminders have a recipient.
-  if (identity.email) {
-    await getPool()
-      .query(
-        `update workspaces
-            set settings = coalesce(settings, '{}'::jsonb)
-              || jsonb_build_object('owner_email', $2::text)
-          where id = $1`,
-        [workspace.workspace.id, identity.email],
-      )
-      .catch(() => {});
-  }
   try {
-    const checkoutUrl = await createSubscriptionCheckoutUrl({
-      userEmail: identity.email ?? `${identity.id}@users.bombsell.local`,
-      userName: displayNameFromEmail(identity.email) ?? "Bombsell customer",
-      userId: identity.id,
-      workspaceId: workspace.workspace.id,
-      period,
-      returnUrl: new URL("/dashboard/profile?billing=pro#plan", url).toString(),
-      cancelUrl: new URL("/dashboard/profile#plan", url).toString(),
-    });
+    const [checkoutUrl] = await Promise.all([
+      createSubscriptionCheckoutUrl({
+        userEmail: identity.email ?? `${identity.id}@users.bombsell.local`,
+        userName: displayNameFromEmail(identity.email) ?? "Bombsell customer",
+        userId: identity.id,
+        workspaceId: workspace.workspace.id,
+        period,
+        returnUrl: new URL("/dashboard/profile?billing=pro#plan", url).toString(),
+        cancelUrl: new URL("/dashboard/profile#plan", url).toString(),
+      }),
+      captureOwnerEmailBestEffort(identity, workspace.workspace.id),
+    ]);
     return Response.json({ url: checkoutUrl });
   } catch (err) {
     console.error("[billing/pro/checkout] POST dodo checkout error", {
@@ -110,15 +101,18 @@ export async function GET(request: Request): Promise<Response> {
   }
 
   try {
-    const checkoutUrl = await createSubscriptionCheckoutUrl({
-      userEmail: identity.email ?? `${identity.id}@users.bombsell.local`,
-      userName: displayNameFromEmail(identity.email) ?? "Bombsell customer",
-      userId: identity.id,
-      workspaceId: workspace.workspace.id,
-      period,
-      returnUrl: new URL("/dashboard/settings?billing=pro", url).toString(),
-      cancelUrl: new URL("/pricing", url).toString(),
-    });
+    const [checkoutUrl] = await Promise.all([
+      createSubscriptionCheckoutUrl({
+        userEmail: identity.email ?? `${identity.id}@users.bombsell.local`,
+        userName: displayNameFromEmail(identity.email) ?? "Bombsell customer",
+        userId: identity.id,
+        workspaceId: workspace.workspace.id,
+        period,
+        returnUrl: new URL("/dashboard/settings?billing=pro", url).toString(),
+        cancelUrl: new URL("/pricing", url).toString(),
+      }),
+      captureOwnerEmailBestEffort(identity, workspace.workspace.id),
+    ]);
     return NextResponse.redirect(checkoutUrl, 303);
   } catch (err) {
     const config = getDodoConfigSummary();
@@ -143,4 +137,22 @@ function displayNameFromEmail(email: string | null | undefined): string | null {
   if (!email) return null;
   const local = email.split("@", 1)[0]?.trim();
   return local || email;
+}
+
+async function captureOwnerEmailBestEffort(
+  identity: { id: string; email?: string | null },
+  workspaceId: string,
+): Promise<void> {
+  if (!identity.email) return;
+  try {
+    await captureWorkspaceOwnerEmail(identity.email, {
+      workspace_id: workspaceId,
+      user_id: identity.id,
+    });
+  } catch (error) {
+    console.warn("[billing/pro/checkout] owner email capture failed", {
+      error: error instanceof Error ? error.message : String(error),
+      workspace_id: workspaceId,
+    });
+  }
 }

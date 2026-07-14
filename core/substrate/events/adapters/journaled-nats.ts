@@ -7,6 +7,7 @@ import {
   type NatsEventBusOptions,
 } from "./nats.ts";
 import { appendPostgresEvent } from "./postgres.ts";
+import { mapWithConcurrency } from "../../concurrency.ts";
 
 /**
  * Production event bus composition.
@@ -67,6 +68,8 @@ interface DispatchRow {
 }
 
 const TRANSIENT_DEAD_LETTER_ERRORS = ["CONNECTION_CLOSED", "TIMEOUT"] as const;
+const DISPATCH_LEASE_MS = 30_000;
+const REDRIVE_CONCURRENCY = 4;
 
 export async function createJournaledNatsEventBus(
   opts: JournaledNatsEventBusOptions,
@@ -81,7 +84,6 @@ export async function createJournaledNatsEventBus(
   async function publish(input: EventInput): Promise<PublishedEvent> {
     const client = await pool.connect();
     let canonical: PublishedEvent;
-    let alreadyDelivered = false;
     try {
       await client.query("begin");
       canonical = await appendPostgresEvent(client, input);
@@ -91,11 +93,6 @@ export async function createJournaledNatsEventBus(
          on conflict (event_id) do nothing`,
         [canonical.id, canonical.workspace_id],
       );
-      const result = await client.query<{ status: string }>(
-        `select status from event_nats_dispatches where event_id = $1`,
-        [canonical.id],
-      );
-      alreadyDelivered = result.rows[0]?.status === "delivered";
       await client.query("commit");
     } catch (err) {
       await client.query("rollback").catch(() => undefined);
@@ -104,10 +101,24 @@ export async function createJournaledNatsEventBus(
       client.release();
     }
 
-    if (!alreadyDelivered) {
-      await deliverAndRecord(canonical!);
-    }
+    await deliverPendingEvent(canonical!);
     return canonical!;
+  }
+
+  async function deliverPendingEvent(event: PublishedEvent): Promise<boolean> {
+    const claim = await pool.query(
+      `update event_nats_dispatches
+          set next_attempt_at = now() + ($2::int * interval '1 millisecond'),
+              updated_at = now()
+        where event_id = $1
+          and status = 'pending'
+          and next_attempt_at <= now()
+      returning event_id`,
+      [event.id, DISPATCH_LEASE_MS],
+    );
+    if (!claim.rows[0]) return false;
+    await deliverAndRecord(event);
+    return true;
   }
 
   async function deliverAndRecord(event: PublishedEvent): Promise<void> {
@@ -163,40 +174,69 @@ export async function createJournaledNatsEventBus(
 
   async function redrivePending(limit = 100): Promise<DispatchRedriveResult> {
     const boundedLimit = Math.max(1, Math.min(1000, Math.trunc(limit)));
-    const { rows } = await pool.query<DispatchRow>(
-      `select d.event_id, e.workspace_id, e.event_type, e.schema_version,
-              e.correlation_id, e.causation_id, e.source, e.producer_ref,
-              e.idempotency_key, e.payload, e.occurred_at
-         from event_nats_dispatches d
-         join events e on e.id = d.event_id
-        where d.status = 'pending'
-          and d.next_attempt_at <= now()
-        order by d.created_at asc
-        limit $1`,
-      [boundedLimit],
-    );
     const result: DispatchRedriveResult = {
-      attempted: rows.length,
+      attempted: 0,
       delivered: 0,
       failed: 0,
       dead_lettered: 0,
     };
-    for (const row of rows) {
-      try {
-        await deliverAndRecord(toPublishedEvent(row));
-        result.delivered++;
-      } catch {
-        // Re-read status to see if this attempt flipped the dispatch to
-        // dead_lettered (rather than just failing one more attempt).
-        const status = await pool
-          .query<{ status: string }>(
-            `select status from event_nats_dispatches where event_id = $1`,
-            [row.event_id],
-          )
-          .then((r) => r.rows[0]?.status ?? "unknown");
-        if (status === "dead_lettered") result.dead_lettered++;
-        else result.failed++;
-      }
+    while (result.attempted < boundedLimit) {
+      const claimLimit = Math.min(
+        REDRIVE_CONCURRENCY,
+        boundedLimit - result.attempted,
+      );
+      const { rows } = await pool.query<DispatchRow>(
+      `with candidates as (
+         select event_id
+           from event_nats_dispatches
+          where status = 'pending'
+            and next_attempt_at <= now()
+          order by created_at asc
+          limit $1
+          for update skip locked
+       ),
+       claimed as (
+         update event_nats_dispatches d
+            set next_attempt_at = now() + ($2::int * interval '1 millisecond'),
+                updated_at = now()
+           from candidates c
+          where d.event_id = c.event_id
+        returning d.event_id
+       )
+       select c.event_id, e.workspace_id, e.event_type, e.schema_version,
+              e.correlation_id, e.causation_id, e.source, e.producer_ref,
+              e.idempotency_key, e.payload, e.occurred_at
+         from claimed c
+         join events e on e.id = c.event_id`,
+        [claimLimit, DISPATCH_LEASE_MS],
+      );
+      if (rows.length === 0) break;
+      const outcomes = await mapWithConcurrency(
+        rows,
+        REDRIVE_CONCURRENCY,
+        async (row) => {
+          try {
+            await deliverAndRecord(toPublishedEvent(row));
+            return "delivered";
+          } catch {
+            const status = await pool
+              .query<{ status: string }>(
+                `select status from event_nats_dispatches where event_id = $1`,
+                [row.event_id],
+              )
+              .then((queryResult) => queryResult.rows[0]?.status ?? "unknown");
+            return status === "dead_lettered" ? "dead_lettered" : "failed";
+          }
+        },
+      );
+      result.attempted += outcomes.length;
+      result.delivered += outcomes.filter(
+        (outcome) => outcome === "delivered",
+      ).length;
+      result.failed += outcomes.filter((outcome) => outcome === "failed").length;
+      result.dead_lettered += outcomes.filter(
+        (outcome) => outcome === "dead_lettered",
+      ).length;
     }
     return result;
   }

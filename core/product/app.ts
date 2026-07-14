@@ -24,10 +24,7 @@ import {
   type ExaSocialSignalIntent,
 } from "../exa/social-signals.ts";
 import {
-  createIcp,
-  updateIcp,
   type IcpPredicateRule,
-  type IcpRow,
 } from "../ingest/icps.ts";
 import { RepRole, type RepRole as RepRoleValue } from "../primitives/rep.ts";
 import {
@@ -204,7 +201,11 @@ import type {
   WorkflowRuntime,
   WorkflowRunStatus,
 } from "../substrate/workflows/index.ts";
-import { RestateClientError } from "../substrate/workflows/adapters/restate.ts";
+import {
+  createWorkflowApprovalProjection,
+  projectWorkflowApprovalDecision,
+} from "../substrate/workflows/index.ts";
+export { isStaleRestateApprovalResolutionError } from "../substrate/workflows/index.ts";
 import { createEmailDeliveryFeedbackProjection } from "./email-feedback.ts";
 import {
   createSendingDomainProvisioningWorkflow,
@@ -613,6 +614,12 @@ export interface ConfigureIcpInput {
   match_threshold?: number;
   nice_to_haves?: string[];
   enabled?: boolean;
+}
+
+export interface UpdateIcpTextInput {
+  icp_id?: string;
+  name?: string;
+  description?: string;
 }
 
 export interface TrackCompanyInput {
@@ -2677,10 +2684,96 @@ export async function configureIcpSegment(
   return { workspace_id: session.workspace_id, icp_id };
 }
 
+export async function updateIcpText(
+  input: UpdateIcpTextInput,
+  session: ProductWorkspaceSession,
+): Promise<{ workspace_id: string; icp_id: string }> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const { rows } = await engine.pool.query<{
+    id: string;
+    name: string;
+    description: string;
+    updated_at: Date;
+  }>(
+    `select id, name, description, updated_at from workspace_icps
+      where workspace_id = $1
+        and ($2::uuid is null or id = $2)
+      order by created_at asc
+      limit 1`,
+    [session.workspace_id, input.icp_id ?? null],
+  );
+  const existing = rows[0];
+  if (!existing) throw new Error("workspace ICP not found");
+  const name = input.name?.trim() || undefined;
+  const description = input.description?.trim() || undefined;
+  if (!name && !description) throw new Error("ICP name or description required");
+  if (
+    (name === undefined || name === existing.name) &&
+    (description === undefined || description === existing.description)
+  ) {
+    return { workspace_id: session.workspace_id, icp_id: existing.id };
+  }
+  const payload = {
+    icp_id: existing.id,
+    ...(name ? { name } : {}),
+    ...(description ? { description } : {}),
+  };
+  const event = await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "workspace.icp.text_updated",
+    source: "user",
+    producer_ref: session.user_id,
+    idempotency_key: configurationEventKey(
+      "workspace.icp.text_updated",
+      session.workspace_id,
+      existing.id,
+      { ...payload, previous_updated_at: existing.updated_at.toISOString() },
+    ),
+    payload,
+  });
+  await projectIcpTextUpdated(engine.pool, event);
+  return { workspace_id: session.workspace_id, icp_id: existing.id };
+}
+
+export async function captureWorkspaceOwnerEmail(
+  email: string,
+  session: ProductWorkspaceSession,
+): Promise<void> {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) return;
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const { rows } = await engine.pool.query<{ owner_email: string | null }>(
+    `select nullif(trim(settings->>'owner_email'), '') as owner_email
+       from workspaces where id = $1`,
+    [session.workspace_id],
+  );
+  if (rows[0]?.owner_email?.toLowerCase() === normalized) return;
+  const payload = {
+    workspace_id: session.workspace_id,
+    settings: { owner_email: normalized },
+  };
+  const event = await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "workspace.configured",
+    source: "user",
+    producer_ref: session.user_id,
+    idempotency_key: configurationEventKey(
+      "workspace.configured",
+      session.workspace_id,
+      `owner-email:${normalized}`,
+      payload,
+    ),
+    payload,
+  });
+  await projectWorkspaceConfigured(engine.pool, event);
+}
+
 async function projectIcpConfigured(
   pool: Pool,
   event: PublishedEvent,
-): Promise<IcpRow> {
+): Promise<void> {
   const payload = event.payload as {
     icp_id: string;
     name: string;
@@ -2690,77 +2783,61 @@ async function projectIcpConfigured(
     match_threshold: number;
     enabled: boolean;
   };
-  const existing = await pool.query<{ id: string }>(
-    `select id from workspace_icps where workspace_id = $1 and id = $2`,
-    [event.workspace_id, payload.icp_id],
+  const result = await pool.query(
+    `insert into workspace_icps (
+       id, workspace_id, name, description, must_haves, nice_to_haves,
+       match_threshold, enabled
+     ) values ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8)
+     on conflict (id) do update
+       set name = excluded.name,
+           description = excluded.description,
+           must_haves = excluded.must_haves,
+           nice_to_haves = excluded.nice_to_haves,
+           match_threshold = excluded.match_threshold,
+           enabled = excluded.enabled,
+           updated_at = now()
+     where workspace_icps.workspace_id = excluded.workspace_id`,
+    [
+      payload.icp_id,
+      event.workspace_id,
+      payload.name,
+      payload.description,
+      JSON.stringify(payload.must_haves),
+      JSON.stringify(payload.nice_to_haves),
+      payload.match_threshold,
+      payload.enabled,
+    ],
   );
-  if (existing.rows[0]) {
-    const updated = await updateIcp(pool, event.workspace_id, payload.icp_id, {
-      name: payload.name,
-      description: payload.description,
-      must_haves: payload.must_haves,
-      nice_to_haves: payload.nice_to_haves,
-      match_threshold: payload.match_threshold,
-      enabled: payload.enabled,
-    });
-    if (!updated)
-      throw new Error(`ICP not found after update: ${payload.icp_id}`);
-    return updated;
+  if ((result.rowCount ?? 0) === 0) {
+    throw new Error(`ICP workspace mismatch: ${payload.icp_id}`);
   }
-  return createIcpWithId(pool, event.workspace_id, payload);
 }
 
-async function createIcpWithId(
+async function projectIcpTextUpdated(
   pool: Pool,
-  workspace_id: string,
-  input: {
+  event: PublishedEvent,
+): Promise<void> {
+  const payload = event.payload as {
     icp_id: string;
-    name: string;
-    description: string;
-    must_haves: IcpPredicateRule[];
-    nice_to_haves: string[];
-    match_threshold: number;
-    enabled: boolean;
-  },
-): Promise<IcpRow> {
-  const created = await createIcp(pool, workspace_id, {
-    name: input.name,
-    description: input.description,
-    must_haves: input.must_haves,
-    nice_to_haves: input.nice_to_haves,
-    match_threshold: input.match_threshold,
-    enabled: input.enabled,
-  });
-  if (created.id === input.icp_id) return created;
-  await pool.query(
-    `update workspace_icps set id = $3 where workspace_id = $1 and id = $2`,
-    [workspace_id, created.id, input.icp_id],
-  );
-  const { rows } = await pool.query<{
-    id: string;
-    workspace_id: string;
-    name: string;
-    description: string;
-    must_haves: IcpPredicateRule[];
-    nice_to_haves: string[];
-    match_threshold: string;
-    enabled: boolean;
-    created_at: Date;
-    updated_at: Date;
-  }>(`select * from workspace_icps where id = $1`, [input.icp_id]);
-  const row = rows[0]!;
-  return {
-    id: row.id,
-    workspace_id: row.workspace_id,
-    name: row.name,
-    description: row.description,
-    must_haves: Array.isArray(row.must_haves) ? row.must_haves : [],
-    nice_to_haves: Array.isArray(row.nice_to_haves) ? row.nice_to_haves : [],
-    match_threshold: Number(row.match_threshold),
-    enabled: row.enabled,
-    created_at: row.created_at.toISOString(),
-    updated_at: row.updated_at.toISOString(),
+    name?: string;
+    description?: string;
   };
+  const result = await pool.query(
+    `update workspace_icps
+        set name = coalesce($3, name),
+            description = coalesce($4, description),
+            updated_at = now()
+      where workspace_id = $1 and id = $2`,
+    [
+      event.workspace_id,
+      payload.icp_id,
+      payload.name ?? null,
+      payload.description ?? null,
+    ],
+  );
+  if ((result.rowCount ?? 0) === 0) {
+    throw new Error(`ICP not found: ${payload.icp_id}`);
+  }
 }
 
 export async function trackCompanyForWorkspace(
@@ -8721,6 +8798,17 @@ function createProductEventProjections(
   engine: ProductEngine,
 ): DurableEventProjection[] {
   return [
+    createWorkflowApprovalProjection(engine.pool),
+    {
+      name: "workspace.icp_configuration.v1",
+      eventTypes: ["workspace.icp.configured"],
+      apply: (event) => projectIcpConfigured(engine.pool, event),
+    },
+    {
+      name: "workspace.icp_text.v1",
+      eventTypes: ["workspace.icp.text_updated"],
+      apply: (event) => projectIcpTextUpdated(engine.pool, event),
+    },
     {
       name: "workspace.created.v1",
       eventTypes: ["workspace.created"],
@@ -12676,127 +12764,61 @@ export async function approveWorkflowApproval(
   note?: string,
 ): Promise<boolean> {
   const engine = await getProductEngine();
-  let approvalWorkspaceId: string | null = null;
+  const { rows } = await engine.pool.query<{
+    workspace_id: string;
+    decision: string;
+  }>(
+    `select workspace_id, decision from workflow_approvals where id = $1`,
+    [approval_id],
+  );
+  const approval = rows[0];
+  if (!approval || approval.decision !== "pending") return false;
   if (session) {
-    const { rows } = await engine.pool.query<{ workspace_id: string }>(
-      `select workspace_id from workflow_approvals where id = $1`,
-      [approval_id],
-    );
-    if (!rows[0] || rows[0].workspace_id !== session.workspace_id) return false;
-    approvalWorkspaceId = rows[0].workspace_id;
+    if (approval.workspace_id !== session.workspace_id) return false;
     await assertProductWorkspaceAccess(session, engine.pool);
   }
-  const decidedBy = session?.user_id ?? DEFAULT_PRODUCT_USER_ID;
-  try {
-    await engine.runtime.resolveApproval(approval_id, {
-      decision,
-      decided_by: decidedBy,
-      note,
-    });
-  } catch (error) {
-    if (
-      decision === "rejected" &&
-      engine.substrateMode === "nats_restate" &&
-      isStaleRestateApprovalResolutionError(error)
-    ) {
-      const cleared = await rejectStaleWorkflowApproval(
-        engine.pool,
-        engine.bus,
-        {
-          approval_id,
-          workspace_id: approvalWorkspaceId ?? session?.workspace_id ?? null,
-          decided_by: decidedBy,
-          note,
-        },
-      );
-      if (cleared) return true;
-    }
-    throw error;
-  }
-  return waitForApprovalDecision(engine.pool, approval_id);
+  return publishAndProjectApprovalDecision(engine.pool, engine.bus, {
+    approval_id,
+    workspace_id: approval.workspace_id,
+    decision,
+    decided_by: session?.user_id ?? DEFAULT_PRODUCT_USER_ID,
+    note,
+  });
 }
 
-export function isStaleRestateApprovalResolutionError(error: unknown): boolean {
-  const status =
-    error instanceof RestateClientError
-      ? error.status
-      : typeof error === "object" && error !== null && "status" in error
-        ? Number((error as { status?: unknown }).status)
-        : NaN;
-  if (status !== 400 && status !== 404 && status !== 410) return false;
-  const body =
-    error instanceof RestateClientError
-      ? error.body
-      : typeof error === "object" && error !== null && "body" in error
-        ? String((error as { body?: unknown }).body ?? "")
-        : "";
-  return /bad awakeable id|awakeable.*not found|not.*awakeable|unknown awakeable/i.test(
-    body,
-  );
-}
-
-async function rejectStaleWorkflowApproval(
+async function publishAndProjectApprovalDecision(
   pool: Pool,
   bus: EventBus,
   input: {
     approval_id: string;
-    workspace_id: string | null;
+    workspace_id: string;
+    decision: "approved" | "rejected" | "expired";
     decided_by: string;
     note?: string;
   },
 ): Promise<boolean> {
-  const params: unknown[] = [
-    input.decided_by,
-    input.note ??
-      "Rejected from dashboard after the approval runtime no longer had an active gate.",
-    input.approval_id,
-  ];
-  const workspaceClause = input.workspace_id ? "and workspace_id = $4" : "";
-  if (input.workspace_id) params.push(input.workspace_id);
-  const result = await pool.query<{ workspace_id: string }>(
-    `update workflow_approvals
-        set decision = 'rejected',
-            decided_by = $1,
-            decided_at = now(),
-            decision_note = $2
-      where id = $3
-        and decision = 'pending'
-        ${workspaceClause}
-      returning workspace_id`,
-    params,
-  );
-  const row = result.rows[0];
-  if (!row) return false;
-  await bus.publish({
-    workspace_id: row.workspace_id,
+  const event = await bus.publish({
+    workspace_id: input.workspace_id,
     event_type: "approval.decided",
     source: "user",
     producer_ref: input.decided_by,
-    idempotency_key: `approval.decided:${input.approval_id}:stale-rejected`,
+    idempotency_key: `approval.decided:${input.approval_id}`,
     payload: {
       approval_id: input.approval_id,
-      decision: "rejected",
+      decision: input.decision,
       decided_by: input.decided_by,
+      note: input.note ?? null,
     },
   });
-  return true;
-}
-
-async function waitForApprovalDecision(
-  pool: Pool,
-  approval_id: string,
-): Promise<boolean> {
-  const deadline = Date.now() + 2000;
-  while (Date.now() < deadline) {
-    const { rows } = await pool.query<{ decision: string }>(
-      `select decision from workflow_approvals where id = $1`,
-      [approval_id],
-    );
-    if (!rows[0]) return false;
-    if (rows[0].decision !== "pending") return true;
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  return false;
+  const canonical = event.payload as { decision: string };
+  if (canonical.decision !== input.decision) return false;
+  const transitioned = await projectWorkflowApprovalDecision(pool, event);
+  if (transitioned) return true;
+  const { rows } = await pool.query<{ decision: string }>(
+    `select decision from workflow_approvals where id = $1`,
+    [input.approval_id],
+  );
+  return rows[0]?.decision === input.decision;
 }
 
 export async function getProductReviewPulse(

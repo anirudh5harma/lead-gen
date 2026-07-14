@@ -39,15 +39,28 @@ worker also runs the typed-event signal bridge: `ctx.awaitEvent` writes a
 `workflow_event_waits` row, and matching bus events resolve the workflow-bound
 durable promise through Restate ingress. Channel maintenance workflows hosted
 there are tenant-scoped: `email_domain_warmup_sweep` and
-`email_outlook_subscription_repair`.
+`email_outlook_subscription_repair`. Approval gates publish typed
+`approval.requested`/`approval.decided` events; the durable approval projector
+materializes the shared review surface for both Restate and local Postgres
+workflow runtimes. Human decisions are event-first: a separate durable
+`workflow-approval-runtime-resolver-v1` consumer resolves the Restate awakeable,
+so request handlers never hold database locks across Restate RPC and failed
+resolution is retried by NATS.
 
 `POST /api/internal/workflows/maintenance` is the authenticated operational
 ingress for routine platform and tenant work. It starts explicitly
 platform-scoped, idempotently keyed Restate invocations for
 `ingest_catalog_poll` and `ingest_expire_sweep`, plus due workspace
 invocations for `ingest_workspace_poll`, `email_domain_warmup_sweep`, and
-`email_outlook_subscription_repair`. Platform workflows cannot invoke generic
+`email_outlook_subscription_repair`, plus `billing_trial_week_reminder`.
+Platform workflows cannot invoke generic
 typed-event publication without a tenant projection; event-producing ingest
 logic emits against each destination workspace. The ingress does not project
 or mutate domain state itself. Deployments must invoke it from their
 worker/control plane using `MAINTENANCE_TRIGGER_SECRET`.
+Discovery and Restate ingress are bounded by
+`MAINTENANCE_WORKSPACE_POLL_LIMIT`, `MAINTENANCE_TARGET_LIMIT`, and
+`MAINTENANCE_START_CONCURRENCY`; retries remain safe through stable workflow
+keys, while durable per-category fanout cursors rotate capped discovery fairly
+across workspaces.
+keys.

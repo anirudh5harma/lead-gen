@@ -19,15 +19,33 @@ Deploy the same image with a different `WORKER_COMMAND`.
 
 | Process | `WORKER_COMMAND` | Purpose |
 |---|---|---|
-| Production worker | `worker:production` | Restate workflow host, event-wait bridge, email projectors, signal projectors, and dispatch redrive over one shared NATS connection |
+| Production worker | `worker:production` | Restate workflow host, event-wait bridge, approval projector/runtime resolver, email/signal projectors, and dispatch redrive over one shared NATS connection |
 | Email projectors | `worker:email-projectors` | SES/Outlook provider ingress to channel projections and workflow starts |
 | Signal projectors | `worker:signal-projectors` | Signal lifecycle projections and `signal.ingested` classification |
-| Restate workflows | `worker:restate-workflows` | Native Restate workflow handler host and event-wait bridge |
+| Restate workflows | `worker:restate-workflows` | Native Restate workflow handler host, event-wait bridge, and approval projector/runtime resolver |
 
 Prefer `worker:production` until the NATS account supports enough active
 connections for separate long-running consumers plus app ingress. It preserves
 the same typed event bus and Restate workflow boundaries while reducing the
 runtime connection footprint.
+
+### Approval and maintenance migration rollout
+
+Apply `047_restate_workflow_approvals.sql` and
+`048_maintenance_fanout_cursors.sql` before deploying workers that emit opaque
+Restate approval ids or use fair maintenance fanout. Migration 047 uses a
+bounded lock timeout and retains local workflow cascade cleanup through
+`local_run_id`; its compatibility trigger also protects approvals written by a
+draining old worker during rollout.
+
+Before migration, snapshot approval counts by decision and check for long
+transactions touching `workflow_approvals`. After migration, verify `id` and
+`run_id` are `text`, `local_run_id` is `uuid`, legacy local rows still join
+`workflow_runs`, both migration filenames are present in `schema_migrations`,
+and one staging Restate approval can be requested and decided end to end.
+Rollback to UUID columns is safe only before the first opaque Restate id is
+stored; after that boundary, keep the migrations and forward-fix. Migration
+048 is additive and can remain during an application rollback.
 
 Build the worker image:
 
@@ -87,6 +105,7 @@ advertises the full required service set, including
 `workspace.signal.matching`,
 `workspace.vertical_intelligence.refresh`,
 `contact.resolve_for_signal.v1`, `ingest_shared_x_poll`, and the Exa workflows, and
+`billing_trial_week_reminder` for tenant-scoped, replay-safe trial lifecycle email, and
 `npm run verify:restate-runtime` completed
 `system.restate_runtime_probe.v1` with run
 `inv_1aad8PkwVeZz4b6dIS7Wt89Db8DnNEeMi5`. The rev33 deployment also makes the

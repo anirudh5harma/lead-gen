@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import type { EventBus, PublishedEvent } from "../../events/index.ts";
+import {
+  createWorkflowApprovalProjection,
+  normalizeApprovalPayload,
+  projectWorkflowApprovalDecision,
+} from "../approvals.ts";
 import type {
   ApprovalDecision,
   ApprovalRequest,
@@ -25,9 +30,9 @@ import type {
  * resume; this adapter is the bridge: journaled enough to observe in real
  * time, simple enough to run on a single box.
  *
- * Approval gates: requestApproval persists to workflow_approvals and parks
- * the workflow on `approval.decided`. resolveApproval updates the row and
- * publishes `approval.decided` — the bus wakes the parked Promise.
+ * Approval gates are event-first projections. requestApproval publishes and
+ * parks; resolveApproval publishes the decision, materializes it, and wakes
+ * the parked Promise.
  */
 
 export interface PostgresWorkflowRuntimeOptions {
@@ -111,6 +116,7 @@ export function createPostgresWorkflowRuntime(
           decision: (event.payload as { decision: ApprovalDecision["decision"] }).decision,
           decided_by:
             (event.payload as { decided_by: string | null }).decided_by ?? undefined,
+          note: (event.payload as { note?: string | null }).note ?? undefined,
         });
       }
     }
@@ -348,32 +354,27 @@ export function createPostgresWorkflowRuntime(
         }
 
         const approval_id = randomUUID();
-        await pool.query(
-          `insert into workflow_approvals (
-             id, run_id, workspace_id, kind, reason, payload, expires_at, created_at
-           ) values ($1, $2, $3, $4, $5, $6::jsonb, $7, now())`,
-          [
-            approval_id,
-            rec.run.id,
-            rec.run.workspace_id,
-            req.kind,
-            req.reason ?? null,
-            JSON.stringify(req.payload ?? {}),
-            req.expires_at ?? null,
-          ],
-        );
         await setRunStatus(pool, rec.run, "awaiting_approval");
         const decision = new Promise<ApprovalDecision>((resolve) => {
           rec.parkedApprovals.set(approval_id, { resolve });
         });
-        await bus.publish({
+        const event = await bus.publish({
           workspace_id: rec.run.workspace_id!,
           event_type: "approval.requested",
           source: "system",
           producer_ref: `workflow:${rec.run.workflow_name}:${rec.run.id}`,
           correlation_id: rec.run.correlation_id ?? rec.run.id,
-          payload: { approval_id, run_id: rec.run.id, step_id: null, kind: req.kind },
+          payload: {
+            approval_id,
+            run_id: rec.run.id,
+            step_id: null,
+            kind: req.kind,
+            reason: req.reason ?? null,
+            payload: normalizeApprovalPayload(req.payload),
+            expires_at: req.expires_at ?? null,
+          },
         });
+        await createWorkflowApprovalProjection(pool).apply(event);
         return decision;
       },
 
@@ -616,35 +617,41 @@ export function createPostgresWorkflowRuntime(
     },
 
     async resolveApproval(approval_id, decision) {
-      // Persist the decision; the bus then wakes the parked workflow via
-      // approval.decided.
       const result = await pool.query<{ workspace_id: string; run_id: string }>(
-        `update workflow_approvals
-            set decision = $1,
-                decided_by = $2,
-                decided_at = now(),
-                decision_note = $3
-          where id = $4 and decision = 'pending'
-        returning workspace_id, run_id`,
-        [decision.decision, decision.decided_by ?? null, decision.note ?? null, approval_id],
+        `select workspace_id, run_id
+           from workflow_approvals
+          where id = $1 and decision = 'pending'`,
+        [approval_id],
       );
       const row = result.rows[0];
       if (!row) {
         // Either unknown id or already decided. Either way: nothing to wake.
         return;
       }
-      await bus.publish({
+      const event = await bus.publish({
         workspace_id: row.workspace_id,
         event_type: "approval.decided",
         source: "user",
         producer_ref: decision.decided_by ?? null,
+        idempotency_key: `approval.decided:${approval_id}`,
         payload: {
           approval_id,
           decision: decision.decision,
           decided_by: decision.decided_by ?? null,
+          note: decision.note ?? null,
         },
       });
-      await wakeParkedApproval(approval_id, decision);
+      await projectWorkflowApprovalDecision(pool, event);
+      const canonical = event.payload as {
+        decision: ApprovalDecision["decision"];
+        decided_by: string | null;
+        note?: string | null;
+      };
+      await wakeParkedApproval(approval_id, {
+        decision: canonical.decision,
+        decided_by: canonical.decided_by ?? undefined,
+        note: canonical.note ?? undefined,
+      });
     },
 
     async drain() {

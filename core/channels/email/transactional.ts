@@ -26,6 +26,8 @@ export interface TransactionalSendInput {
   category: string;
   /** Reply-To, if the recipient should reply somewhere other than no-reply. */
   reply_to?: string;
+  /** Stable provider key. Required for workflow/projector retry safety. */
+  idempotency_key?: string;
 }
 
 export interface TransactionalSender {
@@ -54,15 +56,20 @@ export function createTransactionalSender(
 
   return {
     async send(input: TransactionalSendInput): Promise<{ external_id: string }> {
-      const result = await client.emails.send({
-        from: opts.from,
-        to: [input.to],
-        subject: input.subject,
-        text: input.text,
-        html: input.html,
-        replyTo: input.reply_to,
-        tags: [{ name: "category", value: input.category }],
-      });
+      const result = await client.emails.send(
+        {
+          from: opts.from,
+          to: [input.to],
+          subject: input.subject,
+          text: input.text,
+          html: input.html,
+          replyTo: input.reply_to,
+          tags: [{ name: "category", value: input.category }],
+        },
+        input.idempotency_key
+          ? { idempotencyKey: input.idempotency_key }
+          : undefined,
+      );
       if (result.error) {
         throw new Error(
           `Resend send failed: ${result.error.message ?? JSON.stringify(result.error)}`,

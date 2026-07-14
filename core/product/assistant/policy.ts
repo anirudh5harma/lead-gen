@@ -12,6 +12,7 @@ interface ConfirmationPayload {
 
 export function toolRequiresConfirmation(toolName: string): boolean {
   return (
+    toolName === "update_icp" ||
     toolName === "decide_approval" ||
     toolName === "dispatch_outreach" ||
     toolName === "retry_failed_workflow"
@@ -22,6 +23,15 @@ export function describeConfirmation(
   toolName: string,
   input: Record<string, unknown>,
 ): Omit<AssistantConfirmationRequest, "token"> {
+  if (toolName === "update_icp") {
+    return {
+      title: "Update ICP profile?",
+      body: "This will update the selected ICP name or description while preserving its matching rules and threshold.",
+      confirm_label: "Update ICP",
+      cancel_label: "Cancel",
+    };
+  }
+
   if (toolName === "decide_approval") {
     const decision =
       typeof input.decision === "string" ? input.decision : "approved";
@@ -109,4 +119,3 @@ export function verifyConfirmationToken(
   }
   return payload;
 }
-

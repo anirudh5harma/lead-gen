@@ -1,5 +1,6 @@
 import { createDeepSeekClientFromEnv } from "../core/agents/llm/index.ts";
 import { createDeepSeekJudge } from "../core/agents/eval/index.ts";
+import { createTrialWeekReminderWorkflow } from "../core/billing/index.ts";
 import {
   createWorkspaceActivationSetupWorkflow,
   createWorkspaceCampaignStrategyWorkflow,
@@ -94,6 +95,8 @@ import { serveRestateWorkflows } from "../core/substrate/workflows/adapters/rest
 import {
   createRestateWorkflowRuntime,
   createRestateRuntimeProbeWorkflow,
+  registerWorkflowApprovalProjectors,
+  registerWorkflowApprovalResolver,
   restateBearerFromEnv,
 } from "../core/substrate/workflows/index.ts";
 import { resolveRestateWorkflowPort } from "./worker-port.ts";
@@ -268,6 +271,7 @@ const workflows = [
     accessTokens: outlook,
     notificationUrl: `${appOrigin}/api/webhooks/outlook`,
   }),
+  createTrialWeekReminderWorkflow({ pool }),
   createExaProfileBootstrapWorkflow(),
   createExaBriefRefreshWorkflow(),
   createExaRepResearchWorkflow(),
@@ -319,6 +323,18 @@ const signalSubscriptions = await registerSignalProjectors(
     },
   },
 );
+const approvalSubscriber = {
+  subscribe(eventType, handler, durableName) {
+    return bus.subscribeScoped("*", eventType, handler, { durableName });
+  },
+} satisfies Parameters<typeof registerWorkflowApprovalProjectors>[1];
+const approvalSubscriptions = [
+  ...await registerWorkflowApprovalProjectors({ pool }, approvalSubscriber),
+  await registerWorkflowApprovalResolver(
+    { pool, runtime: workflowsClient },
+    approvalSubscriber,
+  ),
+];
 const playDispatchSubscriptions = productEventDispatchLimit === 0
   ? []
   : await registerProductEventDispatchers(
@@ -455,6 +471,7 @@ async function shutdown(): Promise<void> {
   await Promise.all([
     ...emailSubscriptions.map((subscription) => subscription.unsubscribe()),
     ...signalSubscriptions.map((subscription) => subscription.unsubscribe()),
+    ...approvalSubscriptions.map((subscription) => subscription.unsubscribe()),
     ...playDispatchSubscriptions.map((subscription) => subscription.unsubscribe()),
   ]);
   await bus.close();

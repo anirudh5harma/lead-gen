@@ -12,6 +12,7 @@ interface RecordedRequest {
   method: string;
   headers: Record<string, string>;
   body: unknown;
+  signal: AbortSignal | null | undefined;
 }
 
 function spyFetch(
@@ -52,6 +53,7 @@ function spyFetch(
       method: init?.method ?? "GET",
       headers: headersRaw,
       body: parsedBody,
+      signal: init?.signal,
     });
     const { status = 200, body, headers } = responder(calls[calls.length - 1]);
     return new Response(body === undefined ? null : JSON.stringify(body), {
@@ -114,6 +116,7 @@ test("restate client: start() submits a keyed native workflow with input + metad
       causation_id: null,
     },
   });
+  assert.ok(calls[0].signal instanceof AbortSignal);
 });
 
 test("restate client: platform starts carry explicit platform scope without a tenant id", async () => {

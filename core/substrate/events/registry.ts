@@ -153,6 +153,17 @@ const WorkspaceIcpConfigured = z.object({
   enabled: z.boolean(),
 });
 
+const WorkspaceIcpTextUpdated = z
+  .object({
+    icp_id: z.string().uuid(),
+    name: z.string().min(1).optional(),
+    description: z.string().min(1).optional(),
+  })
+  .refine(
+    (payload) =>
+      payload.name !== undefined || payload.description !== undefined,
+  );
+
 const WorkspaceCompanyTracked = z.object({
   company_id: z.string().uuid(),
   name: z.string().min(1),
@@ -887,16 +898,20 @@ const ReplyClassified = z.object({
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ApprovalRequested = z.object({
-  approval_id: z.string().uuid(),
+  approval_id: z.string().min(1).max(2048),
   run_id: WorkflowRunId,
   step_id: z.string().uuid().nullable(),
   kind: z.string(),
+  reason: z.string().nullable().optional(),
+  payload: z.record(z.string(), z.unknown()).optional(),
+  expires_at: z.string().datetime().nullable().optional(),
 });
 
 const ApprovalDecided = z.object({
-  approval_id: z.string().uuid(),
+  approval_id: z.string().min(1).max(2048),
   decision: z.enum(["approved", "rejected", "expired"]),
   decided_by: z.string().uuid().nullable(),
+  note: z.string().nullable().optional(),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1752,6 +1767,7 @@ export const eventRegistry = {
   "rep.configured": RepConfigured,
   "rep.role.completed": RepRoleCompleted,
   "workspace.icp.configured": WorkspaceIcpConfigured,
+  "workspace.icp.text_updated": WorkspaceIcpTextUpdated,
   "workspace.company.tracked": WorkspaceCompanyTracked,
   "workspace.company.profiled": WorkspaceCompanyProfiled,
   "workspace.profile.drafted": WorkspaceProfileDrafted,

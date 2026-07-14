@@ -1,4 +1,5 @@
 import { createDeepSeekClientFromEnv } from "../core/agents/llm/index.ts";
+import { createTrialWeekReminderWorkflow } from "../core/billing/index.ts";
 import {
   createDeepSeekJudge,
 } from "../core/agents/eval/index.ts";
@@ -84,7 +85,12 @@ import {
 } from "../core/substrate/workflows/adapters/restate-signal-bridge.ts";
 import { serveRestateWorkflows } from "../core/substrate/workflows/adapters/restate-host.ts";
 import { restateBearerFromEnv } from "../core/substrate/workflows/adapters/restate.ts";
-import { createRestateRuntimeProbeWorkflow } from "../core/substrate/workflows/index.ts";
+import {
+  createRestateWorkflowRuntime,
+  createRestateRuntimeProbeWorkflow,
+  registerWorkflowApprovalProjectors,
+  registerWorkflowApprovalResolver,
+} from "../core/substrate/workflows/index.ts";
 import { resolveRestateWorkflowPort } from "./worker-port.ts";
 
 console.log("[restate-workflows] booting");
@@ -224,6 +230,7 @@ const workflows = [
     accessTokens: outlook,
     notificationUrl: `${appOrigin}/api/webhooks/outlook`,
   }),
+  createTrialWeekReminderWorkflow({ pool }),
   createExaProfileBootstrapWorkflow(),
   createExaBriefRefreshWorkflow(),
   createExaRepResearchWorkflow(),
@@ -242,6 +249,22 @@ const bound = await serveRestateWorkflows({
   http1: process.env.RESTATE_WORKFLOW_HTTP1 === "1",
 });
 console.log(`[restate-workflows] handler listening on ${bound}`);
+const approvalSubscriber = {
+  subscribe(eventType, handler, durableName) {
+    return bus.subscribeScoped("*", eventType, handler, { durableName });
+  },
+} satisfies Parameters<typeof registerWorkflowApprovalProjectors>[1];
+await registerWorkflowApprovalProjectors({ pool }, approvalSubscriber);
+await registerWorkflowApprovalResolver(
+  {
+    pool,
+    runtime: createRestateWorkflowRuntime({
+      ingressUrl: restateIngressUrl,
+      bearer: restateBearerFromEnv(),
+    }),
+  },
+  approvalSubscriber,
+);
 await startRestateEventSignalBridge({
   pool,
   bus,

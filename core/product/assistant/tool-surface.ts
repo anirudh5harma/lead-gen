@@ -28,8 +28,16 @@ const AssistantToolInputSchemas = {
   generate_meeting_prep: z.object({
     conversation_id: AssistantUuidSchema,
   }).strict(),
+  update_icp: z.object({
+    icp_id: AssistantUuidSchema,
+    name: z.string().trim().min(1).max(200).optional(),
+    description: z.string().trim().min(1).max(2_000).optional(),
+  }).strict().refine(
+    (input) => input.name !== undefined || input.description !== undefined,
+    { message: "ICP name or description required" },
+  ),
   decide_approval: z.object({
-    approval_id: AssistantUuidSchema,
+    approval_id: z.string().min(1).max(2048),
     decision: z.enum(["approved", "rejected"]),
     note: z.string().trim().min(1).max(500).optional(),
   }).strict(),
@@ -159,6 +167,29 @@ const TOOL_DEFS: Record<AssistantToolName, AssistantToolDefinition> = {
       required: ["conversation_id"],
     },
   },
+  update_icp: {
+    name: "update_icp",
+    description:
+      "Rename or redescribe an existing ICP without changing its matching rules.",
+    inputSchema: AssistantToolInputSchemas.update_icp,
+    productTool: "product.icp.update",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        icp_id: {
+          type: "string",
+          description: "Existing ICP UUID from workspace context.",
+        },
+        name: { type: "string", description: "Optional new ICP name." },
+        description: {
+          type: "string",
+          description: "Optional new ICP description.",
+        },
+      },
+      required: ["icp_id"],
+    },
+  },
   decide_approval: {
     name: "decide_approval",
     description:
@@ -171,7 +202,7 @@ const TOOL_DEFS: Record<AssistantToolName, AssistantToolDefinition> = {
       properties: {
         approval_id: {
           type: "string",
-          description: "Pending approval UUID.",
+          description: "Opaque pending approval gate ID.",
         },
         decision: {
           type: "string",

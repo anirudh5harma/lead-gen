@@ -109,6 +109,8 @@ const REQUIRED_MIGRATIONS = [
   "029_workflow_run_leases.sql",
   "030_event_projection_jobs.sql",
   "031_procedural_memory_applications.sql",
+  "047_restate_workflow_approvals.sql",
+  "048_maintenance_fanout_cursors.sql",
 ];
 
 const READINESS_CACHE_TTL_MS = 15_000;
@@ -161,6 +163,7 @@ export const REQUIRED_RESTATE_SERVICES = [
   "channel.email_domain_warmup.v1",
   "email_domain_warmup_sweep",
   "email_outlook_subscription_repair",
+  "billing_trial_week_reminder",
   "profile.bootstrap.exa",
   "rep.brief.refresh.exa",
   "rep.research.exa",

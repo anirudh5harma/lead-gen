@@ -1109,14 +1109,14 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
     description: "stub approval decision",
     kind: "write",
     input: z.object({
-      approval_id: z.string().uuid(),
+      approval_id: z.string().min(1).max(2048),
       decision: z.enum(["approved", "rejected"]),
       note: z.string().optional(),
     }),
-    output: z.object({ ok: z.literal(true) }),
+    output: z.object({ ok: z.boolean() }),
     async handler(input) {
       approvalDecisions.push(input);
-      return { ok: true };
+      return { ok: input.approval_id !== "awakeable-missing" };
     },
   });
   registerTool({
@@ -1465,6 +1465,13 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
   );
   assert.equal(rejected.ok, true);
   assert.equal(rejected.next_action, "refresh_approvals");
+
+  const missing = await invokeTool<{ ok: boolean }>(
+    "bombsell.approvals.decide",
+    { approval_id: "awakeable-missing", decision: "rejected" },
+    { workspace_id, user_id },
+  );
+  assert.equal(missing.ok, false);
 
   const learning = await invokeTool<{ useful_outcome_count: number; counts_by_kind: Record<string, number> }>(
     "bombsell.learning.get",

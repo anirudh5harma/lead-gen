@@ -11,6 +11,7 @@ import type {
   WorkflowRun,
   WorkflowRuntime,
 } from "../types.ts";
+import { normalizeApprovalPayload } from "../approvals.ts";
 
 /**
  * In-process workflow runtime. Journals to memory; runs the workflow body in
@@ -219,6 +220,9 @@ export function createInProcessWorkflowRuntime(
               run_id: rec.run.id,
               step_id: null,
               kind: req.kind,
+              reason: req.reason ?? null,
+              payload: normalizeApprovalPayload(req.payload),
+              expires_at: req.expires_at ?? null,
             },
           });
         }
@@ -344,6 +348,7 @@ export function createInProcessWorkflowRuntime(
               approval_id,
               decision: decision.decision,
               decided_by: decision.decided_by ?? null,
+              note: decision.note ?? null,
             },
           });
         }

@@ -304,7 +304,9 @@ test("Restate RunContext requests approval with an awakeable id", async () => {
 
   const decision = await ctx.requestApproval({
     kind: "draft.send",
+    reason: "Judge passed; human send gate remains.",
     payload: { message_id: "m-1" },
+    expires_at: "2026-07-15T00:00:00.000Z",
   });
 
   assert.equal(decision.decision, "approved");
@@ -315,6 +317,9 @@ test("Restate RunContext requests approval with an awakeable id", async () => {
     run_id: "inv-approval",
     step_id: null,
     kind: "draft.send",
+    reason: "Judge passed; human send gate remains.",
+    payload: { message_id: "m-1" },
+    expires_at: "2026-07-15T00:00:00.000Z",
   });
 });
 

@@ -344,6 +344,17 @@ export function presentToolResult(
   }
 
   if (normalizedToolName === "decide_approval") {
+    if (result.ok !== true) {
+      return [
+        card({
+          kind: "status",
+          tone: "warning",
+          title: "Approval unchanged",
+          body: "The approval was missing, already decided, or no longer pending.",
+          actions: [{ label: "Open review queue", href: "/dashboard/agent#review-queue", variant: "solid" }],
+        }),
+      ];
+    }
     return [
       card({
         kind: "status",
@@ -351,6 +362,18 @@ export function presentToolResult(
         title: "Approval updated",
         body: "Bombsell recorded the approval decision and kept the existing channel and workflow gates intact.",
         actions: [{ label: "Open review queue", href: "/dashboard/agent#review-queue", variant: "solid" }],
+      }),
+    ];
+  }
+
+  if (normalizedToolName === "update_icp") {
+    return [
+      card({
+        kind: "status",
+        tone: "success",
+        title: "ICP updated",
+        body: "Bombsell updated the ICP text and preserved its matching rules and threshold.",
+        actions: [{ label: "Open profile", href: "/dashboard/profile", variant: "solid" }],
       }),
     ];
   }

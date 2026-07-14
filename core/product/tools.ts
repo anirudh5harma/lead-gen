@@ -52,6 +52,7 @@ import {
   submitManualSignal,
   trackCompanyForWorkspace,
   triageProductReply,
+  updateIcpText,
   type ProductWorkspaceSession,
 } from "./app.ts";
 import { getWorkspaceAgentObservabilitySummary } from "./agent-observability.ts";
@@ -597,7 +598,7 @@ const QualifiedSignalDraftSchema = z.object({
   latest_channel_event_at: z.string().datetime().nullable(),
   defer_reason: z.string().nullable(),
   defer_detail: z.string().nullable(),
-  pending_approval_id: z.string().uuid().nullable(),
+  pending_approval_id: z.string().min(1).max(2048).nullable(),
   created_at: z.string().datetime(),
 });
 const QualifiedSignalWorkbenchSchema = WorkspaceResultSchema.extend({
@@ -1572,6 +1573,24 @@ export function registerProductTools(): void {
   });
 
   registerTool({
+    name: "product.icp.update",
+    description:
+      "Rename or redescribe an existing ICP without replacing its matching rules, threshold, or enabled state.",
+    kind: "write",
+    input: z.object({
+      icp_id: z.string().uuid(),
+      name: z.string().trim().min(1).optional(),
+      description: z.string().trim().min(1).optional(),
+    }).refine((input) => input.name !== undefined || input.description !== undefined, {
+      message: "ICP name or description required",
+    }),
+    output: WorkspaceResultSchema.extend({ icp_id: z.string().uuid() }),
+    async handler(input, ctx) {
+      return updateIcpText(input, sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
     name: "product.play.signal_email.configure",
     description:
       "Create or update the signal-to-email outreach rules. Internally this compiles to the durable Play workflow with research, draft, judge, approval, contact resolution, and send steps.",
@@ -2306,19 +2325,19 @@ export function registerProductTools(): void {
       "Approve or reject a pending workflow approval gate. Approved sends still pass through the channel/eval/deliverability state machine.",
     kind: "write",
     input: z.object({
-      approval_id: z.string().uuid(),
+      approval_id: z.string().min(1).max(2048),
       decision: z.enum(["approved", "rejected"]),
       note: z.string().optional(),
     }),
-    output: z.object({ ok: z.literal(true) }),
+    output: z.object({ ok: z.boolean() }),
     async handler(input, ctx) {
-      await approveWorkflowApproval(
+      const ok = await approveWorkflowApproval(
         input.approval_id,
         input.decision,
         sessionFromContext(ctx),
         input.note,
       );
-      return { ok: true as const };
+      return { ok };
     },
   });
 

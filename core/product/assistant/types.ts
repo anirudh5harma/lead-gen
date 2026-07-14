@@ -10,6 +10,7 @@ export const ASSISTANT_TOOL_NAMES = [
   "recall_company_brain",
   "get_conversation_proof",
   "generate_meeting_prep",
+  "update_icp",
   "decide_approval",
   "dispatch_outreach",
   "retry_failed_workflow",

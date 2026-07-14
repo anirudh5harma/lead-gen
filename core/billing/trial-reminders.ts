@@ -6,6 +6,7 @@ import type {
 } from "../substrate/events/index.ts";
 import { createTransactionalSender, type TransactionalSender } from "../channels/email/index.ts";
 import { getWorkspaceBillingState } from "./credits.ts";
+import { defineWorkflow } from "../substrate/workflows/index.ts";
 
 const DEFAULT_FROM = "Bombsell <no-reply@mail.bombsell.com>";
 
@@ -25,7 +26,35 @@ export interface TrialReminderProjectionDeps {
   now?: () => Date;
 }
 
-export type DueTrialReminderSweepDeps = TrialReminderProjectionDeps;
+export type TrialWeekReminderWorkflowDeps = TrialReminderProjectionDeps;
+
+export async function listDueTrialWeekReminderWorkspaces(
+  pool: Pick<Pool, "query">,
+  now: Date,
+  limit: number,
+  cursor: string | null,
+): Promise<Array<{ workspace_id: string }>> {
+  const { rows } = await pool.query<{ workspace_id: string }>(
+    `select id as workspace_id
+       from workspaces
+      where archived_at is null
+        and credits_exhausted_at is not null
+        and credits_exhausted_at <= $1::timestamptz - interval '7 days'
+        and trial_reminder_week_sent_at is null
+        and not (
+          subscription_status = 'active'
+          or (
+            subscription_status = 'canceled'
+            and subscription_renews_at > $1::timestamptz
+          )
+        )
+      order by (id > coalesce($2::uuid, '00000000-0000-0000-0000-000000000000'::uuid)) desc,
+               id
+      limit $3`,
+    [now, cursor, limit],
+  );
+  return rows;
+}
 
 function reminderEnabled(enabled?: boolean): boolean {
   if (typeof enabled === "boolean") return enabled;
@@ -112,6 +141,7 @@ async function sendLowReminder(
       `You have ${event.payload.credits_remaining} of ${event.payload.credits_total} trial credits left on ${workspaceLabel(recipient.workspace_name)}.\n\n` +
       "Each send uses one credit. Upgrade to Pro for unlimited sending before outreach pauses.",
     category: "trial_low_credits",
+    idempotency_key: `trial-low:${event.workspace_id}`,
   });
   await markReminderSent(
     deps.pool,
@@ -142,6 +172,7 @@ async function sendExhaustedReminder(
       `Trial credits are used up for ${workspaceLabel(recipient.workspace_name)}.\n\n` +
       "Signals, drafts, and prep will keep running, but sending is paused until you upgrade to Pro.",
     category: "trial_exhausted",
+    idempotency_key: `trial-exhausted:${event.workspace_id}`,
   });
   await markReminderSent(
     deps.pool,
@@ -173,50 +204,68 @@ export function createTrialReminderProjection(
   };
 }
 
-export async function sendDueTrialWeekReminders(
-  deps: DueTrialReminderSweepDeps,
-): Promise<number> {
-  if (!reminderEnabled(deps.enabled)) return 0;
-  const now = deps.now?.() ?? new Date();
-  const { rows } = await deps.pool.query<{ workspace_id: string }>(
-    `select id as workspace_id
-       from workspaces
-      where credits_exhausted_at is not null
-        and credits_exhausted_at <= $1::timestamptz - interval '7 days'
-        and trial_reminder_week_sent_at is null
-        and not (
-          subscription_status = 'active'
-          or (
-            subscription_status = 'canceled'
-            and subscription_renews_at > $1::timestamptz
-          )
-        )
-      order by credits_exhausted_at asc`,
-    [now.toISOString()],
-  );
-  const sender = getSender(deps);
-  let sent = 0;
-  for (const row of rows) {
-    const state = await getWorkspaceBillingState(deps.pool, row.workspace_id);
-    if (!state.frozen || state.tier === "pro") continue;
-    const recipient =
-      await (deps.loadRecipient ?? loadReminderRecipient)(deps.pool, row.workspace_id);
-    if (!recipient?.email) continue;
-    await sender.send({
-      to: recipient.email,
-      subject: `Outreach is still paused for ${workspaceLabel(recipient.workspace_name)}`,
-      text:
-        `Outreach has been paused for a week on ${workspaceLabel(recipient.workspace_name)} because the trial is exhausted.\n\n` +
-        "Upgrade to Pro to resume held sends instantly.",
-      category: "trial_week_frozen",
-    });
-    const marked = await markReminderSent(
+export async function sendTrialWeekReminderForWorkspace(
+  deps: TrialWeekReminderWorkflowDeps,
+  workspace_id: string,
+  now = deps.now?.() ?? new Date(),
+): Promise<boolean> {
+  if (!reminderEnabled(deps.enabled)) return false;
+  if (
+    await wasReminderSent(
       deps.pool,
-      row.workspace_id,
+      workspace_id,
       "trial_reminder_week_sent_at",
-      now,
-    );
-    if (marked) sent += 1;
+    )
+  ) {
+    return false;
   }
-  return sent;
+  const state = await getWorkspaceBillingState(deps.pool, workspace_id);
+  if (!state.frozen || state.tier === "pro") return false;
+  const recipient = await (deps.loadRecipient ?? loadReminderRecipient)(
+    deps.pool,
+    workspace_id,
+  );
+  if (!recipient?.email) return false;
+  await getSender(deps).send({
+    to: recipient.email,
+    subject: `Outreach is still paused for ${workspaceLabel(recipient.workspace_name)}`,
+    text:
+      `Outreach has been paused for a week on ${workspaceLabel(recipient.workspace_name)} because the trial is exhausted.\n\n` +
+      "Upgrade to Pro to resume held sends instantly.",
+    category: "trial_week_frozen",
+    idempotency_key: `trial-week:${workspace_id}`,
+  });
+  return markReminderSent(
+    deps.pool,
+    workspace_id,
+    "trial_reminder_week_sent_at",
+    now,
+  );
+}
+
+export function createTrialWeekReminderWorkflow(
+  deps: TrialWeekReminderWorkflowDeps,
+) {
+  return defineWorkflow<
+    { workspace_id: string },
+    { sent: boolean }
+  >({
+    name: "billing_trial_week_reminder",
+    version: "1",
+    async run(input, ctx) {
+      if (
+        ctx.execution_scope !== "workspace" ||
+        !ctx.workspace_id ||
+        ctx.workspace_id !== input.workspace_id
+      ) {
+        throw new Error(
+          "input workspace does not match workflow workspace",
+        );
+      }
+      const sent = await ctx.step("send trial week reminder", () =>
+        sendTrialWeekReminderForWorkspace(deps, input.workspace_id)
+      );
+      return { sent };
+    },
+  });
 }

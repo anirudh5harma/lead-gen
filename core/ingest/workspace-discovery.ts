@@ -341,7 +341,9 @@ export function deriveSignalCompanyHint(input: {
       structured?.domain,
     );
     return makeSignalCompanyHint({
-      name: domain ? companyNameFromDomain(domain) : null,
+      name:
+        (domain ? companyNameFromDomain(domain) : null) ??
+        stringValue(structured?.name),
       domain,
       description:
         stringValue(structured?.description) ??

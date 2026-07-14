@@ -84,6 +84,13 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     example: "60000",
   },
   {
+    name: "DASHBOARD_DATA_CONCURRENCY",
+    requirement: "optional",
+    category: "database",
+    description: "Maximum concurrent dashboard derived-data queries per app process.",
+    example: "4",
+  },
+  {
     name: "APP_ORIGIN",
     requirement: "production",
     category: "runtime",
@@ -682,6 +689,27 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     requirement: "production",
     category: "substrate",
     description: "Bearer secret accepted by the authenticated workflow maintenance route.",
+  },
+  {
+    name: "MAINTENANCE_START_CONCURRENCY",
+    requirement: "optional",
+    category: "substrate",
+    description: "Maximum concurrent Restate starts submitted by one maintenance request.",
+    example: "10",
+  },
+  {
+    name: "MAINTENANCE_TARGET_LIMIT",
+    requirement: "optional",
+    category: "substrate",
+    description: "Maximum due targets discovered per tenant maintenance category and request.",
+    example: "500",
+  },
+  {
+    name: "MAINTENANCE_WORKSPACE_POLL_LIMIT",
+    requirement: "optional",
+    category: "substrate",
+    description: "Maximum due workspace signal sources discovered per maintenance request.",
+    example: "100",
   },
   {
     name: "CRON_SECRET",

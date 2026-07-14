@@ -64,3 +64,12 @@ export type {
 } from "./probe.ts";
 export { createPostgresWorkflowRuntime } from "./adapters/postgres.ts";
 export type { PostgresWorkflowRuntimeOptions } from "./adapters/postgres.ts";
+export {
+  createWorkflowApprovalProjection,
+  normalizeApprovalPayload,
+  isStaleRestateApprovalResolutionError,
+  projectWorkflowApprovalDecision,
+  registerWorkflowApprovalProjectors,
+  registerWorkflowApprovalResolver,
+} from "./approvals.ts";
+export type { WorkflowApprovalSubscriber } from "./approvals.ts";

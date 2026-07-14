@@ -161,6 +161,37 @@ test("event bus: workflow lifecycle accepts Restate invocation ids", async () =>
   );
 });
 
+test("event bus: approval lifecycle accepts opaque Restate awakeable ids", async () => {
+  const bus = createInMemoryEventBus();
+  const approvalId = "sign_01JRESTATEDURABLEAWAKEABLE";
+  const requested = await bus.publish({
+    workspace_id: randomUUID(),
+    event_type: "approval.requested",
+    source: "system",
+    producer_ref: "workflow:test",
+    payload: {
+      approval_id: approvalId,
+      run_id: "inv_01JRESTATERUN",
+      step_id: null,
+      kind: "outbound.email.send",
+    },
+  });
+  const decided = await bus.publish({
+    workspace_id: requested.workspace_id,
+    event_type: "approval.decided",
+    source: "user",
+    producer_ref: randomUUID(),
+    payload: {
+      approval_id: approvalId,
+      decision: "approved",
+      decided_by: randomUUID(),
+    },
+  });
+
+  assert.equal(requested.payload.approval_id, approvalId);
+  assert.equal(decided.payload.approval_id, approvalId);
+});
+
 test("event bus: wildcard subscriber receives every event", async () => {
   const bus = createInMemoryEventBus();
   const seen: string[] = [];
@@ -284,4 +315,30 @@ test("event bus: event dispatch redrive is a typed audit event", async () => {
   });
 
   assert.equal(event.payload.status, "pending");
+});
+
+test("event bus: ICP text updates are partial typed lifecycle events", async () => {
+  const bus = createInMemoryEventBus();
+  const event = await bus.publish({
+    workspace_id: randomUUID(),
+    event_type: "workspace.icp.text_updated",
+    source: "user",
+    producer_ref: randomUUID(),
+    payload: {
+      icp_id: randomUUID(),
+      description: "Series A infrastructure teams",
+    },
+  });
+
+  assert.equal(event.payload.description, "Series A infrastructure teams");
+  await assert.rejects(
+    bus.publish({
+      workspace_id: randomUUID(),
+      event_type: "workspace.icp.text_updated",
+      source: "user",
+      producer_ref: randomUUID(),
+      payload: { icp_id: randomUUID() },
+    }),
+    /Invalid input/,
+  );
 });

@@ -191,6 +191,154 @@ test("maintenance trigger reports one workflow start failure and continues other
   }
 });
 
+test("maintenance trigger bounds Restate start concurrency and routes trial reminders through workflows", async () => {
+  const workspaceIds = Array.from({ length: 8 }, () => randomUUID());
+  const calls: Array<StartOptions<unknown>> = [];
+  let active = 0;
+  let peak = 0;
+  const query = async (sql: string) => {
+      if (sql === "begin" || sql === "commit" || sql === "rollback") return { rows: [] };
+      if (sql.includes("maintenance_fanout_cursors") && sql.includes("insert into")) {
+        return { rows: [] };
+      }
+      if (sql.includes("maintenance_fanout_cursors") && sql.includes("select last_workspace_id")) {
+        return { rows: [{ last_workspace_id: null }] };
+      }
+      if (sql.includes("maintenance_fanout_cursors") && sql.includes("update")) {
+        return { rows: [] };
+      }
+      if (sql.includes("from platform_signal_sources")) return { rows: [] };
+      if (sql.includes("from workspace_source_configs")) {
+        return {
+          rows: workspaceIds.map((workspace_id, index) => ({
+            workspace_id,
+            source_id: randomUUID(),
+            poll_cadence_sec: 900 + index,
+          })),
+        };
+      }
+      if (sql.includes("from sending_domains")) return { rows: [] };
+      if (sql.includes("from channel_accounts")) return { rows: [] };
+      if (sql.includes("credits_exhausted_at")) {
+        return { rows: [{ workspace_id: workspaceIds[0] }] };
+      }
+      throw new Error(`unexpected query: ${sql}`);
+  };
+  const pool = {
+    query,
+    async connect() {
+      return { query, release() {} };
+    },
+  } as unknown as Pool;
+  const runtime = {
+    async start<I, O = unknown>(
+      opts: StartOptions<I>,
+    ): Promise<WorkflowRun<I, O>> {
+      calls.push(opts as StartOptions<unknown>);
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active -= 1;
+      return {
+        id: randomUUID(),
+        execution_scope: opts.execution_scope ?? "workspace",
+        workspace_id: opts.workspace_id,
+        workflow_name: opts.workflow_name,
+        workflow_version: "1",
+        status: "running",
+        input: opts.input,
+        created_at: "2026-05-27T12:34:00.000Z",
+      };
+    },
+  } satisfies Pick<WorkflowRuntime, "start">;
+
+  const summary = await triggerDueWorkspaceMaintenance({
+    pool,
+    runtime,
+    now: () => new Date("2026-05-27T12:34:00.000Z"),
+    startConcurrency: 3,
+  });
+
+  assert.equal(peak, 3);
+  assert.equal(summary.workspace_polls_started, workspaceIds.length);
+  assert.equal(summary.trial_week_reminder_sweeps_started, 1);
+  assert.ok(
+    calls.some(
+      (call) =>
+        call.workflow_name === "billing_trial_week_reminder" &&
+        call.workspace_id === workspaceIds[0] &&
+        call.idempotency_key ===
+          `maintenance:trial-week:${workspaceIds[0]}:2026-05-27`,
+    ),
+  );
+});
+
+test("maintenance target cursors rotate capped fanout across workspaces", async () => {
+  const workspaceIds = Array.from({ length: 4 }, () => randomUUID()).sort();
+  const cursors = new Map<string, string | null>();
+  const pool = {
+    async query() {
+      return { rows: [] };
+    },
+    async connect() {
+      let category = "";
+      return {
+        async query(sql: string, params: unknown[] = []) {
+          if (sql === "begin" || sql === "commit" || sql === "rollback") {
+            return { rows: [] };
+          }
+          if (sql.includes("insert into maintenance_fanout_cursors")) {
+            category = String(params[0]);
+            if (!cursors.has(category)) cursors.set(category, null);
+            return { rows: [] };
+          }
+          if (sql.includes("select last_workspace_id")) {
+            return { rows: [{ last_workspace_id: cursors.get(category) ?? null }] };
+          }
+          if (sql.includes("update maintenance_fanout_cursors")) {
+            cursors.set(String(params[0]), String(params[1]));
+            return { rows: [] };
+          }
+          if (sql.includes("from sending_domains")) {
+            const cursor = params[0] ? String(params[0]) : null;
+            const limit = Number(params[1]);
+            const rotated = [
+              ...workspaceIds.filter((id) => !cursor || id > cursor),
+              ...workspaceIds.filter((id) => cursor && id <= cursor),
+            ];
+            return {
+              rows: rotated.slice(0, limit).map((workspace_id) => ({ workspace_id })),
+            };
+          }
+          if (sql.includes("from channel_accounts") || sql.includes("credits_exhausted_at")) {
+            return { rows: [] };
+          }
+          throw new Error(`unexpected query: ${sql}`);
+        },
+        release() {},
+      };
+    },
+  } as unknown as Pool;
+  const calls: Array<StartOptions<unknown>> = [];
+  const deps = {
+    pool,
+    runtime: recordingRuntime(calls),
+    now: () => new Date("2026-05-27T12:34:00.000Z"),
+    maxTargetsPerCategory: 2,
+  };
+
+  await triggerDueWorkspaceMaintenance(deps);
+  await triggerDueWorkspaceMaintenance(deps);
+
+  const warmups = calls.filter(
+    (call) => call.workflow_name === "email_domain_warmup_sweep",
+  );
+  assert.deepEqual(
+    warmups.map((call) => call.workspace_id),
+    workspaceIds,
+  );
+});
+
 test("workspace poll workflow rejects a mismatched invocation tenant", async () => {
   const workflow = createWorkspacePollWorkflow({
     pool: null as unknown as Pool,

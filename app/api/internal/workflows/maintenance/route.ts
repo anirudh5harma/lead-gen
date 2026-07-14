@@ -79,6 +79,8 @@ export async function handleMaintenanceRequest(
       pool: deps.pool ?? getPool(),
       runtime: workflowRuntime,
       maxWorkspacePolls: positiveIntegerEnv("MAINTENANCE_WORKSPACE_POLL_LIMIT", 100),
+      maxTargetsPerCategory: positiveIntegerEnv("MAINTENANCE_TARGET_LIMIT", 500),
+      startConcurrency: positiveIntegerEnv("MAINTENANCE_START_CONCURRENCY", 10),
     });
     return Response.json(summary, {
       status: summary.failures.length === 0 ? 202 : 207,

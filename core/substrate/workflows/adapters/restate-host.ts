@@ -14,6 +14,7 @@ import type {
   StepOptions,
   WorkflowDefinition,
 } from "../types.ts";
+import { normalizeApprovalPayload } from "../approvals.ts";
 
 export interface RestateWorkflowRequest<I = unknown> {
   request: I;
@@ -236,6 +237,9 @@ export function createRunContext<I, O>(
           run_id,
           step_id: null,
           kind: req.kind,
+          reason: req.reason ?? null,
+          payload: normalizeApprovalPayload(req.payload),
+          expires_at: req.expires_at ?? null,
         },
       });
       return awakeable.promise;

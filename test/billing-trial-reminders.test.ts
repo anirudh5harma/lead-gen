@@ -3,9 +3,10 @@ import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 import type { Pool, QueryResult } from "pg";
 import {
+  createTrialWeekReminderWorkflow,
   createTrialReminderProjection,
-  sendDueTrialWeekReminders,
 } from "../core/billing/trial-reminders.ts";
+import { createTransactionalSender } from "../core/channels/email/transactional.ts";
 
 function queryResult(
   rows: Record<string, unknown>[] = [],
@@ -95,34 +96,18 @@ test("trial reminder projection sends the low-credit transactional email once", 
   }]);
 });
 
-test("sendDueTrialWeekReminders skips Pro and counts sent reminders", async () => {
-  const sent: string[] = [];
-  const dueWorkspaceId = randomUUID();
-  const proWorkspaceId = randomUUID();
-  const pool = scriptedPool((sql, params) => {
-    if (sql.includes("select id as workspace_id")) {
-      return queryResult([
-        { workspace_id: dueWorkspaceId },
-        { workspace_id: proWorkspaceId },
-      ]);
-    }
+test("trial week reminder workflow is tenant-scoped and uses a replay-safe provider key", async () => {
+  const workspaceId = randomUUID();
+  const sentKeys: Array<string | undefined> = [];
+  const pool = scriptedPool((sql) => {
     if (
       sql.includes("select trial_credits_remaining, trial_credits_total") &&
       sql.includes("from workspaces")
     ) {
-      const workspaceId = params?.[0];
-      if (workspaceId === dueWorkspaceId) {
-        return queryResult([{
-          trial_credits_remaining: 0,
-          trial_credits_total: 15,
-          subscription_status: "inactive",
-          subscription_renews_at: null,
-        }]);
-      }
       return queryResult([{
         trial_credits_remaining: 0,
         trial_credits_total: 15,
-        subscription_status: "active",
+        subscription_status: "inactive",
         subscription_renews_at: null,
       }]);
     }
@@ -131,23 +116,59 @@ test("sendDueTrialWeekReminders skips Pro and counts sent reminders", async () =
     }
     return queryResult([]);
   });
-
-  const count = await sendDueTrialWeekReminders({
+  const workflow = createTrialWeekReminderWorkflow({
     pool,
     enabled: true,
     sender: {
       async send(input) {
-        sent.push(input.to);
+        sentKeys.push(input.idempotency_key);
         return { external_id: randomUUID() };
       },
     },
-    loadRecipient: async (_pool, workspaceId) => ({
-      email: `${workspaceId}@example.com`,
+    loadRecipient: async () => ({
+      email: "owner@example.com",
       workspace_name: "Acme",
     }),
-    now: () => new Date("2026-06-23T00:00:00.000Z"),
+  });
+  const ctx = {
+    execution_scope: "workspace",
+    workspace_id: workspaceId,
+    step: async (_name: string, fn: () => Promise<unknown>) => fn(),
+  } as never;
+
+  const result = await workflow.run({ workspace_id: workspaceId }, ctx);
+
+  assert.deepEqual(result, { sent: true });
+  assert.deepEqual(sentKeys, [`trial-week:${workspaceId}`]);
+  await assert.rejects(
+    workflow.run({ workspace_id: randomUUID() }, ctx),
+    /input workspace does not match workflow workspace/,
+  );
+});
+
+test("transactional sender forwards idempotency keys to Resend", async () => {
+  const calls: unknown[][] = [];
+  const sender = createTransactionalSender({
+    from: "Bombsell <no-reply@mail.bombsell.com>",
+    client: {
+      emails: {
+        async send(...args: unknown[]) {
+          calls.push(args);
+          return { data: { id: "email-1" }, error: null };
+        },
+      },
+    } as never,
   });
 
-  assert.equal(count, 1);
-  assert.deepEqual(sent, [`${dueWorkspaceId}@example.com`]);
+  await sender.send({
+    to: "owner@example.com",
+    subject: "Reminder",
+    text: "Body",
+    category: "trial_week_frozen",
+    idempotency_key: "trial-week:workspace-1",
+  });
+
+  assert.deepEqual(calls[0]?.[1], {
+    idempotencyKey: "trial-week:workspace-1",
+  });
 });

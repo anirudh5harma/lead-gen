@@ -45,6 +45,8 @@ export interface RestateRuntimeOptions {
   bearer?: string;
   /** Inject a fetch impl (tests). Defaults to globalThis.fetch. */
   fetchImpl?: typeof fetch;
+  /** Bounds ingress calls so a degraded Restate service cannot exhaust callers. */
+  requestTimeoutMs?: number;
 }
 
 export function restateBearerFromEnv(
@@ -103,6 +105,9 @@ export function createRestateWorkflowRuntime(
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(
+        Math.max(100, Math.trunc(opts.requestTimeoutMs ?? 10_000)),
+      ),
     });
     if (!response.ok) {
       throw new RestateClientError(
