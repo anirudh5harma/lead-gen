@@ -48,13 +48,20 @@ export async function GET(request: Request) {
   const supabaseCookies = createSupabaseCookieCapture();
   try {
     const supabase = await createServerSupabaseClient(supabaseCookies);
+    const { data: claimsData } = await supabase.auth.getClaims();
+    if (claimsData?.claims) {
+      const response = NextResponse.redirect(new URL(next, request.url));
+      applySupabaseCookieCapture(response, supabaseCookies);
+      response.headers.set("Cache-Control", "private, no-store");
+      return response;
+    }
+
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
         redirectTo: `${originBase}/auth/callback?next=${encodeURIComponent(next)}`,
         queryParams: {
-          access_type: "offline",
-          prompt: "consent",
+          prompt: "select_account",
         },
       },
     });
@@ -74,6 +81,7 @@ export async function GET(request: Request) {
 
   const response = NextResponse.redirect(signInUrl);
   applySupabaseCookieCapture(response, supabaseCookies);
+  response.headers.set("Cache-Control", "private, no-store");
   return response;
 }
 
