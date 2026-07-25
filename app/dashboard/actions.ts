@@ -215,8 +215,8 @@ export async function updateWorkspaceAutonomyAction(formData: FormData) {
   redirectWithToast(
     returnTo,
     mode === "review_only"
-      ? "Review-only mode saved."
-      : "Autonomous mode saved.",
+      ? "Review mode enabled. New outreach will wait for approval."
+      : "Auto mode enabled. Outreach can send after checks pass.",
   );
 }
 

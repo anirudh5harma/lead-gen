@@ -15,6 +15,8 @@ test("product event dispatchers wake Plays from typed signal and reply events", 
     kind:
       | "signal_matching"
       | "signal"
+      | "contact_retry_schedule"
+      | "contact_retry_dispatch"
       | "reply"
       | "meeting_prep"
       | "linkedin_accepted_followup";
@@ -48,6 +50,22 @@ test("product event dispatchers wake Plays from typed signal and reply events", 
         calls.push({ kind: "signal", limit: opts.limit });
         return 1;
       },
+      async scheduleContactResolutionRetry(event) {
+        calls.push({
+          kind: "contact_retry_schedule",
+          limit: undefined,
+          signal_id: (event.payload as { signal_id?: string }).signal_id,
+        });
+        return 1;
+      },
+      async dispatchContactResolutionRetry(event) {
+        calls.push({
+          kind: "contact_retry_dispatch",
+          limit: undefined,
+          signal_id: (event.payload as { signal_id?: string }).signal_id,
+        });
+        return 1;
+      },
       async dispatchLinkedInAcceptedFollowups(opts) {
         calls.push({
           kind: "linkedin_accepted_followup",
@@ -71,6 +89,12 @@ test("product event dispatchers wake Plays from typed signal and reply events", 
   ]);
   assert.deepEqual(durableNames.get("signal.matched"), ["product-signal-play-dispatcher-v1"]);
   assert.deepEqual(durableNames.get("contact.resolved"), ["product-contact-play-dispatcher-v1"]);
+  assert.deepEqual(durableNames.get("contact.resolution.deferred"), [
+    "product-contact-resolution-retry-scheduler-v1",
+  ]);
+  assert.deepEqual(durableNames.get("contact.resolution.retry.requested"), [
+    "product-contact-resolution-retry-dispatcher-v1",
+  ]);
   assert.deepEqual(durableNames.get("reply.classified"), [
     "product-reply-play-dispatcher-v1",
     "product-meeting-prep-dispatcher-v1",
@@ -88,6 +112,16 @@ test("product event dispatchers wake Plays from typed signal and reply events", 
   await Promise.all((handlers.get("contact.resolved") ?? []).map((handler) =>
     handler(event("contact.resolved"))
   ));
+  await Promise.all((handlers.get("contact.resolution.deferred") ?? []).map((handler) =>
+    handler(event("contact.resolution.deferred", {
+      signal_id: "22222222-2222-4222-8222-222222222222",
+    }))
+  ));
+  await Promise.all((handlers.get("contact.resolution.retry.requested") ?? []).map((handler) =>
+    handler(event("contact.resolution.retry.requested", {
+      signal_id: "22222222-2222-4222-8222-222222222222",
+    }))
+  ));
   await Promise.all((handlers.get("reply.classified") ?? []).map((handler) =>
     handler(event("reply.classified"))
   ));
@@ -103,6 +137,16 @@ test("product event dispatchers wake Plays from typed signal and reply events", 
     },
     { kind: "signal", limit: 7 },
     { kind: "signal", limit: 7 },
+    {
+      kind: "contact_retry_schedule",
+      limit: undefined,
+      signal_id: "22222222-2222-4222-8222-222222222222",
+    },
+    {
+      kind: "contact_retry_dispatch",
+      limit: undefined,
+      signal_id: "22222222-2222-4222-8222-222222222222",
+    },
     { kind: "reply", limit: 7 },
     { kind: "meeting_prep", limit: 7 },
     { kind: "linkedin_accepted_followup", limit: 7 },
@@ -115,6 +159,8 @@ test("product event dispatchers wake Plays from typed signal and reply events", 
       "product-signal-matching-workflow-dispatcher-v1",
       "product-signal-play-dispatcher-v1",
       "product-contact-play-dispatcher-v1",
+      "product-contact-resolution-retry-scheduler-v1",
+      "product-contact-resolution-retry-dispatcher-v1",
       "product-reply-play-dispatcher-v1",
       "product-meeting-prep-dispatcher-v1",
       "product-linkedin-accepted-followup-dispatcher-v1",

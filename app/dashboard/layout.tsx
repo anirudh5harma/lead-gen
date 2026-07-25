@@ -1,7 +1,10 @@
 import { Suspense, type ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { ToastProvider } from "@/components/Toast";
-import { DashboardShell } from "@/components/dashboard/Shell";
+import {
+  DashboardShell,
+  type WorkspaceAutonomyMode,
+} from "@/components/dashboard/Shell";
 import ActivationBanner from "@/components/dashboard/ActivationBanner";
 import BillingBanner from "@/components/dashboard/BillingBanner";
 import { getRequestAuthIdentity } from "@/lib/auth";
@@ -28,6 +31,7 @@ type DashboardChromeState =
       kind: "ready";
       workspaceId: string;
       workspaces: ActiveWorkspace[];
+      autonomyMode: WorkspaceAutonomyMode;
     }
   | { kind: "onboarding" }
   | { kind: "unavailable" };
@@ -56,6 +60,7 @@ export default async function DashboardLayout({
     <ToastProvider>
       <DashboardShell
         activeWorkspaceId={chrome.workspaceId}
+        autonomyMode={chrome.autonomyMode}
         workspaces={chrome.workspaces.map((workspace) => ({
           id: workspace.id,
           name: workspace.name,
@@ -85,6 +90,10 @@ async function loadDashboardChrome(
     ]);
     const workspaceId = active?.workspace.id ?? completed.workspace_id;
     const pool = getPool();
+    const autonomyMode =
+      active?.workspace.autonomy_mode ??
+      workspaces.find((workspace) => workspace.id === workspaceId)?.autonomy_mode ??
+      "autonomous";
     // Fire-and-forget self-heal: reseed default signal sources if the
     // workspace has none (activation setup can die mid-run). Idempotent.
     void ensureDefaultSignalSourcesForWorkspace(pool, workspaceId, identity.id);
@@ -92,6 +101,7 @@ async function loadDashboardChrome(
       kind: "ready",
       workspaceId,
       workspaces,
+      autonomyMode,
     };
   } catch (err) {
     console.error("[dashboard/layout] failed to load dashboard chrome", err);

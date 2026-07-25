@@ -17,6 +17,7 @@ export interface ActiveWorkspace {
   id: string;
   slug: string;
   name: string;
+  autonomy_mode?: "autonomous" | "review_only";
 }
 
 export interface ActiveWorkspaceSession {
@@ -84,7 +85,13 @@ export const listWorkspaces = cache(async (): Promise<ActiveWorkspace[]> => {
   if (!userId) return [];
   const { rows } = await withTransientConnectionRetry(() =>
     getPool().query<ActiveWorkspace>(
-      `select w.id, w.slug::text as slug, w.name
+      `select w.id,
+              w.slug::text as slug,
+              w.name,
+              case
+                when w.settings->>'autonomy_mode' = 'review_only' then 'review_only'
+                else 'autonomous'
+              end as autonomy_mode
          from workspaces w
          join workspace_members wm on wm.workspace_id = w.id
         where wm.user_id = $1

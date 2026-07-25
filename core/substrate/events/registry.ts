@@ -370,6 +370,7 @@ const ContactResolved = z.object({
   selected_person_id: z.string().uuid(),
   candidates: z.array(ContactCandidate).min(1).max(3),
   provider_order: z.array(z.string()),
+  retry_attempt: z.number().int().nonnegative().optional(),
 });
 
 const ContactResolutionDeferred = z.object({
@@ -384,6 +385,32 @@ const ContactResolutionDeferred = z.object({
   provider_error: z.string().min(1).nullable().optional(),
   candidate_count: z.number().int().nonnegative(),
   provider_order: z.array(z.string()),
+  retry_attempt: z.number().int().nonnegative().optional(),
+});
+
+const ContactResolutionRetryRequested = z.object({
+  signal_id: z.string().uuid(),
+  company_id: z.string().uuid(),
+  play_id: z.string().uuid(),
+  rep_id: z.string().uuid(),
+  channel: z.enum(["email", "linkedin"]),
+  attempt: z.number().int().positive(),
+  source_deferred_event_id: z.string().uuid(),
+  defer_reason: z.string().min(1),
+  requested_at: z.string().datetime(),
+  exhausted: z.boolean().optional(),
+});
+
+const ContactResolutionDeadLettered = z.object({
+  signal_id: z.string().uuid(),
+  company_id: z.string().uuid(),
+  play_id: z.string().uuid(),
+  rep_id: z.string().uuid(),
+  channel: z.enum(["email", "linkedin"]),
+  attempts: z.number().int().positive(),
+  last_defer_reason: z.string().min(1),
+  source_deferred_event_id: z.string().uuid(),
+  dead_lettered_at: z.string().datetime(),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1782,6 +1809,8 @@ export const eventRegistry = {
   "workspace.source.configured": WorkspaceSourceConfigured,
   "contact.resolved": ContactResolved,
   "contact.resolution.deferred": ContactResolutionDeferred,
+  "contact.resolution.retry.requested": ContactResolutionRetryRequested,
+  "contact.resolution.dead_lettered": ContactResolutionDeadLettered,
 
   "signal.discovered": SignalDiscovered,
   "signal.ingested": SignalIngested,

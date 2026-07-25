@@ -25,3 +25,13 @@ export type {
   ContactResolutionProviderPerson,
   EmailVerificationProvider,
 } from "./resolution.ts";
+export {
+  CONTACT_RESOLUTION_MAX_RETRIES,
+  CONTACT_RESOLUTION_RETRY_WORKFLOW,
+  contactResolutionRetryDelayMs,
+  createContactResolutionRetryWorkflow,
+} from "./retry.ts";
+export type {
+  ContactResolutionRetryInput,
+  ContactResolutionRetryOutput,
+} from "./retry.ts";

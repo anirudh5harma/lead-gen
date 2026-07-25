@@ -35,7 +35,14 @@ export function activeWorkspaceLookup(
     : "";
   return {
     params,
-    sql: `select w.id, w.slug::text as slug, w.name, wm.role::text as role
+    sql: `select w.id,
+                w.slug::text as slug,
+                w.name,
+                wm.role::text as role,
+                case
+                  when w.settings->>'autonomy_mode' = 'review_only' then 'review_only'
+                  else 'autonomous'
+                end as autonomy_mode
        from workspaces w
        join workspace_members wm on wm.workspace_id = w.id
       where wm.user_id = $1

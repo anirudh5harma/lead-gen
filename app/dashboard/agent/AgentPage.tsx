@@ -6845,7 +6845,7 @@ function AgentModeControl({ mode }: { mode: AgentOperatingMode }) {
               iconSize={14}
               pendingLabel="Saving"
             >
-              Autopilot
+              Auto
             </PendingSubmitButton>
           </form>
           <form action={updateWorkspaceAutonomyAction}>
@@ -6857,7 +6857,7 @@ function AgentModeControl({ mode }: { mode: AgentOperatingMode }) {
               iconSize={14}
               pendingLabel="Saving"
             >
-              Copilot
+              Review
             </PendingSubmitButton>
           </form>
         </div>
@@ -6890,7 +6890,7 @@ function agentOperatingModeDetail(
 ): { label: string; description: string } {
   if (mode === "copilot") {
     return {
-      label: "Copilot review",
+      label: "Review",
       description:
         "The agent finds contacts and writes outreach, then waits for human approval before sending.",
     };
@@ -6913,11 +6913,11 @@ function agentOperatingModeDetail(
     return {
       label: "Mixed policies",
       description:
-        "Email and LinkedIn use different approval rules. Choose Autopilot or Copilot to simplify.",
+        "Email and LinkedIn use different approval rules. Choose Auto or Review to simplify.",
     };
   }
   return {
-    label: "Autopilot",
+    label: "Auto",
     description:
       "The agent can send after contact verification, quality checks, daily limits, and channel health pass.",
   };

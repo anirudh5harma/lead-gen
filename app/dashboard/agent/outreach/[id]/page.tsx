@@ -594,16 +594,6 @@ export default async function AgentOutreachDetailPage({
         <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--color-text-2)]">
           {conv.topic ?? conv.signal_title ?? "Conversation detail and proof of work."}
         </p>
-        <div className="mt-3 flex flex-wrap gap-2 text-xs text-[var(--color-text-3)]">
-          <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1">
-            {conv.status.replace(/_/g, " ")}
-          </span>
-          {conv.company_name ? (
-            <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1">
-              {conv.company_name}
-            </span>
-          ) : null}
-        </div>
       </header>
 
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
@@ -728,11 +718,6 @@ export default async function AgentOutreachDetailPage({
                 href={conv.counterparty_linkedin_url}
               />
             </div>
-            {conv.rep_name ? (
-              <p className="mt-3 text-xs text-[var(--color-text-3)]">
-                Voice <span className="text-[var(--color-text-1)]">{conv.rep_name}</span>
-              </p>
-            ) : null}
             {conv.signal_title ? (
               <div className="mt-4 border-t border-[var(--color-line-1)] pt-4">
                 <p className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-4)]">

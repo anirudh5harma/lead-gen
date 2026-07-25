@@ -83,6 +83,12 @@ test("dashboard shell keeps route chrome simple and avoids extra flow queries", 
   assert.match(shell, /label: "Reddit marketing"/);
   assert.match(shell, /label: "Integrations"/);
   assert.match(shell, /label: "Settings"/);
+  assert.match(shell, /WorkspaceModeSwitch/);
+  assert.match(shell, /label="Auto"/);
+  assert.match(shell, /label="Review"/);
+  assert.match(shell, /updateWorkspaceAutonomyAction/);
+  assert.match(shell, />Sign out</);
+  assert.match(layout, /autonomyMode=\{chrome\.autonomyMode\}/);
   assert.match(layout, /<DashboardShell/);
   assert.match(layout, /getActiveWorkspaceSession/);
   assert.match(layout, /loadDashboardChrome/);
@@ -523,7 +529,7 @@ test("Agent learning surface owns message optimization from reply evidence", () 
     reps.indexOf("function AgentAdvancedDetails"),
     reps.indexOf("function SourceHealthRow"),
   );
-  const modeControl = reps.slice(
+  const _modeControl = reps.slice(
     reps.indexOf("function AgentModeControl"),
     reps.indexOf("function agentOperatingMode"),
   );
@@ -705,8 +711,8 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Connect Outlook or LinkedIn before outreach can run/);
   assert.match(advancedDetails, /<AgentModeControl mode=\{operatingMode\} \/>/);
   assert.match(modeControl, /Approval mode/);
-  assert.match(modeControl, /Autopilot/);
-  assert.match(modeControl, /Copilot/);
+  assert.match(modeControl, />\s*Auto\s*</);
+  assert.match(modeControl, />\s*Review\s*</);
   assert.match(modeControl, /updateWorkspaceAutonomyAction/);
   assert.match(modeControl, /name="autonomy_mode" value="autonomous"/);
   assert.match(modeControl, /name="autonomy_mode" value="review_only"/);
@@ -950,6 +956,8 @@ test("sent outreach links open the exact draft in the conversation trace", () =>
   assert.match(detail, /contactFitLabel\(conv\.counterparty_fit_decision\)/);
   assert.match(detail, /label="Email"/);
   assert.match(detail, /label="LinkedIn"/);
+  assert.doesNotMatch(detail, /Voice <span/);
+  assert.doesNotMatch(detail, /conv\.status\.replace/);
   assert.match(trust, /p\.properties #>> '\{contact_fit,decision\}' as counterparty_fit_decision/);
   assert.match(trust, /p\.linkedin_url as counterparty_linkedin_url/);
   assert.match(trust, /counterparty_email_status/);

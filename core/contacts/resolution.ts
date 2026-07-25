@@ -16,6 +16,7 @@ export interface ContactResolutionInput {
   trigger_event_id?: string | null;
   limit?: number;
   repair_key?: string | null;
+  retry_attempt?: number;
 }
 
 export interface ContactCandidate {
@@ -156,46 +157,44 @@ export function createContactResolutionWorkflow(deps: ContactResolutionDeps) {
         return output;
       }
 
-      await ctx.step("contact.discovery.provider_waterfall", async () => {
-        const statuses: Array<{ provider: string; status: "ok" | "deferred"; count?: number; reason?: string }> = [];
-        for (const provider of deps.discoveryProviders ?? []) {
-          let people: ContactResolutionProviderPerson[];
-          try {
-            people = await provider.discover(input);
-          } catch (error) {
-            const defer = providerDefer(provider.name, error);
-            console.warn(`[contact-resolution] deferred ${provider.name}: ${defer.defer_reason}`);
-            await publishDeferred(
-              ctx,
-              input,
-              contact_resolution_id,
-              defer.defer_reason,
-              0,
-              providerOrderForDeferredProvider(deps, provider.name),
-              defer,
-            );
-            statuses.push({
-              provider: provider.name,
-              status: "deferred",
-              reason: defer.defer_reason,
-            });
-            continue;
+      const discoveryDefers = await ctx.step(
+        "contact.discovery.provider_waterfall",
+        async () => {
+          const defers: ProviderDefer[] = [];
+          for (const provider of deps.discoveryProviders ?? []) {
+            let people: ContactResolutionProviderPerson[];
+            try {
+              people = await provider.discover(input);
+            } catch (error) {
+              const defer = providerDefer(provider.name, error);
+              console.warn(`[contact-resolution] deferred ${provider.name}: ${defer.defer_reason}`);
+              defers.push(defer);
+              continue;
+            }
+            await upsertProviderPeople(deps.pool, input, people, provider.name);
           }
-          await upsertProviderPeople(deps.pool, input, people, provider.name);
-          statuses.push({ provider: provider.name, status: "ok", count: people.length });
-        }
-        return statuses;
-      });
+          return defers;
+        },
+      );
 
-      if (input.channel === "email" && deps.emailVerifier) {
-        await ctx.step("contact.email.verify", async () => {
-          const rows = await loadCandidateRows(deps.pool, input, policy);
-          for (const row of rows) {
-            await verifyCandidateEmails(deps.pool, input, row, deps.emailVerifier!, ctx, contact_resolution_id);
-          }
-          return true;
-        });
-      }
+      const verificationDefers =
+        input.channel === "email" && deps.emailVerifier
+          ? await ctx.step("contact.email.verify", async () => {
+              const rows = await loadCandidateRows(deps.pool, input, policy);
+              const defers: ProviderDefer[] = [];
+              for (const row of rows) {
+                defers.push(
+                  ...await verifyCandidateEmails(
+                    deps.pool,
+                    input,
+                    row,
+                    deps.emailVerifier!,
+                  ),
+                );
+              }
+              return defers;
+            })
+          : [];
 
       const candidates = await ctx.step("contact.rank_top_three", async () => {
         const rows = await loadCandidateRows(deps.pool, input, policy);
@@ -205,7 +204,11 @@ export function createContactResolutionWorkflow(deps: ContactResolutionDeps) {
       });
 
       if (candidates.length === 0) {
-        const defer_reason = `no_${input.channel}_ready_contact`;
+        const providerDefer =
+          verificationDefers.at(-1) ?? discoveryDefers.at(-1);
+        const defer_reason =
+          providerDefer?.defer_reason ??
+          `no_${input.channel}_ready_contact`;
         const output: ContactResolutionOutput = {
           decision: "deferred",
           contact_resolution_id,
@@ -220,6 +223,7 @@ export function createContactResolutionWorkflow(deps: ContactResolutionDeps) {
           defer_reason,
           candidates.length,
           providerOrder(deps),
+          providerDefer,
         );
         return output;
       }
@@ -291,6 +295,7 @@ async function publishResolved(
       provenance: candidate.provenance,
     })),
     provider_order,
+    retry_attempt: Math.max(0, Math.trunc(input.retry_attempt ?? 0)),
   });
 }
 
@@ -315,6 +320,7 @@ async function publishDeferred(
     provider_error: provider_defer?.provider_error ?? null,
     candidate_count,
     provider_order,
+    retry_attempt: Math.max(0, Math.trunc(input.retry_attempt ?? 0)),
   });
 }
 
@@ -423,13 +429,12 @@ async function verifyCandidateEmails(
   input: ContactResolutionInput,
   row: ContactRow,
   verifier: EmailVerificationProvider,
-  ctx: RunContext,
-  contact_resolution_id: string,
-): Promise<void> {
+): Promise<ProviderDefer[]> {
   const existing = recordValue(row.properties.email_verification) ?? {};
   const next: Record<string, unknown> = { ...existing };
   let changed = false;
   let verifiedEmail = row.emails.find((email) => isVerifiedEmail(row.properties, email)) ?? null;
+  const defers: ProviderDefer[] = [];
 
   for (const email of uniqueEmails(row.emails).slice(0, MAX_EMAILS_TO_VERIFY_PER_PERSON)) {
     if (verifiedEmail) break;
@@ -441,15 +446,7 @@ async function verifyCandidateEmails(
     } catch (error) {
       const defer = providerDefer(verifier.name, error);
       console.warn(`[contact-resolution] deferred ${verifier.name}: ${defer.defer_reason}`);
-      await publishDeferred(
-        ctx,
-        input,
-        contact_resolution_id,
-        defer.defer_reason,
-        0,
-        ["graph_cache", verifier.name],
-        defer,
-      );
+      defers.push(defer);
       continue;
     }
     next[email.toLowerCase()] = {
@@ -474,6 +471,7 @@ async function verifyCandidateEmails(
   if (verifiedEmail && row.emails[0]?.toLowerCase() !== verifiedEmail.toLowerCase()) {
     await preferPersonEmail(pool, input.workspace_id, row.id, verifiedEmail);
   }
+  return defers;
 }
 
 async function loadCandidateRows(
@@ -650,15 +648,6 @@ function providerOrder(deps: ContactResolutionDeps): string[] {
     ...(deps.discoveryProviders ?? []).map((provider) => provider.name),
     ...(deps.emailVerifier ? [deps.emailVerifier.name] : []),
   ];
-}
-
-function providerOrderForDeferredProvider(
-  deps: ContactResolutionDeps,
-  providerName: string,
-): string[] {
-  const order = providerOrder(deps);
-  const index = order.indexOf(providerName);
-  return index === -1 ? ["graph_cache", providerName] : order.slice(0, index + 1);
 }
 
 function providerDefer(providerName: string, error: unknown): ProviderDefer {

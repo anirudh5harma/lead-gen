@@ -42,6 +42,7 @@ import {
   type LinkedInTransport,
 } from "../core/channels/linkedin/index.ts";
 import {
+  createContactResolutionRetryWorkflow,
   createContactResolutionProviders,
   createContactResolutionWorkflow,
 } from "../core/contacts/index.ts";
@@ -247,6 +248,7 @@ const workflows = [
     pool,
     ...createContactResolutionProviders({ pool }),
   }),
+  createContactResolutionRetryWorkflow(),
   createCatalogPollWorkflow({
     pool,
     bus,

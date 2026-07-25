@@ -114,13 +114,17 @@ import {
   type ReplyIntent,
 } from "../channels/email/index.ts";
 import {
+  CONTACT_RESOLUTION_MAX_RETRIES,
+  CONTACT_RESOLUTION_RETRY_WORKFLOW,
   CONTACT_RESOLUTION_WORKFLOW,
+  createContactResolutionRetryWorkflow,
   createContactResolutionProviders,
   createContactResolutionWorkflow,
   type ContactCandidate,
   type ContactChannel,
   type ContactResolutionInput,
   type ContactResolutionOutput,
+  type ContactResolutionRetryInput,
 } from "../contacts/index.ts";
 import { createChannelAccountLifecycleProjection } from "../channels/account-lifecycle.ts";
 import {
@@ -349,6 +353,7 @@ const RUNNABLE_WORKFLOW_NAMES = [
   WORKSPACE_VERTICAL_INTELLIGENCE_WORKFLOW,
   WORKSPACE_SIGNAL_MATCHING_WORKFLOW,
   CONTACT_RESOLUTION_WORKFLOW,
+  CONTACT_RESOLUTION_RETRY_WORKFLOW,
   SIGNAL_TO_EMAIL_PLAY_WORKFLOW,
   REPLY_TO_EMAIL_PLAY_WORKFLOW,
   RSS_SIGNAL_INGESTION_WORKFLOW,
@@ -10115,6 +10120,10 @@ function registerContactResolutionWorkflow(engine: ProductEngine): void {
   );
 }
 
+function registerContactResolutionRetryWorkflow(engine: ProductEngine): void {
+  engine.runtime.register(createContactResolutionRetryWorkflow());
+}
+
 async function registerWorkspaceActivationSetupWorkflow(
   engine: ProductEngine,
 ): Promise<void> {
@@ -11803,6 +11812,8 @@ export async function dispatchMeetingPrepOnce(
 type ProductDispatchEventType =
   | "signal.matched"
   | "contact.resolved"
+  | "contact.resolution.deferred"
+  | "contact.resolution.retry.requested"
   | "reply.classified"
   | "linkedin.connection.accepted";
 type SignalMatchingDispatchEventType = "signal.ingested";
@@ -11908,6 +11919,138 @@ interface ProductEventDispatcherOptions {
   dispatchReplyEmailPlays?: typeof dispatchReplyEmailPlaysOnce;
   dispatchMeetingPrep?: typeof dispatchMeetingPrepOnce;
   dispatchSignalMatching?: (event: PublishedEvent) => Promise<number>;
+  scheduleContactResolutionRetry?: (event: PublishedEvent) => Promise<number>;
+  dispatchContactResolutionRetry?: (event: PublishedEvent) => Promise<number>;
+}
+
+export async function scheduleContactResolutionRetryFromDeferredEvent(
+  event: PublishedEvent,
+): Promise<number> {
+  const payload = event.payload as Record<string, unknown>;
+  const signal_id = stringOrNull(payload.signal_id);
+  const company_id = stringOrNull(payload.company_id);
+  const play_id = stringOrNull(payload.play_id);
+  const rep_id = stringOrNull(payload.rep_id);
+  const channel = contactChannelFromPayload(payload.channel);
+  const defer_reason = stringOrNull(payload.defer_reason);
+  if (!signal_id || !company_id || !play_id || !rep_id || !channel || !defer_reason) {
+    return 0;
+  }
+
+  const retry_attempt = nonNegativeInteger(payload.retry_attempt);
+  const engine = await getProductEngine();
+  registerContactResolutionRetryWorkflow(engine);
+  await engine.runtime.start<ContactResolutionRetryInput>({
+    workspace_id: event.workspace_id,
+    workflow_name: CONTACT_RESOLUTION_RETRY_WORKFLOW,
+    idempotency_key: [
+      "contact-enrichment-retry",
+      signal_id,
+      play_id,
+      channel,
+      `attempt:${retry_attempt + 1}`,
+    ].join(":"),
+    correlation_id: event.correlation_id ?? event.id,
+    causation_id: event.id,
+    input: {
+      workspace_id: event.workspace_id,
+      signal_id,
+      company_id,
+      play_id,
+      rep_id,
+      channel,
+      retry_attempt,
+      deferred_event_id: event.id,
+      defer_reason,
+    },
+  });
+  return 1;
+}
+
+export async function dispatchContactResolutionRetryRequestedEvent(
+  event: PublishedEvent,
+): Promise<number> {
+  const payload = event.payload as Record<string, unknown>;
+  const signal_id = stringOrNull(payload.signal_id);
+  const company_id = stringOrNull(payload.company_id);
+  const play_id = stringOrNull(payload.play_id);
+  const rep_id = stringOrNull(payload.rep_id);
+  const channel = contactChannelFromPayload(payload.channel);
+  const defer_reason = stringOrNull(payload.defer_reason);
+  const source_deferred_event_id = stringOrNull(payload.source_deferred_event_id);
+  const attempt = Math.max(1, nonNegativeInteger(payload.attempt));
+  if (
+    !signal_id ||
+    !company_id ||
+    !play_id ||
+    !rep_id ||
+    !channel ||
+    !defer_reason ||
+    !source_deferred_event_id
+  ) {
+    return 0;
+  }
+
+  const engine = await getProductEngine();
+  const { rows } = await engine.pool.query<{ resolved: boolean }>(
+    `select exists (
+       select 1
+         from events resolved
+         join events deferred
+           on deferred.id = $2::uuid
+          and deferred.workspace_id = $1::uuid
+        where resolved.workspace_id = $1::uuid
+          and resolved.event_type = 'contact.resolved'
+          and resolved.payload->>'signal_id' = $3
+          and resolved.payload->>'play_id' = $4
+          and resolved.payload->>'channel' = $5
+          and resolved.occurred_at > deferred.occurred_at
+     ) as resolved`,
+    [event.workspace_id, source_deferred_event_id, signal_id, play_id, channel],
+  );
+  if (rows[0]?.resolved) return 0;
+
+  if (payload.exhausted === true || attempt > CONTACT_RESOLUTION_MAX_RETRIES) {
+    await engine.bus.publish({
+      workspace_id: event.workspace_id,
+      event_type: "contact.resolution.dead_lettered",
+      source: "system",
+      producer_ref: "product.contact-resolution-retry",
+      correlation_id: event.correlation_id ?? event.id,
+      causation_id: event.id,
+      idempotency_key: [
+        "contact-resolution-dead-lettered",
+        signal_id,
+        play_id,
+        channel,
+      ].join(":"),
+      payload: {
+        signal_id,
+        company_id,
+        play_id,
+        rep_id,
+        channel,
+        attempts: CONTACT_RESOLUTION_MAX_RETRIES,
+        last_defer_reason: defer_reason,
+        source_deferred_event_id,
+        dead_lettered_at: new Date().toISOString(),
+      },
+    });
+    return 1;
+  }
+
+  await startContactResolution(engine, {
+    workspace_id: event.workspace_id,
+    signal_id,
+    company_id,
+    play_id,
+    rep_id,
+    channel,
+    trigger_event_id: event.id,
+    repair_key: `retry:${attempt}`,
+    retry_attempt: attempt,
+  });
+  return 1;
 }
 
 export async function registerProductEventDispatchers(
@@ -11928,6 +12071,12 @@ export async function registerProductEventDispatchers(
   const dispatchSignalMatching =
     opts.dispatchSignalMatching ??
     dispatchSignalMatchingWorkflowFromIngestedEvent;
+  const scheduleContactResolutionRetry =
+    opts.scheduleContactResolutionRetry ??
+    scheduleContactResolutionRetryFromDeferredEvent;
+  const dispatchContactResolutionRetry =
+    opts.dispatchContactResolutionRetry ??
+    dispatchContactResolutionRetryRequestedEvent;
 
   const signalMatchingSubscription = await adapter.subscribe(
     "signal.ingested",
@@ -11949,6 +12098,20 @@ export async function registerProductEventDispatchers(
       await dispatchSignalPlays({ limit });
     },
     "product-contact-play-dispatcher-v1",
+  );
+  const contactDeferredSubscription = await adapter.subscribe(
+    "contact.resolution.deferred",
+    async (event) => {
+      await scheduleContactResolutionRetry(event);
+    },
+    "product-contact-resolution-retry-scheduler-v1",
+  );
+  const contactRetrySubscription = await adapter.subscribe(
+    "contact.resolution.retry.requested",
+    async (event) => {
+      await dispatchContactResolutionRetry(event);
+    },
+    "product-contact-resolution-retry-dispatcher-v1",
   );
   const replySubscription = await adapter.subscribe(
     "reply.classified",
@@ -11976,10 +12139,21 @@ export async function registerProductEventDispatchers(
     signalMatchingSubscription,
     signalSubscription,
     contactSubscription,
+    contactDeferredSubscription,
+    contactRetrySubscription,
     replySubscription,
     meetingPrepSubscription,
     linkedInAcceptedSubscription,
   ];
+}
+
+function contactChannelFromPayload(value: unknown): ContactChannel | null {
+  return value === "email" || value === "linkedin" ? value : null;
+}
+
+function nonNegativeInteger(value: unknown): number {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
 }
 
 function createConcurrencyGate(limit: number): <T>(task: () => Promise<T>) => Promise<T> {
@@ -12577,6 +12751,8 @@ export async function resumeRunnableWorkflowsOnce(
       await registerWorkspaceSignalMatchingWorkflow(engine);
     } else if (row.workflow_name === CONTACT_RESOLUTION_WORKFLOW) {
       registerContactResolutionWorkflow(engine);
+    } else if (row.workflow_name === CONTACT_RESOLUTION_RETRY_WORKFLOW) {
+      registerContactResolutionRetryWorkflow(engine);
     } else if (row.workflow_name === SIGNAL_TO_EMAIL_PLAY_WORKFLOW) {
       registerSignalEmailWorkflow(engine, row.workspace_id);
     } else if (row.workflow_name === REPLY_TO_EMAIL_PLAY_WORKFLOW) {

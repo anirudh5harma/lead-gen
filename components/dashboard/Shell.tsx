@@ -4,7 +4,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type MouseEvent, type ReactNode } from "react";
-import { switchWorkspaceAction } from "@/app/dashboard/actions";
+import {
+  switchWorkspaceAction,
+  updateWorkspaceAutonomyAction,
+} from "@/app/dashboard/actions";
 import Icon from "@/components/Icon";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
 import VoiceAssistantDrawer from "@/components/dashboard/VoiceAssistantDrawer";
@@ -20,6 +23,8 @@ export interface ShellWorkspace {
   id: string;
   name: string;
 }
+
+export type WorkspaceAutonomyMode = "autonomous" | "review_only";
 
 const NAV: NavItem[] = [
   {
@@ -72,11 +77,13 @@ export function DashboardShell({
   children,
   workspaces = [],
   activeWorkspaceId,
+  autonomyMode = "autonomous",
   banners,
 }: {
   children: ReactNode;
   workspaces?: ShellWorkspace[];
   activeWorkspaceId?: string;
+  autonomyMode?: WorkspaceAutonomyMode;
   banners?: ReactNode;
 }) {
   const pathname = usePathname() ?? "/dashboard";
@@ -185,20 +192,10 @@ export function DashboardShell({
         </div>
       </aside>
 
-      <form
-        action="/auth/sign-out"
-        method="post"
-        className="fixed right-6 top-5 z-40 hidden md:block"
-      >
-        <PendingSubmitButton
-          aria-label="Sign out"
-          title="Sign out"
-          className="grid size-10 place-items-center rounded-[10px] bg-[var(--color-ink-2)] text-[var(--color-text-3)] ring-1 ring-[var(--color-line-1)] transition-colors hover:text-[var(--color-text-1)]"
-          pendingLabel=""
-        >
-          <Icon name="logout" size={15} />
-        </PendingSubmitButton>
-      </form>
+      <div className="fixed right-6 top-5 z-40 hidden items-center gap-2 md:flex">
+        <WorkspaceModeSwitch mode={autonomyMode} returnTo={pathname} />
+        <SignOutButton />
+      </div>
 
       {/* Mobile top-bar + drawer */}
       <header className="fixed left-0 right-0 top-0 z-40 flex h-14 items-center justify-between border-b border-[var(--color-line-1)] bg-[var(--color-ink-0)]/95 px-4 backdrop-blur-md md:hidden">
@@ -224,16 +221,10 @@ export function DashboardShell({
           />
           Bombsell
         </Link>
-        <form action="/auth/sign-out" method="post">
-          <PendingSubmitButton
-            aria-label="Sign out"
-            title="Sign out"
-            className="grid size-9 place-items-center rounded-full bg-[var(--color-ink-2)] text-[var(--color-text-3)] transition-colors hover:text-[var(--color-text-1)]"
-            pendingLabel=""
-          >
-            <Icon name="logout" size={14} />
-          </PendingSubmitButton>
-        </form>
+        <div className="flex items-center gap-1.5">
+          <WorkspaceModeSwitch mode={autonomyMode} returnTo={pathname} compact />
+          <SignOutButton compact />
+        </div>
       </header>
 
       {/* Mobile sub-nav (horizontal scroll) */}
@@ -269,6 +260,98 @@ export function DashboardShell({
         {children}
       </main>
     </div>
+  );
+}
+
+function WorkspaceModeSwitch({
+  mode,
+  returnTo,
+  compact = false,
+}: {
+  mode: WorkspaceAutonomyMode;
+  returnTo: string;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label="Outreach operating mode"
+      className="inline-flex items-center rounded-[10px] bg-[var(--color-ink-2)] p-1 ring-1 ring-[var(--color-line-1)]"
+    >
+      <ModeOption
+        value="autonomous"
+        label="Auto"
+        active={mode === "autonomous"}
+        returnTo={returnTo}
+        compact={compact}
+        title="Auto: send outreach after quality and channel checks pass"
+      />
+      <ModeOption
+        value="review_only"
+        label="Review"
+        active={mode === "review_only"}
+        returnTo={returnTo}
+        compact={compact}
+        title="Review: hold judged drafts for approval before sending"
+      />
+    </div>
+  );
+}
+
+function ModeOption({
+  value,
+  label,
+  active,
+  returnTo,
+  compact,
+  title,
+}: {
+  value: WorkspaceAutonomyMode;
+  label: string;
+  active: boolean;
+  returnTo: string;
+  compact: boolean;
+  title: string;
+}) {
+  return (
+    <form action={updateWorkspaceAutonomyAction}>
+      <input type="hidden" name="return_to" value={returnTo} />
+      <input type="hidden" name="autonomy_mode" value={value} />
+      <PendingSubmitButton
+        type="submit"
+        title={title}
+        aria-pressed={active}
+        className={
+          "h-8 rounded-[7px] font-medium transition-all " +
+          (compact ? "px-2 text-[11px] " : "px-3 text-xs ") +
+          (active
+            ? "bg-[var(--color-ink-0)] text-[var(--color-text-1)] shadow-sm ring-1 ring-[var(--color-line-2)]"
+            : "text-[var(--color-text-3)] hover:text-[var(--color-text-1)]")
+        }
+        pendingLabel="…"
+      >
+        {label}
+      </PendingSubmitButton>
+    </form>
+  );
+}
+
+function SignOutButton({ compact = false }: { compact?: boolean }) {
+  return (
+    <form action="/auth/sign-out" method="post">
+      <PendingSubmitButton
+        aria-label="Sign out"
+        title="Sign out securely"
+        className={
+          "inline-flex h-10 items-center justify-center gap-2 rounded-[10px] bg-[var(--color-ink-0)] font-medium text-[var(--color-text-2)] ring-1 ring-[var(--color-line-1)] transition-all hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)] " +
+          (compact ? "size-9 px-0" : "px-3 text-xs")
+        }
+        pendingLabel={compact ? "" : "Signing out"}
+      >
+        <Icon name="logout" size={14} />
+        {compact ? null : <span>Sign out</span>}
+      </PendingSubmitButton>
+    </form>
   );
 }
 
