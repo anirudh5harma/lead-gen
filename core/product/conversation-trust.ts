@@ -184,7 +184,11 @@ export async function getConversationTrustTrace(
   if (!conversation) return null;
 
   const messages = await loadMessages(pool, input);
-  const signals = await loadConversationSignals(pool, input);
+  const signals = await loadConversationSignalsWithLegacyFallback(
+    pool,
+    input,
+    conversation,
+  );
   const signalIds = [
     ...new Set([
       ...signals.map((signal) => signal.id),
@@ -232,25 +236,59 @@ export async function getConversationTrustTrace(
   };
 }
 
-async function loadConversationSignals(
+export async function loadConversationSignalsWithLegacyFallback(
   pool: Pool,
   input: { workspace_id: string; conversation_id: string },
+  conversation: ConversationTrustConversation,
 ): Promise<ConversationTrustSignal[]> {
-  const { rows } = await pool.query<ConversationTrustSignal>(
-    `select s.id, s.title, s.kind::text as kind, s.content, s.url,
-            cs.role, cs.reason, cs.score::text as score, cs.attached_at
-       from conversation_signals cs
-       join signals s
-         on s.workspace_id = cs.workspace_id
-        and s.id = cs.signal_id
-      where cs.workspace_id = $1
-        and cs.conversation_id = $2
-      order by case when cs.role = 'primary' then 0 else 1 end,
-               cs.score desc nulls last,
-               cs.attached_at desc`,
-    [input.workspace_id, input.conversation_id],
+  try {
+    const { rows } = await pool.query<ConversationTrustSignal>(
+      `select s.id, s.title, s.kind::text as kind, s.content, s.url,
+              cs.role, cs.reason, cs.score::text as score, cs.attached_at
+         from conversation_signals cs
+         join signals s
+           on s.workspace_id = cs.workspace_id
+          and s.id = cs.signal_id
+        where cs.workspace_id = $1
+          and cs.conversation_id = $2
+        order by case when cs.role = 'primary' then 0 else 1 end,
+                 cs.score desc nulls last,
+                 cs.attached_at desc`,
+      [input.workspace_id, input.conversation_id],
+    );
+    return rows;
+  } catch (error) {
+    if (!isUndefinedTableError(error)) throw error;
+    if (
+      !conversation.signal_id ||
+      !conversation.signal_title ||
+      !conversation.signal_kind
+    ) {
+      return [];
+    }
+    return [
+      {
+        id: conversation.signal_id,
+        title: conversation.signal_title,
+        kind: conversation.signal_kind,
+        content: conversation.signal_content,
+        url: conversation.signal_url,
+        role: "primary",
+        reason: "legacy_origin",
+        score: null,
+        attached_at: conversation.started_at,
+      },
+    ];
+  }
+}
+
+function isUndefinedTableError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "42P01"
   );
-  return rows;
 }
 
 export function buildReplyProofs(input: {
@@ -260,7 +298,10 @@ export function buildReplyProofs(input: {
   outcomes: ConversationTrustOutcome[];
 }): ConversationTrustReplyProof[] {
   return input.messages
-    .filter((message) => message.direction === "inbound" && Boolean(message.intent_class))
+    .filter(
+      (message) =>
+        message.direction === "inbound" && Boolean(message.intent_class),
+    )
     .map((inbound) => {
       const replies = input.messages.filter(
         (message) =>
@@ -273,7 +314,9 @@ export function buildReplyProofs(input: {
           (event) =>
             event.event_type === "rep.role.completed" &&
             textField(event.payload?.action) === "draft_email_reply" &&
-            textField(recordField(event.payload?.output)?.inbound_message_id) === inbound.id,
+            textField(
+              recordField(event.payload?.output)?.inbound_message_id,
+            ) === inbound.id,
         )
         .at(-1);
       const approval = input.approvals
@@ -311,7 +354,9 @@ export function buildReplyProofs(input: {
         textField(recordField(roleEvent?.payload?.output)?.pattern_key);
       const exemplar_count = Array.isArray(draft?.provenance?.exemplar_ids)
         ? draft.provenance.exemplar_ids.length
-        : numericField(recordField(roleEvent?.payload?.output)?.procedural_exemplar_count) ?? 0;
+        : (numericField(
+            recordField(roleEvent?.payload?.output)?.procedural_exemplar_count,
+          ) ?? 0);
       const channel_status =
         textField(channelEvent?.payload?.status) ??
         textField(channelEvent?.payload?.defer_reason) ??
@@ -373,19 +418,20 @@ export function buildGateExplanations(input: {
       ].includes(event.event_type),
     )
     .at(-1);
-  const accountEvent = latestChannelAccountError(input.events, message, gateEvents);
+  const accountEvent = latestChannelAccountError(
+    input.events,
+    message,
+    gateEvents,
+  );
   const notes =
-    recordField(judgedEvent?.payload?.notes) ??
-    message.eval_notes ??
-    {};
+    recordField(judgedEvent?.payload?.notes) ?? message.eval_notes ?? {};
   const axes = recordField(notes.axes) ?? {};
   const explanations: ConversationTrustGateExplanation[] = [];
   const score =
     numericField(judgedEvent?.payload?.eval_score) ??
     numberFromString(message.eval_score);
   const passed =
-    booleanField(judgedEvent?.payload?.passed) ??
-    message.eval_passed;
+    booleanField(judgedEvent?.payload?.passed) ?? message.eval_passed;
 
   if (score !== null || passed !== null) {
     explanations.push({
@@ -399,7 +445,8 @@ export function buildGateExplanations(input: {
 
   const brandVoice = numericField(axes.brand_voice);
   if (brandVoice !== null) {
-    const blocked = brandVoice < 0.55 || (passed === false && mentionsVoice(notes));
+    const blocked =
+      brandVoice < 0.55 || (passed === false && mentionsVoice(notes));
     explanations.push({
       kind: "brand_voice",
       status: blocked ? "blocked" : "passed",
@@ -429,7 +476,9 @@ function latestChannelAccountError(
       message.channel_account_id,
       textField(message.properties?.channel_account_id),
       textField(message.provenance?.channel_account_id),
-      ...gateEvents.map((event) => textField(event.payload?.channel_account_id)),
+      ...gateEvents.map((event) =>
+        textField(event.payload?.channel_account_id),
+      ),
     ].filter((id): id is string => Boolean(id)),
   );
   if (ids.size === 0) return undefined;
@@ -445,27 +494,42 @@ function latestChannelAccountError(
 function latestOutboundMessage(
   messages: ConversationTrustMessage[],
 ): ConversationTrustMessage | null {
-  return [...messages].reverse().find((message) => message.direction === "outbound") ?? null;
+  return (
+    [...messages]
+      .reverse()
+      .find((message) => message.direction === "outbound") ?? null
+  );
 }
 
 function judgeDetail(notes: Record<string, unknown>): string | null {
   const critique = textField(notes.critique);
   const suggestions = Array.isArray(notes.suggestions)
-    ? notes.suggestions.filter((item): item is string => typeof item === "string")
+    ? notes.suggestions.filter(
+        (item): item is string => typeof item === "string",
+      )
     : [];
-  return [critique, suggestions.length ? `Suggestions: ${suggestions.join("; ")}` : null]
-    .filter((piece): piece is string => Boolean(piece))
-    .join(" ")
-    || null;
+  return (
+    [
+      critique,
+      suggestions.length ? `Suggestions: ${suggestions.join("; ")}` : null,
+    ]
+      .filter((piece): piece is string => Boolean(piece))
+      .join(" ") || null
+  );
 }
 
 function mentionsVoice(notes: Record<string, unknown>): boolean {
   const text = [
     textField(notes.critique),
     ...(Array.isArray(notes.suggestions)
-      ? notes.suggestions.filter((item): item is string => typeof item === "string")
+      ? notes.suggestions.filter(
+          (item): item is string => typeof item === "string",
+        )
       : []),
-  ].filter(Boolean).join(" ").toLowerCase();
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
   return /\bvoice\b|do-not|canonical|hype|samples?/.test(text);
 }
 
@@ -496,18 +560,23 @@ function channelExplanation(
 ): ConversationTrustGateExplanation {
   if (event.event_type === "message.deferred") {
     const reason = textField(event.payload.defer_reason) ?? "deferred";
-    const kind = deliverabilityReasons.has(reason) ? "deliverability" : "channel";
+    const kind = deliverabilityReasons.has(reason)
+      ? "deliverability"
+      : "channel";
     return {
       kind,
       status: "deferred",
       severity: "warn",
       summary: `${kind === "deliverability" ? "Deliverability" : "Channel"} deferred: ${friendlyDeferReason(reason)}`,
-      detail: [
-        textField(event.payload.detail),
-        textField(event.payload.retry_after)
-          ? `Retry after ${textField(event.payload.retry_after)}`
-          : null,
-      ].filter((piece): piece is string => Boolean(piece)).join(" ") || null,
+      detail:
+        [
+          textField(event.payload.detail),
+          textField(event.payload.retry_after)
+            ? `Retry after ${textField(event.payload.retry_after)}`
+            : null,
+        ]
+          .filter((piece): piece is string => Boolean(piece))
+          .join(" ") || null,
     };
   }
 
@@ -517,7 +586,8 @@ function channelExplanation(
       status: "bounced",
       severity: "block",
       summary: "Deliverability blocked: message bounced",
-      detail: textField(event.payload.reason) ?? textField(event.payload.detail),
+      detail:
+        textField(event.payload.reason) ?? textField(event.payload.detail),
     };
   }
 
@@ -544,28 +614,33 @@ function channelAccountExplanation(
   event: ConversationTrustEvent,
 ): ConversationTrustGateExplanation {
   const status = textField(event.payload.status) ?? "errored";
-  const blocked = ["needs_reauth", "suspended", "disconnected"].includes(status);
+  const blocked = ["needs_reauth", "suspended", "disconnected"].includes(
+    status,
+  );
   return {
     kind: "channel",
     status: blocked ? "blocked" : "deferred",
     severity: blocked ? "block" : "warn",
     summary: `Channel account ${friendlyChannelAccountStatus(status)}`,
-    detail: [
-      textField(event.payload.error),
-      textField(event.payload.account_display_name),
-      textField(event.payload.provider_incident_id)
-        ? `Incident ${textField(event.payload.provider_incident_id)}`
-        : null,
-      textField(event.payload.provider_event_id)
-        ? `Provider event ${textField(event.payload.provider_event_id)}`
-        : null,
-      textField(event.payload.retry_after)
-        ? `Retry after ${textField(event.payload.retry_after)}`
-        : null,
-      textField(event.payload.channel_account_id)
-        ? `Account ${textField(event.payload.channel_account_id)}`
-        : null,
-    ].filter((piece): piece is string => Boolean(piece)).join(" ") || null,
+    detail:
+      [
+        textField(event.payload.error),
+        textField(event.payload.account_display_name),
+        textField(event.payload.provider_incident_id)
+          ? `Incident ${textField(event.payload.provider_incident_id)}`
+          : null,
+        textField(event.payload.provider_event_id)
+          ? `Provider event ${textField(event.payload.provider_event_id)}`
+          : null,
+        textField(event.payload.retry_after)
+          ? `Retry after ${textField(event.payload.retry_after)}`
+          : null,
+        textField(event.payload.channel_account_id)
+          ? `Account ${textField(event.payload.channel_account_id)}`
+          : null,
+      ]
+        .filter((piece): piece is string => Boolean(piece))
+        .join(" ") || null,
   };
 }
 
@@ -594,7 +669,8 @@ function friendlyDeferReason(reason: string): string {
     website_required:
       "the workspace needs a company website and description before sending",
     deliverability_cap_zero: "sending domain is not warmed yet",
-    deliverability_cap_exhausted: "today's warmed sending capacity is exhausted",
+    deliverability_cap_exhausted:
+      "today's warmed sending capacity is exhausted",
     daily_cap_reached: "the channel daily cap is reached",
     frequency_cap_reached: "this recipient was contacted too recently",
     missing_linkedin_profile: "the person has no LinkedIn profile on the graph",
@@ -624,10 +700,12 @@ function replyProofSummary(input: {
     input.draft?.eval_score
       ? `judge ${Number(input.draft.eval_score).toFixed(2)}`
       : null,
-    input.approval ? `approval ${input.approval.decision}` : "approval not requested",
+    input.approval
+      ? `approval ${input.approval.decision}`
+      : "approval not requested",
     input.channelEvent
       ? input.channelEvent.event_type.replace("message.", "")
-      : input.draft?.status ?? null,
+      : (input.draft?.status ?? null),
     input.outcome ? `outcome ${input.outcome.kind.replace(/_/g, " ")}` : null,
   ].filter((piece): piece is string => Boolean(piece));
   return pieces.join(" -> ");
@@ -750,7 +828,10 @@ async function loadWorkflowRun(
     signal_ids: string[];
     message_ids: string[];
   },
-): Promise<{ run: ConversationTrustWorkflowRun; steps: ConversationTrustStep[] } | null> {
+): Promise<{
+  run: ConversationTrustWorkflowRun;
+  steps: ConversationTrustStep[];
+} | null> {
   const { rows: runs } = await pool.query<ConversationTrustWorkflowRun>(
     `select wr.id, wr.workflow_name, wr.workflow_version, wr.status::text as status,
             wr.started_at, wr.ended_at

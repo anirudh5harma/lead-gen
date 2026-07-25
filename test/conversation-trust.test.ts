@@ -1,10 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import type { Pool } from "pg";
 import {
   buildGateExplanations,
   buildReplyProofs,
   CONVERSATION_TRUST_EVENT_TYPES,
+  loadConversationSignalsWithLegacyFallback,
+  type ConversationTrustConversation,
   type ConversationTrustApproval,
   type ConversationTrustEvent,
   type ConversationTrustMessage,
@@ -28,8 +31,52 @@ test("conversation trust reads only event types consumed by the detail surface",
   ]);
 });
 
+test("conversation trust keeps the detail available while the signal-link migration rolls out", async () => {
+  const signalId = randomUUID();
+  const conversation = {
+    signal_id: signalId,
+    signal_title: "Acme raised a Series A",
+    signal_kind: "funding",
+    signal_content: "Acme announced its Series A.",
+    signal_url: "https://example.com/acme-series-a",
+    started_at: now,
+  } as ConversationTrustConversation;
+  const pool = {
+    query: async () => {
+      const error = new Error(
+        'relation "conversation_signals" does not exist',
+      ) as Error & {
+        code: string;
+      };
+      error.code = "42P01";
+      throw error;
+    },
+  } as unknown as Pool;
+
+  const signals = await loadConversationSignalsWithLegacyFallback(
+    pool,
+    { workspace_id: randomUUID(), conversation_id: randomUUID() },
+    conversation,
+  );
+
+  assert.deepEqual(signals, [
+    {
+      id: signalId,
+      title: "Acme raised a Series A",
+      kind: "funding",
+      content: "Acme announced its Series A.",
+      url: "https://example.com/acme-series-a",
+      role: "primary",
+      reason: "legacy_origin",
+      score: null,
+      attached_at: now,
+    },
+  ]);
+});
+
 function message(
-  input: Partial<ConversationTrustMessage> & Pick<ConversationTrustMessage, "id" | "direction">,
+  input: Partial<ConversationTrustMessage> &
+    Pick<ConversationTrustMessage, "id" | "direction">,
 ): ConversationTrustMessage {
   return {
     id: input.id,
@@ -55,7 +102,8 @@ function message(
 test("buildReplyProofs groups reply intent, draft, approval, send, and outcome", () => {
   const inboundId = randomUUID();
   const draftId = randomUUID();
-  const patternKey = "conversation:email|intent:positive|company:acme-payroll|stage:reply";
+  const patternKey =
+    "conversation:email|intent:positive|company:acme-payroll|stage:reply";
   const approval: ConversationTrustApproval = {
     id: randomUUID(),
     run_id: randomUUID(),
@@ -130,9 +178,14 @@ test("buildReplyProofs groups reply intent, draft, approval, send, and outcome",
   assert.equal(proofs[0]?.channel_event_type, "message.sent");
   assert.equal(proofs[0]?.outcome_kind, "positive_reply");
   assert.ok(
-    proofs[0]?.gate_explanations.some((item) => /Channel sent/.test(item.summary)),
+    proofs[0]?.gate_explanations.some((item) =>
+      /Channel sent/.test(item.summary),
+    ),
   );
-  assert.match(proofs[0]?.summary ?? "", /intent positive -> draft sent -> judge 0\.87/);
+  assert.match(
+    proofs[0]?.summary ?? "",
+    /intent positive -> draft sent -> judge 0\.87/,
+  );
   assert.match(proofs[0]?.summary ?? "", /approval approved -> sent/);
   assert.match(proofs[0]?.summary ?? "", /outcome positive reply/);
 });
@@ -247,7 +300,10 @@ test("buildGateExplanations explains LinkedIn account recovery as channel state"
   assert.equal(explanations.length, 1);
   assert.equal(explanations[0]?.kind, "channel");
   assert.equal(explanations[0]?.status, "deferred");
-  assert.match(explanations[0]?.summary ?? "", /LinkedIn rate-limited the account/);
+  assert.match(
+    explanations[0]?.summary ?? "",
+    /LinkedIn rate-limited the account/,
+  );
   assert.match(explanations[0]?.detail ?? "", /Maya LinkedIn/);
 });
 
@@ -287,10 +343,16 @@ test("buildGateExplanations explains provider account lifecycle errors", () => {
   assert.equal(explanations[0]?.status, "blocked");
   assert.equal(explanations[0]?.severity, "block");
   assert.match(explanations[0]?.summary ?? "", /needs reauthorization/);
-  assert.match(explanations[0]?.detail ?? "", /provider requires account reauthorization/);
+  assert.match(
+    explanations[0]?.detail ?? "",
+    /provider requires account reauthorization/,
+  );
   assert.match(explanations[0]?.detail ?? "", /Maya LinkedIn/);
   assert.match(explanations[0]?.detail ?? "", /Incident inc_456/);
   assert.match(explanations[0]?.detail ?? "", /Provider event evt_reauth_123/);
-  assert.match(explanations[0]?.detail ?? "", /Retry after 2026-06-02T11:00:00.000Z/);
+  assert.match(
+    explanations[0]?.detail ?? "",
+    /Retry after 2026-06-02T11:00:00.000Z/,
+  );
   assert.match(explanations[0]?.detail ?? "", new RegExp(accountId));
 });
