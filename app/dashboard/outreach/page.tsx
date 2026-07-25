@@ -5,6 +5,7 @@ import Icon from "@/components/Icon";
 import { EmptyState } from "@/components/dashboard/Shell";
 import { resolveQualifiedSignalContactsAction } from "@/app/dashboard/actions";
 import { getPool } from "@/core/substrate/storage/index.ts";
+import { SIGNAL_OUTREACH_ELIGIBILITY_SQL } from "@/core/product/signal-outreach-eligibility";
 import {
   contactResolutionStatusLabel,
   normalizedSignalHeading,
@@ -35,7 +36,7 @@ const SIGNAL_KINDS = [
 interface OutreachFilters {
   q: string;
   kind: string | null;
-  readiness: "ready" | "missing" | null;
+  readiness: "email" | "linkedin" | null;
   freshness: 1 | 7 | 30;
   size: string | null;
   industry: string | null;
@@ -118,6 +119,7 @@ async function loadMatchedLeads(
           and co.id = s.related_company_id
         where s.workspace_id = $1
           and s.status in ('matched','in_play')
+          and (${SIGNAL_OUTREACH_ELIGIBILITY_SQL})
           and coalesce(s.ingested_at, s.freshness_at) >= now() - make_interval(days => $5)
           and ($3::text is null or s.kind::text = $3)
           and ($7::text is null or co.size_bucket = $7)
@@ -132,7 +134,7 @@ async function loadMatchedLeads(
           and (
             $4::text is null
             or (
-              $4 = 'ready'
+              $4 = 'email'
               and exists (
                 select 1
                   from graph_persons rp
@@ -141,15 +143,18 @@ async function loadMatchedLeads(
                      rp.id = s.related_person_id
                      or (s.related_company_id is not null and rp.company_id = s.related_company_id)
                    )
-                   and (
-                     cardinality(coalesce(rp.emails, '{}'::text[])) > 0
-                     or rp.linkedin_url is not null
+                   and exists (
+                     select 1
+                       from jsonb_each(
+                         coalesce(rp.properties->'email_verification', '{}'::jsonb)
+                       ) as ready_email(email, meta)
+                      where meta->>'verified' = 'true'
                    )
               )
             )
             or (
-              $4 = 'missing'
-              and not exists (
+              $4 = 'linkedin'
+              and exists (
                 select 1
                   from graph_persons mp
                  where mp.workspace_id = s.workspace_id
@@ -157,10 +162,7 @@ async function loadMatchedLeads(
                      mp.id = s.related_person_id
                      or (s.related_company_id is not null and mp.company_id = s.related_company_id)
                    )
-                   and (
-                     cardinality(coalesce(mp.emails, '{}'::text[])) > 0
-                     or mp.linkedin_url is not null
-                   )
+                   and mp.linkedin_url ~* '^https?://(www\.)?linkedin\.com/(in|company)/'
               )
             )
           )
@@ -201,9 +203,19 @@ async function loadMatchedLeads(
                  p.id = s.related_person_id
                  or (s.related_company_id is not null and p.company_id = s.related_company_id)
                )
+               and nullif(btrim(p.full_name), '') is not null
+               and lower(btrim(p.full_name)) not in (
+                 'unknown', 'unknown person', 'unnamed', 'untitled', 'n/a', 'na'
+               )
                and (
-                 cardinality(coalesce(p.emails, '{}'::text[])) > 0
-                 or p.linkedin_url is not null
+                 p.linkedin_url ~* '^https?://(www\.)?linkedin\.com/(in|company)/'
+                 or exists (
+                   select 1
+                     from jsonb_each(
+                       coalesce(p.properties->'email_verification', '{}'::jsonb)
+                     ) as displayed_email(email, meta)
+                    where meta->>'verified' = 'true'
+                 )
                )
              order by cardinality(coalesce(p.emails, '{}'::text[])) desc,
                       p.updated_at desc
@@ -343,9 +355,9 @@ function OutreachFilters({
           <option key={kind} value={kind}>{signalCategoryLabel(kind)}</option>
         ))}
       </FilterSelect>
-      <FilterSelect name="readiness" label="Any contact" value={filters.readiness}>
-        <option value="ready">Contact ready</option>
-        <option value="missing">Needs contact</option>
+      <FilterSelect name="readiness" label="Any verified contact" value={filters.readiness}>
+        <option value="email">Verified email</option>
+        <option value="linkedin">LinkedIn profile</option>
       </FilterSelect>
       <FilterSelect name="freshness" label="Last 30 days" value={String(filters.freshness)}>
         <option value="1">Last 24 hours</option>
@@ -561,7 +573,7 @@ function parseFilters(params: Record<string, string | string[] | undefined>): Ou
   return {
     q: single(params.q).trim(),
     kind: single(params.kind) || null,
-    readiness: readiness === "ready" || readiness === "missing" ? readiness : null,
+    readiness: readiness === "email" || readiness === "linkedin" ? readiness : null,
     freshness: freshness === 1 || freshness === 7 ? freshness : 30,
     size: single(params.size) || null,
     industry: single(params.industry).trim() || null,

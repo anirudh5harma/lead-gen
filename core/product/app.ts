@@ -222,6 +222,10 @@ import {
 } from "./forensics.ts";
 import { getConversationTrustTrace } from "./conversation-trust.ts";
 import {
+  assessSignalResearchEligibility,
+  SIGNAL_RESEARCH_ELIGIBILITY_SQL,
+} from "./signal-outreach-eligibility.ts";
+import {
   createProductSubstrate,
   type ProductSubstrateMode,
 } from "./substrate.ts";
@@ -10776,6 +10780,10 @@ interface SignalDispatchRow {
   workspace_id: string;
   signal_id: string;
   company_id: string | null;
+  company_name: string | null;
+  company_domain: string | null;
+  signal_url: string | null;
+  company_has_linkedin_identity: boolean;
   resolved_person_id: string | null;
   resolved_person_fit_decision: string | null;
   resolver_run_id: string | null;
@@ -11019,6 +11027,40 @@ async function publishSignalOutreachGated(
   });
 }
 
+async function publishSignalResearchGated(
+  engine: ProductEngine,
+  row: SignalDispatchRow,
+  reasons: Array<
+    "missing_company_name" | "missing_signal_evidence" | "missing_company_identity"
+  >,
+): Promise<void> {
+  await engine.bus.publish({
+    workspace_id: row.workspace_id,
+    event_type: "signal.outreach.gated",
+    source: "system",
+    producer_ref: "product.dispatchSignalPlaysOnce",
+    correlation_id: row.event_id,
+    causation_id: row.event_id,
+    idempotency_key: [
+      "signal-outreach-gated",
+      `signal:${row.signal_id}`,
+      `play:${row.play_id}`,
+      "gate:research_quality",
+    ].join(":"),
+    payload: {
+      signal_id: row.signal_id,
+      play_id: row.play_id,
+      person_id: null,
+      channel: contactChannelForTarget(row.target_channel),
+      gate: "research_quality",
+      decision: "incomplete",
+      reasons,
+      reason: "Signal is missing required company identity or source evidence.",
+      gated_at: new Date().toISOString(),
+    },
+  });
+}
+
 function stringOrNull(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
@@ -11063,6 +11105,19 @@ export async function dispatchSignalPlaysOnce(
             e.workspace_id,
             e.payload->>'signal_id' as signal_id,
             s.related_company_id::text as company_id,
+            co.name as company_name,
+            co.domain::text as company_domain,
+            s.url as signal_url,
+            exists (
+              select 1
+                from graph_persons identity_person
+               where identity_person.workspace_id = s.workspace_id
+                 and (
+                   identity_person.id = s.related_person_id
+                   or identity_person.company_id = s.related_company_id
+                 )
+                 and identity_person.linkedin_url ~* '^https?://(www\.)?linkedin\.com/(in|company)/'
+            ) as company_has_linkedin_identity,
             resolved.payload->>'selected_person_id' as resolved_person_id,
             fit_person.properties #>> '{contact_fit,decision}' as resolved_person_fit_decision,
             resolver.id::text as resolver_run_id,
@@ -11091,6 +11146,9 @@ export async function dispatchSignalPlaysOnce(
        join signals s
          on s.id = (e.payload->>'signal_id')::uuid
         and s.workspace_id = e.workspace_id
+       join graph_companies co
+         on co.workspace_id = s.workspace_id
+        and co.id = s.related_company_id
        join plays p
          on p.workspace_id = e.workspace_id
         and p.status = 'active'
@@ -11122,6 +11180,17 @@ export async function dispatchSignalPlaysOnce(
           order by skipped.occurred_at desc
           limit 1
        ) campaign_skip on true
+       left join lateral (
+         select gated.id
+           from events gated
+          where gated.workspace_id = e.workspace_id
+            and gated.event_type = 'signal.outreach.gated'
+            and gated.payload->>'signal_id' = e.payload->>'signal_id'
+            and gated.payload->>'play_id' = p.id::text
+            and gated.payload->>'gate' = 'research_quality'
+          order by gated.occurred_at desc
+          limit 1
+       ) research_gate on true
        left join lateral (
          select cr.payload
            from events cr
@@ -11254,10 +11323,17 @@ export async function dispatchSignalPlaysOnce(
         and coalesce(p.compiled->>'workflow', $1) = any($2::text[])
         and s.related_company_id is not null
         and campaign_skip.id is null
+        and research_gate.id is null
         and ($4::uuid is null or e.workspace_id = $4)
         and ($7::uuid is null or s.id = $7)
         and ($8::uuid is null or p.id = $8)
-      order by e.occurred_at asc
+      order by
+        case
+          when (${SIGNAL_RESEARCH_ELIGIBILITY_SQL})
+          then 0
+          else 1
+        end,
+        e.occurred_at asc
       limit $3`,
     [
       SIGNAL_TO_EMAIL_PLAY_WORKFLOW,
@@ -11276,7 +11352,24 @@ export async function dispatchSignalPlaysOnce(
   );
 
   const candidatesByWorkspace = new Map<string, SignalDispatchCandidate[]>();
-  rows.forEach((row, original_index) => {
+  for (const [original_index, row] of rows.entries()) {
+    const research = assessSignalResearchEligibility({
+      company_name: row.company_name,
+      company_domain: row.company_domain,
+      signal_url: row.signal_url,
+      linkedin_urls: [],
+      has_linkedin_identity: row.company_has_linkedin_identity,
+    });
+    if (!research.eligible) {
+      await publishSignalResearchGated(
+        engine,
+        row,
+        research.reasons.filter((reason) =>
+          reason !== "missing_reachable_contact"
+        ),
+      );
+      continue;
+    }
     const candidate: SignalDispatchCandidate = {
       ...signalDispatchCampaignCandidate(row),
       explicit_target: Boolean(opts.play_id),
@@ -11287,7 +11380,7 @@ export async function dispatchSignalPlaysOnce(
       candidatesByWorkspace.get(row.workspace_id) ?? [];
     workspaceCandidates.push(candidate);
     candidatesByWorkspace.set(row.workspace_id, workspaceCandidates);
-  });
+  }
 
   const planned: Array<CampaignDispatchPlan<SignalDispatchCandidate>> = [];
   for (const [workspace_id, candidates] of candidatesByWorkspace) {

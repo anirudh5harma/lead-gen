@@ -34,84 +34,9 @@ function preview(body: string | null, max = 600): string {
   return body.length > max ? body.slice(0, max) + "…" : body;
 }
 
-function TrustTracePanel({
-  conversation,
-  messages,
-  approvals,
-  outcomes,
-  replyProofs,
-}: {
-  conversation: ConversationTrustConversation;
-  messages: ConversationTrustMessage[];
-  approvals: ConversationTrustApproval[];
-  outcomes: ConversationTrustOutcome[];
-  replyProofs: ConversationTrustReplyProof[];
-}) {
-  const outbound =
-    [...messages].reverse().find((message) => message.direction === "outbound") ??
-    messages[0] ??
-    null;
-  const latestApproval = approvals.at(-1) ?? null;
-  const latestOutcome = outcomes.at(-1) ?? null;
-  const critique =
-    textValue(outbound?.eval_notes?.critique) ??
-    textValue(outbound?.eval_notes?.draft_rejection_reason);
-  const latestReplyProof = replyProofs.at(-1) ?? null;
-
-  return (
-    <div className="section-note">
-      <p className="text-sm font-semibold text-[var(--color-text-1)]">Proof</p>
-      <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
-        Why the agent moved, what was checked, and what came back.
-      </p>
-      <div className="mt-4 grid gap-3">
-        <TraceRow
-          label="Why now"
-          value={conversation.signal_title ?? conversation.topic ?? "No signal anchor"}
-        />
-        <TraceRow
-          label="Message check"
-          value={
-            outbound?.eval_passed === false
-              ? "Needs review"
-              : outbound?.eval_passed === true
-                ? "Ready"
-                : "Waiting for review"
-          }
-          meta={critique ?? undefined}
-        />
-        <TraceRow
-          label="Reply"
-          value={latestReplyProof?.summary ?? "No reply yet"}
-          meta={latestReplyProof ? replyProofMeta(latestReplyProof) ?? undefined : undefined}
-        />
-        <TraceRow
-          label="Approval"
-          value={
-            latestApproval
-              ? approvalLabel(latestApproval.decision)
-              : "No manual review requested"
-          }
-          meta={latestApproval?.reason ?? undefined}
-        />
-        <TraceRow
-          label="Result"
-          value={
-            latestOutcome
-              ? outcomeLabel(latestOutcome.kind)
-              : "No result recorded yet"
-          }
-          meta={latestOutcome ? formatWhen(latestOutcome.occurred_at) : undefined}
-        />
-      </div>
-    </div>
-  );
-}
-
 function OutreachProofTimeline({
   conversation,
   messages,
-  approvals,
   outcomes,
   replyProofs,
   gateExplanations,
@@ -119,7 +44,6 @@ function OutreachProofTimeline({
 }: {
   conversation: ConversationTrustConversation;
   messages: ConversationTrustMessage[];
-  approvals: ConversationTrustApproval[];
   outcomes: ConversationTrustOutcome[];
   replyProofs: ConversationTrustReplyProof[];
   gateExplanations: ConversationTrustGateExplanation[];
@@ -522,37 +446,12 @@ function textValue(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function replyProofMeta(proof: ConversationTrustReplyProof): string | null {
-  const pieces = [
-    proof.exemplar_count
-      ? `${proof.exemplar_count} useful ${proof.exemplar_count === 1 ? "example" : "examples"}`
-      : null,
-    proof.channel_event_type ? channelEventLabel(proof.channel_event_type) : null,
-  ].filter((piece): piece is string => Boolean(piece));
-  return pieces.length ? pieces.join(" · ") : null;
-}
-
-function approvalLabel(decision: string): string {
-  if (decision === "approved") return "Approved";
-  if (decision === "rejected") return "Rejected";
-  if (decision === "pending") return "Needs review";
-  return decision.replace(/_/g, " ");
-}
-
 function outcomeLabel(kind: string): string {
   if (kind === "positive_reply") return "Positive reply";
   if (kind === "meeting_booked") return "Meeting booked";
   if (kind === "post_published") return "Post published";
   if (kind === "engagement_lift") return "Lift";
   return kind.replace(/_/g, " ");
-}
-
-function channelEventLabel(eventType: string): string {
-  if (eventType === "message.sent") return "Sent";
-  if (eventType === "message.delivered") return "Delivered";
-  if (eventType === "message.bounced") return "Bounced";
-  if (eventType === "message.deferred") return "Held for review";
-  return eventType.replace(/_/g, " ").replace(/\./g, " ");
 }
 
 function strongestGateExplanation(
@@ -678,29 +577,36 @@ export default async function AgentOutreachDetailPage({
   const latestPrep = latestMeetingPrep(events);
 
   return (
-    <div className="space-y-10">
-      <section className="section-canvas min-h-[300px] p-5 sm:p-8">
-        <div className="section-thread section-thread-a" />
-        <p className="brief-kicker">Agent</p>
-        <h1 className="mt-4 max-w-3xl text-[38px] font-semibold leading-[1.04] tracking-[0] text-[var(--color-text-1)] sm:text-[58px]">
+    <div className="space-y-6">
+      <header className="border-b border-[var(--color-line-1)] pb-5">
+        <Link
+          href="/dashboard/conversations"
+          prefetch
+          className="inline-flex items-center gap-1.5 text-xs text-[var(--color-text-3)] hover:text-[var(--color-text-1)]"
+        >
+          <Icon name="arrow_back" size={14} />
+          Conversations
+        </Link>
+        <p className="mt-5 brief-kicker">Conversation</p>
+        <h1 className="mt-2 max-w-3xl text-[32px] font-semibold leading-tight text-[var(--color-text-1)] sm:text-[38px]">
           {conv.counterparty_name ?? "Unknown contact"}
         </h1>
-        <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[var(--color-text-2)]">
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--color-text-2)]">
           {conv.topic ?? conv.signal_title ?? "Conversation detail and proof of work."}
         </p>
-      </section>
+        <div className="mt-3 flex flex-wrap gap-2 text-xs text-[var(--color-text-3)]">
+          <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1">
+            {conv.status.replace(/_/g, " ")}
+          </span>
+          {conv.company_name ? (
+            <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1">
+              {conv.company_name}
+            </span>
+          ) : null}
+        </div>
+      </header>
 
-      <OutreachProofTimeline
-        conversation={conv}
-        messages={messages}
-        approvals={approvals}
-        outcomes={outcomes}
-        replyProofs={replyProofs}
-        gateExplanations={gateExplanations}
-        workflow={workflow}
-      />
-
-      <div className="mt-6 grid gap-6 xl:grid-cols-[1fr_320px]">
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         <section>
           <h2 className="mb-3 text-lg font-semibold text-[var(--color-text-1)]">Messages</h2>
           {messages.length === 0 ? (
@@ -774,16 +680,8 @@ export default async function AgentOutreachDetailPage({
 
           <MeetingPrepPanel conversationId={conv.id} prep={latestPrep} />
 
-          <TrustTracePanel
-            conversation={conv}
-            messages={messages}
-            approvals={approvals}
-            outcomes={outcomes}
-            replyProofs={replyProofs}
-          />
-
           <div className="section-note">
-            <p className="text-sm font-semibold text-[var(--color-text-1)]">Contact trust</p>
+            <p className="text-sm font-semibold text-[var(--color-text-1)]">Contact</p>
             <p className="mt-1 font-sans text-sm text-[var(--color-text-1)]">
               {conv.counterparty_name}
             </p>
@@ -835,28 +733,41 @@ export default async function AgentOutreachDetailPage({
                 Voice <span className="text-[var(--color-text-1)]">{conv.rep_name}</span>
               </p>
             ) : null}
-          </div>
-
-          {conv.signal_title ? (
-            <div className="section-note">
-              <p className="text-sm font-semibold text-[var(--color-text-1)]">Why now</p>
-              <p className="font-sans text-sm text-[var(--color-text-1)] mt-1">
+            {conv.signal_title ? (
+              <div className="mt-4 border-t border-[var(--color-line-1)] pt-4">
+                <p className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-4)]">
+                  Why now
+                </p>
+                <p className="mt-1 font-sans text-sm leading-5 text-[var(--color-text-1)]">
                 {conv.signal_title}
-              </p>
-            </div>
-          ) : null}
-
-          <p className="text-xs text-[var(--color-text-3)]">
-            <Link
-              href="/dashboard/conversations"
-              prefetch
-              className="hover:text-[var(--color-text-1)]"
-            >
-              Back to conversations
-            </Link>
-          </p>
+                </p>
+              </div>
+            ) : null}
+          </div>
         </aside>
       </div>
+
+      <details className="group rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)]">
+        <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-[var(--color-text-2)]">
+          <Icon name="account_tree" size={15} />
+          Delivery and workflow proof
+          <Icon
+            name="expand_more"
+            size={16}
+            className="ml-auto transition-transform group-open:rotate-180"
+          />
+        </summary>
+        <div className="border-t border-[var(--color-line-1)] p-3 sm:p-4">
+          <OutreachProofTimeline
+            conversation={conv}
+            messages={messages}
+            outcomes={outcomes}
+            replyProofs={replyProofs}
+            gateExplanations={gateExplanations}
+            workflow={workflow}
+          />
+        </div>
+      </details>
     </div>
   );
 }

@@ -485,10 +485,15 @@ const PersonFitFeedbackRecorded = z.object({
 const SignalOutreachGated = z.object({
   signal_id: z.string().uuid(),
   play_id: z.string().uuid(),
-  person_id: z.string().uuid(),
+  person_id: z.string().uuid().nullable(),
   channel: z.string().min(1),
-  gate: z.enum(["contact_fit"]),
-  decision: z.enum(["not_fit"]),
+  gate: z.enum(["contact_fit", "research_quality"]),
+  decision: z.enum(["not_fit", "incomplete"]),
+  reasons: z.array(z.enum([
+    "missing_company_name",
+    "missing_signal_evidence",
+    "missing_company_identity",
+  ])).optional(),
   reason: z.string().min(1),
   gated_at: z.string().datetime(),
 });

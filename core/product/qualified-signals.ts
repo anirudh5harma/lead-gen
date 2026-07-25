@@ -1,6 +1,10 @@
 import type { Pool } from "pg";
 import { scoreSignalIntent } from "../ingest/account-intent.ts";
 import type { SignalKind } from "../primitives/signal.ts";
+import {
+  assessSignalOutreachEligibility,
+  SIGNAL_OUTREACH_ELIGIBILITY_SQL,
+} from "./signal-outreach-eligibility.ts";
 
 export interface QualifiedSignalContact {
   rank: number;
@@ -242,12 +246,16 @@ export async function loadQualifiedSignalWorkbench(
     `with qualified_signals as (
        select s.*
          from signals s
+         join graph_companies co
+           on co.workspace_id = s.workspace_id
+          and co.id = s.related_company_id
          left join account_intent_scores seed_account_intent
            on seed_account_intent.workspace_id = s.workspace_id
           and seed_account_intent.company_id = s.related_company_id
         where s.workspace_id = $1
           and s.status in ('matched', 'in_play')
           and s.related_company_id is not null
+          and (${SIGNAL_OUTREACH_ELIGIBILITY_SQL})
         order by coalesce(seed_account_intent.composite_score, 0) desc,
                  coalesce(s.match_score, 0) desc,
                  s.freshness_at desc,
@@ -576,6 +584,19 @@ export async function loadQualifiedSignalWorkbench(
   const signals = dedupeQualifiedSignals(
     rows
       .map(mapQualifiedSignalRow)
+      .filter((signal) =>
+        assessSignalOutreachEligibility({
+          company_name: signal.company.name,
+          company_domain: signal.company.domain,
+          signal_url: signal.url,
+          contacts: signal.contacts.map((contact) => ({
+            full_name: contact.full_name,
+            emails: contact.emails,
+            email_verified: contact.verification.email_verified === true,
+            linkedin_url: contact.linkedin_url,
+          })),
+        }).eligible
+      )
       .sort((left, right) => compareQualifiedSignalItems(left, right, now)),
   )
     .slice(0, limit);

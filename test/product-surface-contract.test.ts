@@ -928,9 +928,11 @@ test("sent outreach links open the exact draft in the conversation trace", () =>
   assert.match(actions, /revalidatePath\(`\/dashboard\/conversations\/\$\{conversationId\}`\)/);
   assert.match(aliases, /\/dashboard\/conversations\/\$\{message\.conversation_id\}#message-\$\{message\.id\}/);
   assert.doesNotMatch(aliases, /\/dashboard\/agent\/outreach\/\$\{message\.conversation_id\}/);
-  assert.match(detail, /brief-kicker">Agent/);
+  assert.match(detail, /brief-kicker">Conversation/);
   assert.match(detail, /OutreachProofTimeline/);
   assert.match(detail, /Signal-to-outreach trace/);
+  assert.match(detail, /Delivery and workflow proof/);
+  assert.match(detail, /<details className="group/);
   assert.match(detail, /timing signal,\s+verified contact, judged draft, channel handoff, and reply learning/);
   assert.match(detail, /gate_explanations: gateExplanations/);
   assert.match(detail, /workflow=\{workflow\}/);
@@ -941,8 +943,8 @@ test("sent outreach links open the exact draft in the conversation trace", () =>
   assert.match(detail, /completedStepCount/);
   assert.match(detail, /id=\{`message-\$\{m\.id\}`\}/);
   assert.match(detail, /target:ring-\[var\(--color-accent\)\]/);
-  assert.match(detail, /Back to conversations/);
-  assert.match(detail, /Contact trust/);
+  assert.match(detail, />\s*Conversations\s*</);
+  assert.match(detail, />Contact</);
   assert.match(detail, /contactEmailStatusLabel\(conv\.counterparty_email_status\)/);
   assert.match(detail, /conv\.counterparty_linkedin_ready \? "LinkedIn profile" : "No LinkedIn profile"/);
   assert.match(detail, /contactFitLabel\(conv\.counterparty_fit_decision\)/);

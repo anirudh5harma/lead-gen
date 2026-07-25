@@ -178,7 +178,7 @@ test("qualified signals workbench falls back to graph contacts when resolution h
       status: "matched",
       title: "Beta opened GTM roles",
       content: null,
-      url: null,
+      url: "https://jobs.betafinance.example/gtm",
       match_score: "0.7500",
       match_reason: null,
       freshness_at: now,
@@ -320,7 +320,7 @@ test("qualified signals workbench dedupes repeated contacts inside one signal", 
       status: "matched",
       title: "Acme raised a round",
       content: null,
-      url: null,
+      url: "https://news.example/acme-funding",
       match_score: "0.9100",
       match_reason: "Funding signal.",
       freshness_at: now,
@@ -400,7 +400,7 @@ test("qualified signals workbench keeps only the strongest repeated person/compa
       status: "matched",
       title: "Older signal",
       content: null,
-      url: null,
+      url: "https://news.example/acme-older",
       match_score: "0.7400",
       match_reason: "Earlier signal.",
       freshness_at: older,
@@ -456,7 +456,7 @@ test("qualified signals workbench keeps only the strongest repeated person/compa
       status: "matched",
       title: "Newer stronger signal",
       content: null,
-      url: null,
+      url: "https://news.example/acme-newer",
       match_score: "0.9200",
       match_reason: "Better signal.",
       freshness_at: newer,
@@ -539,7 +539,20 @@ test("qualified signals workbench decodes HTML entities in displayed signal text
       company_industry: null,
       company_description: "AI &amp; bio workflows.",
       contact_candidates: null,
-      graph_candidates: [],
+      graph_candidates: [
+        {
+          rank: 1,
+          person_id: "00000000-0000-4000-8000-000000000303",
+          full_name: "Mira Shah",
+          title: "Founder",
+          score: 0.95,
+          reasons: ["verified_email"],
+          emails: ["mira@weave.bio"],
+          linkedin_url: null,
+          verification: { email_verified: true, email_status: "valid" },
+          provenance: { source: "graph" },
+        },
+      ],
       contact_channel: null,
       contact_defer_reason: null,
       draft_conversation_id: null,
@@ -588,6 +601,11 @@ test("qualified signals query only surfaces actionable company-backed verified-c
   await loadQualifiedSignalWorkbench(pool, "00000000-0000-4000-8000-000000000001");
 
   assert.match(sql, /s\.related_company_id is not null/);
+  assert.match(sql, /s\.url ~\* '\^https\?:\/\//);
+  assert.match(sql, /nullif\(btrim\(co\.name\), ''\) is not null/);
+  assert.match(sql, /co\.domain is not null/);
+  assert.match(sql, /eligible_person\.linkedin_url ~\*/);
+  assert.match(sql, /eligible_person\.properties->'email_verification'/);
   assert.match(sql, /e\.event_type in \(/);
   assert.match(sql, /'message\.deferred'/);
   assert.match(sql, /e\.payload->>'message_id' = m\.id::text/);
