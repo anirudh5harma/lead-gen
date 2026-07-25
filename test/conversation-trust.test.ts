@@ -23,6 +23,8 @@ test("conversation trust reads only event types consumed by the detail surface",
     "message.bounced",
     "channel.account.errored",
     "meeting.prep.generated",
+    "conversation.signal.attached",
+    "signal.outreach.suppressed",
   ]);
 });
 

@@ -760,6 +760,33 @@ const ConversationOpened = z.object({
   opened_at: z.string().datetime().optional(),
 });
 
+const ConversationSignalAttached = z.object({
+  conversation_id: z.string().uuid(),
+  signal_id: z.string().uuid(),
+  role: z.enum(["primary", "supporting"]),
+  reason: z.string().min(1),
+  score: z.number().min(0).max(1).nullable().optional(),
+  attached_at: z.string().datetime(),
+});
+
+const SignalOutreachSuppressed = z.object({
+  signal_id: z.string().uuid(),
+  play_id: z.string().uuid(),
+  conversation_id: z.string().uuid(),
+  person_id: z.string().uuid(),
+  company_id: z.string().uuid().nullable(),
+  channel: z.string().min(1),
+  reason: z.enum([
+    "better_signal_selected",
+    "recipient_cooldown",
+    "conversation_active",
+    "conversation_blocked",
+  ]),
+  selected_signal_id: z.string().uuid().nullable().optional(),
+  retry_after: z.string().datetime().nullable(),
+  suppressed_at: z.string().datetime(),
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Channel I/O
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1846,6 +1873,8 @@ export const eventRegistry = {
   "draft.rejected": DraftRejected,
 
   "conversation.opened": ConversationOpened,
+  "conversation.signal.attached": ConversationSignalAttached,
+  "signal.outreach.suppressed": SignalOutreachSuppressed,
 
   "email.bounce.received": EmailBounceReceived,
   "email.inbound.received": EmailInboundReceived,

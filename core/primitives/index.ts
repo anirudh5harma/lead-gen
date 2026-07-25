@@ -17,4 +17,5 @@ export * from "./play";
 export * from "./conversation";
 export * from "./conversation-identity";
 export * from "./conversation-lifecycle";
+export * from "./conversation-policy";
 export * from "./outcome";

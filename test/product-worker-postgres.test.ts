@@ -927,7 +927,7 @@ async function withoutExternalContactProviders<T>(fn: () => Promise<T>): Promise
   }
 }
 
-test("product worker: recipient frequency cap defers repeat outreach", async (t) => {
+test("product worker: relationship cooldown suppresses repeat outreach before drafting", async (t) => {
   const fx = await setupPg("product_frequency_cap");
   if (!fx) return t.skip("DATABASE_URL not set");
 
@@ -986,13 +986,19 @@ test("product worker: recipient frequency cap defers repeat outreach", async (t)
 
     assert.equal(await dispatchSignalPlaysOnce(), 0);
     await waitForContactResolved(fx.pool, second);
-    assert.equal(await dispatchSignalPlaysOnce(), 1);
+    assert.equal(await dispatchSignalPlaysOnce(), 0);
     await until(async () => {
-      const { rows } = await fx.pool.query<{ status: string }>(
-        `select status from workflow_runs where idempotency_key like $1`,
-        [`signal:${second.signal_id}:%`],
+      const { rows } = await fx.pool.query<{ reason: string }>(
+        `select payload->>'reason' as reason
+           from events
+          where workspace_id = $1
+            and event_type = 'signal.outreach.suppressed'
+            and payload->>'signal_id' = $2
+          order by occurred_at desc
+          limit 1`,
+        [second.workspace_id, second.signal_id],
       );
-      return rows[0]?.status === "completed" ? rows[0] : null;
+      return rows[0]?.reason === "recipient_cooldown" ? rows[0] : null;
     }, { timeout: WORKFLOW_TIMEOUT_MS });
 
     const messages = await fx.pool.query<{
@@ -1006,10 +1012,28 @@ test("product worker: recipient frequency cap defers repeat outreach", async (t)
         order by created_at asc`,
       [first.workspace_id],
     );
-    assert.equal(messages.rows.length, 2);
+    assert.equal(messages.rows.length, 1);
     assert.equal(messages.rows[0].status, "sent");
-    assert.equal(messages.rows[1].status, "deferred");
-    assert.equal(messages.rows[1].properties.defer_reason, "recipient_frequency_cap");
+
+    const relationship = await fx.pool.query<{ conversations: string; signals: string }>(
+      `select count(distinct c.id)::text as conversations,
+              count(distinct cs.signal_id)::text as signals
+         from conversations c
+         join conversation_signals cs
+           on cs.workspace_id = c.workspace_id
+          and cs.conversation_id = c.id
+        where c.workspace_id = $1
+          and c.counterparty_person_id = (
+            select counterparty_person_id
+              from conversations
+             where workspace_id = $1
+             order by started_at asc
+             limit 1
+          )`,
+      [first.workspace_id],
+    );
+    assert.equal(relationship.rows[0]?.conversations, "1");
+    assert.equal(relationship.rows[0]?.signals, "2");
 
     const account = await fx.pool.query<{ daily_used: number }>(
       `select daily_used from channel_accounts where id = $1`,

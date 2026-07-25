@@ -2,19 +2,16 @@ import { createHash } from "node:crypto";
 
 export interface ConversationIdentityInput {
   workspace_id: string;
-  rep_id: string;
   counterparty_person_id: string;
-  origin_signal_id?: string | null;
-  thread_key?: string | null;
+  counterparty_company_id?: string | null;
 }
 
 export function deterministicConversationId(input: ConversationIdentityInput): string {
   return uuidFromHash([
-    "bombsell:conversation:v1",
+    "bombsell:conversation:v2",
     input.workspace_id,
-    input.rep_id,
     input.counterparty_person_id,
-    input.origin_signal_id ?? input.thread_key ?? "no-origin-signal",
+    input.counterparty_company_id ?? "no-company",
   ].join("\u0000"));
 }
 

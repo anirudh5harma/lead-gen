@@ -162,9 +162,8 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
       const conversation = await ctx.step("conversation.open", async () => {
         const conversation_id = deterministicConversationId({
           workspace_id: input.workspace_id,
-          rep_id: rep.id,
           counterparty_person_id: person.id,
-          origin_signal_id: signal.id,
+          counterparty_company_id: company?.id ?? null,
         });
         const event = await ctx.publish("conversation.opened", {
           conversation_id,
@@ -181,6 +180,13 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
         });
         const row = await deps.store.projectConversationLifecycleEvent(event);
         if (!row) throw new Error(`Conversation projection failed: ${event.payload.conversation_id}`);
+        await ctx.publish("conversation.signal.attached", {
+          conversation_id: row.id,
+          signal_id: signal.id,
+          role: "primary",
+          reason: "selected_for_outreach",
+          attached_at: new Date().toISOString(),
+        });
         return row;
       });
 

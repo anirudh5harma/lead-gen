@@ -3,13 +3,19 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, type MouseEvent, type ReactNode } from "react";
 import {
+  useState,
+  useTransition,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
+import {
+  setWorkspaceAutonomyModeAction,
   switchWorkspaceAction,
-  updateWorkspaceAutonomyAction,
 } from "@/app/dashboard/actions";
 import Icon from "@/components/Icon";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
+import { useToast } from "@/components/Toast";
 import VoiceAssistantDrawer from "@/components/dashboard/VoiceAssistantDrawer";
 
 interface NavItem {
@@ -193,7 +199,10 @@ export function DashboardShell({
       </aside>
 
       <div className="fixed right-6 top-5 z-40 hidden items-center gap-2 md:flex">
-        <WorkspaceModeSwitch mode={autonomyMode} returnTo={pathname} />
+        <WorkspaceModeSwitch
+          key={`desktop:${activeWorkspaceId ?? "workspace"}:${autonomyMode}`}
+          mode={autonomyMode}
+        />
         <SignOutButton />
       </div>
 
@@ -222,7 +231,11 @@ export function DashboardShell({
           Bombsell
         </Link>
         <div className="flex items-center gap-1.5">
-          <WorkspaceModeSwitch mode={autonomyMode} returnTo={pathname} compact />
+          <WorkspaceModeSwitch
+            key={`mobile:${activeWorkspaceId ?? "workspace"}:${autonomyMode}`}
+            mode={autonomyMode}
+            compact
+          />
           <SignOutButton compact />
         </div>
       </header>
@@ -265,35 +278,79 @@ export function DashboardShell({
 
 function WorkspaceModeSwitch({
   mode,
-  returnTo,
   compact = false,
 }: {
   mode: WorkspaceAutonomyMode;
-  returnTo: string;
   compact?: boolean;
 }) {
+  const [selectedMode, setSelectedMode] = useState(mode);
+  const [isPending, startTransition] = useTransition();
+  const toast = useToast();
+
+  function selectMode(nextMode: WorkspaceAutonomyMode) {
+    if (isPending || nextMode === selectedMode) return;
+    const previousMode = selectedMode;
+    setSelectedMode(nextMode);
+    startTransition(async () => {
+      try {
+        const result = await setWorkspaceAutonomyModeAction(nextMode);
+        if (!result.ok) {
+          setSelectedMode(previousMode);
+          toast.error(result.error);
+          return;
+        }
+        toast.success(
+          result.mode === "autonomous"
+            ? "Auto mode is on. Outreach can send after checks."
+            : "Review mode is on. Outreach will wait for approval.",
+        );
+      } catch {
+        setSelectedMode(previousMode);
+        toast.error("Could not change outreach mode. Try again.");
+      }
+    });
+  }
+
   return (
     <div
       role="group"
       aria-label="Outreach operating mode"
-      className="inline-flex items-center rounded-[10px] bg-[var(--color-ink-2)] p-1 ring-1 ring-[var(--color-line-1)]"
+      aria-busy={isPending}
+      className={
+        "relative grid grid-cols-2 rounded-[10px] bg-[var(--color-ink-2)] p-1 ring-1 ring-[var(--color-line-1)] " +
+        (compact ? "w-[116px]" : "w-[148px]")
+      }
     >
+      <span
+        aria-hidden="true"
+        className={
+          "pointer-events-none absolute bottom-1 left-1 top-1 w-[calc(50%-4px)] transform-gpu rounded-[7px] bg-[var(--color-cta-bg)] shadow-[0_1px_2px_rgba(0,0,0,0.12)] transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none " +
+          (selectedMode === "review_only" ? "translate-x-full" : "translate-x-0")
+        }
+      />
       <ModeOption
         value="autonomous"
         label="Auto"
-        active={mode === "autonomous"}
-        returnTo={returnTo}
+        active={selectedMode === "autonomous"}
+        disabled={isPending}
+        onSelect={selectMode}
         compact={compact}
         title="Auto: send outreach after quality and channel checks pass"
       />
       <ModeOption
         value="review_only"
         label="Review"
-        active={mode === "review_only"}
-        returnTo={returnTo}
+        active={selectedMode === "review_only"}
+        disabled={isPending}
+        onSelect={selectMode}
         compact={compact}
         title="Review: hold judged drafts for approval before sending"
       />
+      <span className="sr-only" aria-live="polite">
+        {isPending
+          ? `Switching to ${selectedMode === "autonomous" ? "Auto" : "Review"} mode`
+          : `${selectedMode === "autonomous" ? "Auto" : "Review"} mode active`}
+      </span>
     </div>
   );
 }
@@ -302,37 +359,36 @@ function ModeOption({
   value,
   label,
   active,
-  returnTo,
+  disabled,
+  onSelect,
   compact,
   title,
 }: {
   value: WorkspaceAutonomyMode;
   label: string;
   active: boolean;
-  returnTo: string;
+  disabled: boolean;
+  onSelect: (mode: WorkspaceAutonomyMode) => void;
   compact: boolean;
   title: string;
 }) {
   return (
-    <form action={updateWorkspaceAutonomyAction}>
-      <input type="hidden" name="return_to" value={returnTo} />
-      <input type="hidden" name="autonomy_mode" value={value} />
-      <PendingSubmitButton
-        type="submit"
-        title={title}
-        aria-pressed={active}
-        className={
-          "h-8 rounded-[7px] font-medium transition-all " +
-          (compact ? "px-2 text-[11px] " : "px-3 text-xs ") +
-          (active
-            ? "bg-[var(--color-ink-0)] text-[var(--color-text-1)] shadow-sm ring-1 ring-[var(--color-line-2)]"
-            : "text-[var(--color-text-3)] hover:text-[var(--color-text-1)]")
-        }
-        pendingLabel="…"
-      >
-        {label}
-      </PendingSubmitButton>
-    </form>
+    <button
+      type="button"
+      title={title}
+      aria-pressed={active}
+      disabled={disabled}
+      onClick={() => onSelect(value)}
+      className={
+        "relative z-10 h-8 rounded-[7px] font-medium outline-none transition-colors duration-200 ease-out focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-ink-2)] motion-reduce:transition-none disabled:cursor-wait " +
+        (compact ? "px-2 text-[11px] " : "px-3 text-xs ") +
+        (active
+          ? "text-[var(--color-cta-text)]"
+          : "text-[var(--color-text-3)] hover:text-[var(--color-text-1)]")
+      }
+    >
+      {label}
+    </button>
   );
 }
 

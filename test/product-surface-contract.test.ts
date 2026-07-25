@@ -74,6 +74,10 @@ test("dashboard shell keeps route chrome simple and avoids extra flow queries", 
   const shell = source("components/dashboard/Shell.tsx");
   const layout = source("app/dashboard/layout.tsx");
   const workspace = source("lib/workspace.ts");
+  const modeSwitch = shell.slice(
+    shell.indexOf("function WorkspaceModeSwitch"),
+    shell.indexOf("function SignOutButton"),
+  );
 
   assert.match(shell, /DashboardShell/);
   assert.match(shell, /md:w-\[calc\(100%-240px\)\]/);
@@ -86,7 +90,11 @@ test("dashboard shell keeps route chrome simple and avoids extra flow queries", 
   assert.match(shell, /WorkspaceModeSwitch/);
   assert.match(shell, /label="Auto"/);
   assert.match(shell, /label="Review"/);
-  assert.match(shell, /updateWorkspaceAutonomyAction/);
+  assert.match(shell, /setWorkspaceAutonomyModeAction/);
+  assert.match(shell, /useTransition/);
+  assert.match(shell, /translate-x-full/);
+  assert.match(shell, /motion-reduce:transition-none/);
+  assert.doesNotMatch(modeSwitch, /<form/);
   assert.match(shell, />Sign out</);
   assert.match(layout, /autonomyMode=\{chrome\.autonomyMode\}/);
   assert.match(layout, /<DashboardShell/);

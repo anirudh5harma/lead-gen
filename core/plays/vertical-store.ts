@@ -151,17 +151,27 @@ export function createInMemoryVerticalSliceStore(
 
     projectConversationLifecycleEvent(event) {
       const payload = event.payload;
-      const existing = conversations.get(payload.conversation_id);
+      const existing =
+        conversations.get(payload.conversation_id) ??
+        Array.from(conversations.values()).find(
+          (conversation) =>
+            conversation.workspace_id === event.workspace_id &&
+            conversation.counterparty_person_id ===
+              payload.counterparty_person_id &&
+            conversation.counterparty_company_id ===
+              (payload.counterparty_company_id ?? null),
+        );
       const openedAt = payload.opened_at ?? event.occurred_at;
       const row: Conversation = {
-        id: payload.conversation_id,
+        id: existing?.id ?? payload.conversation_id,
         workspace_id: event.workspace_id,
         rep_id: payload.rep_id,
         counterparty_person_id: payload.counterparty_person_id,
         counterparty_company_id: payload.counterparty_company_id ?? null,
         status: existing?.status ?? "open",
-        origin_signal_id: payload.origin_signal_id,
-        topic: payload.topic ?? null,
+        origin_signal_id:
+          existing?.origin_signal_id ?? payload.origin_signal_id,
+        topic: existing?.topic ?? payload.topic ?? null,
         started_at: existing?.started_at ?? openedAt,
         last_activity_at: openedAt,
         closed_at: existing?.closed_at ?? null,
@@ -837,10 +847,8 @@ export function createPostgresVerticalSliceStore(pool: Pool): VerticalSliceStore
             and (
               id = $1
               or (
-                $5::uuid is not null
-                and rep_id = $3
-                and counterparty_person_id = $4
-                and origin_signal_id = $5::uuid
+                counterparty_person_id = $4
+                and counterparty_company_id is not distinct from $6::uuid
               )
             )
           order by case when id = $1 then 0 else 1 end
@@ -851,6 +859,7 @@ export function createPostgresVerticalSliceStore(pool: Pool): VerticalSliceStore
           event.payload.rep_id,
           event.payload.counterparty_person_id,
           event.payload.origin_signal_id,
+          event.payload.counterparty_company_id ?? null,
         ],
       );
       return rows[0] ? conversationFromRow(rows[0]) : null;

@@ -220,6 +220,33 @@ export async function updateWorkspaceAutonomyAction(formData: FormData) {
   );
 }
 
+export async function setWorkspaceAutonomyModeAction(
+  requestedMode: "autonomous" | "review_only",
+): Promise<
+  | { ok: true; mode: "autonomous" | "review_only" }
+  | { ok: false; error: string }
+> {
+  const mode =
+    requestedMode === "review_only" ? "review_only" : "autonomous";
+  try {
+    const session = await requireDashboardSession();
+    await configureWorkspaceAutonomyMode({ mode }, session);
+    revalidateProductPaths();
+    revalidatePath("/dashboard/profile");
+    return { ok: true, mode };
+  } catch (error) {
+    unstable_rethrow(error);
+    console.error("Workspace autonomy update failed", error);
+    return {
+      ok: false,
+      error: dashboardActionErrorMessage(
+        error,
+        "Could not change outreach mode. Try again.",
+      ),
+    };
+  }
+}
+
 export async function configureActivationAction(formData: FormData) {
   const session = await requireDashboardSession(formData);
   const returnTo = dashboardReturnPath(formData, "/dashboard/profile#agent");

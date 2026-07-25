@@ -335,9 +335,8 @@ export function createSeriesAColdOpenPlay(
           } else {
             convId = deterministicConversationId({
               workspace_id,
-              rep_id: loaded.rep.id,
               counterparty_person_id: loaded.person.id,
-              origin_signal_id: loaded.signal.id,
+              counterparty_company_id: loaded.company.id,
             });
             const conversationEvent = await ctx.publish("conversation.opened", {
               conversation_id: convId,
@@ -350,6 +349,13 @@ export function createSeriesAColdOpenPlay(
             });
             await projectConversationLifecycleEvent(deps.pool, conversationEvent);
           }
+          await ctx.publish("conversation.signal.attached", {
+            conversation_id: convId,
+            signal_id: loaded.signal.id,
+            role: "primary",
+            reason: "selected_for_outreach",
+            attached_at: new Date().toISOString(),
+          });
           const msgId = randomUUID();
           const draftEvent = await ctx.publish("draft.proposed", {
             conversation_id: convId,

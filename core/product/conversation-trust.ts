@@ -16,6 +16,8 @@ export const CONVERSATION_TRUST_EVENT_TYPES = [
   "message.bounced",
   "channel.account.errored",
   "meeting.prep.generated",
+  "conversation.signal.attached",
+  "signal.outreach.suppressed",
 ] as const;
 
 export interface ConversationTrustConversation {
@@ -65,6 +67,18 @@ export interface ConversationTrustMessage {
   properties: Record<string, unknown> | null;
   eval_notes: Record<string, unknown> | null;
   channel_account_id: string | null;
+}
+
+export interface ConversationTrustSignal {
+  id: string;
+  title: string;
+  kind: string;
+  content: string | null;
+  url: string | null;
+  role: "primary" | "supporting";
+  reason: string;
+  score: string | null;
+  attached_at: Date;
 }
 
 export interface ConversationTrustEvent {
@@ -149,6 +163,7 @@ export interface ConversationTrustReplyProof {
 
 export interface ConversationTrustTrace {
   conversation: ConversationTrustConversation;
+  signals: ConversationTrustSignal[];
   messages: ConversationTrustMessage[];
   events: ConversationTrustEvent[];
   workflow: {
@@ -169,17 +184,24 @@ export async function getConversationTrustTrace(
   if (!conversation) return null;
 
   const messages = await loadMessages(pool, input);
+  const signals = await loadConversationSignals(pool, input);
+  const signalIds = [
+    ...new Set([
+      ...signals.map((signal) => signal.id),
+      ...(conversation.signal_id ? [conversation.signal_id] : []),
+    ]),
+  ];
   const messageIds = messages.map((message) => message.id);
   const workflow = await loadWorkflowRun(pool, {
     ...input,
-    signal_id: conversation.signal_id,
+    signal_ids: signalIds,
     message_ids: messageIds,
   });
 
   const [events, approvals, outcomes] = await Promise.all([
     loadEvents(pool, {
       ...input,
-      signal_id: conversation.signal_id,
+      signal_ids: signalIds,
       message_ids: messageIds,
       channel_account_ids: channelAccountIds(messages),
       workflow_run_id: workflow?.run.id ?? null,
@@ -189,13 +211,14 @@ export async function getConversationTrustTrace(
       : Promise.resolve([]),
     loadOutcomes(pool, {
       ...input,
-      signal_id: conversation.signal_id,
+      signal_ids: signalIds,
       message_ids: messageIds,
     }),
   ]);
 
   return {
     conversation,
+    signals,
     messages,
     events,
     workflow,
@@ -207,6 +230,27 @@ export async function getConversationTrustTrace(
     }),
     reply_proofs: buildReplyProofs({ messages, events, approvals, outcomes }),
   };
+}
+
+async function loadConversationSignals(
+  pool: Pool,
+  input: { workspace_id: string; conversation_id: string },
+): Promise<ConversationTrustSignal[]> {
+  const { rows } = await pool.query<ConversationTrustSignal>(
+    `select s.id, s.title, s.kind::text as kind, s.content, s.url,
+            cs.role, cs.reason, cs.score::text as score, cs.attached_at
+       from conversation_signals cs
+       join signals s
+         on s.workspace_id = cs.workspace_id
+        and s.id = cs.signal_id
+      where cs.workspace_id = $1
+        and cs.conversation_id = $2
+      order by case when cs.role = 'primary' then 0 else 1 end,
+               cs.score desc nulls last,
+               cs.attached_at desc`,
+    [input.workspace_id, input.conversation_id],
+  );
+  return rows;
 }
 
 export function buildReplyProofs(input: {
@@ -703,7 +747,7 @@ async function loadWorkflowRun(
   input: {
     workspace_id: string;
     conversation_id: string;
-    signal_id: string | null;
+    signal_ids: string[];
     message_ids: string[];
   },
 ): Promise<{ run: ConversationTrustWorkflowRun; steps: ConversationTrustStep[] } | null> {
@@ -714,7 +758,7 @@ async function loadWorkflowRun(
       where wr.workspace_id = $1
         and wr.workflow_name = any($2::text[])
         and (
-          ($3::text is not null and wr.input::jsonb->>'signal_id' = $3)
+          wr.input::jsonb->>'signal_id' = any($3::text[])
           or wr.input::jsonb->>'conversation_id' = $4
           or wr.input::jsonb->>'inbound_message_id' = any($5::text[])
           or wr.output::jsonb->>'conversation_id' = $4
@@ -731,7 +775,7 @@ async function loadWorkflowRun(
         REPLY_TO_EMAIL_PLAY_WORKFLOW,
         WORKSPACE_MEETING_PREP_WORKFLOW,
       ],
-      input.signal_id,
+      input.signal_ids,
       input.conversation_id,
       input.message_ids,
     ],
@@ -753,7 +797,7 @@ async function loadEvents(
   input: {
     workspace_id: string;
     conversation_id: string;
-    signal_id: string | null;
+    signal_ids: string[];
     message_ids: string[];
     channel_account_ids: string[];
     workflow_run_id: string | null;
@@ -774,12 +818,9 @@ async function loadEvents(
           or payload#>>'{output,inbound_message_id}' = any($3::text[])
           or payload->>'channel_account_id' = any($6::text[])
           or (
-            $4::text is not null
-            and (
-              payload->>'signal_id' = $4
-              or payload->>'attributed_signal_id' = $4
-              or payload->>'origin_signal_id' = $4
-            )
+            payload->>'signal_id' = any($4::text[])
+            or payload->>'attributed_signal_id' = any($4::text[])
+            or payload->>'origin_signal_id' = any($4::text[])
           )
           or (
             $5::text is not null
@@ -795,7 +836,7 @@ async function loadEvents(
       input.workspace_id,
       input.conversation_id,
       input.message_ids,
-      input.signal_id,
+      input.signal_ids,
       input.workflow_run_id,
       input.channel_account_ids,
       CONVERSATION_TRUST_EVENT_TYPES,
@@ -839,7 +880,7 @@ async function loadOutcomes(
   input: {
     workspace_id: string;
     conversation_id: string;
-    signal_id: string | null;
+    signal_ids: string[];
     message_ids: string[];
   },
 ): Promise<ConversationTrustOutcome[]> {
@@ -852,14 +893,14 @@ async function loadOutcomes(
         and (
           conversation_id = $2
           or attributed_message_id::text = any($3::text[])
-          or ($4::text is not null and attributed_signal_id::text = $4)
+          or attributed_signal_id::text = any($4::text[])
         )
       order by occurred_at asc`,
     [
       input.workspace_id,
       input.conversation_id,
       input.message_ids,
-      input.signal_id,
+      input.signal_ids,
     ],
   );
   return rows;

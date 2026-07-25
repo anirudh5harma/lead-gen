@@ -13,6 +13,7 @@ import {
   type ConversationTrustMessage,
   type ConversationTrustOutcome,
   type ConversationTrustReplyProof,
+  type ConversationTrustSignal,
   type ConversationTrustTrace,
 } from "@/core/product/conversation-trust";
 import { getActiveWorkspaceSessionForDashboard } from "@/lib/workspace";
@@ -564,6 +565,7 @@ export default async function AgentOutreachDetailPage({
   const trace = loaded.trace;
   const {
     conversation: conv,
+    signals,
     messages,
     events,
     approvals,
@@ -728,6 +730,7 @@ export default async function AgentOutreachDetailPage({
                 </p>
               </div>
             ) : null}
+            <ConversationSignals signals={signals} />
           </div>
         </aside>
       </div>
@@ -753,6 +756,52 @@ export default async function AgentOutreachDetailPage({
           />
         </div>
       </details>
+    </div>
+  );
+}
+
+function ConversationSignals({
+  signals,
+}: {
+  signals: ConversationTrustSignal[];
+}) {
+  if (signals.length <= 1) return null;
+  return (
+    <div className="mt-4 border-t border-[var(--color-line-1)] pt-4">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-4)]">
+          Supporting signals
+        </p>
+        <span className="text-[11px] text-[var(--color-text-4)]">
+          {signals.length - 1}
+        </span>
+      </div>
+      <ul className="mt-2 grid gap-2">
+        {signals
+          .slice(1)
+          .slice(0, 3)
+          .map((signal) => (
+            <li key={signal.id} className="min-w-0">
+              {signal.url ? (
+                <a
+                  href={signal.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block truncate text-xs text-[var(--color-text-2)] hover:text-[var(--color-accent)]"
+                >
+                  {signal.title}
+                </a>
+              ) : (
+                <p className="truncate text-xs text-[var(--color-text-2)]">
+                  {signal.title}
+                </p>
+              )}
+              <p className="mt-0.5 text-[11px] capitalize text-[var(--color-text-4)]">
+                {signal.kind.replace(/_/g, " ")}
+              </p>
+            </li>
+          ))}
+      </ul>
     </div>
   );
 }

@@ -34,6 +34,10 @@ import {
 import type { Signal } from "../primitives/index.ts";
 import { deterministicConversationId } from "../primitives/conversation-identity.ts";
 import {
+  evaluateRelationshipOutreach,
+  loadRelationshipOutreachState,
+} from "../primitives/conversation-policy.ts";
+import {
   createWorkspaceActivationSetupWorkflow,
   createWorkspaceCampaignStrategyWorkflow,
   createWorkspaceChannelReadinessWorkflow,
@@ -3974,10 +3978,8 @@ export async function draftProductRecommendation(
     payload: {
       conversation_id: deterministicConversationId({
         workspace_id: session.workspace_id,
-        rep_id: repId,
         counterparty_person_id: target.person_id,
-        origin_signal_id: null,
-        thread_key: `recommendation:${reviewId}:${channel}`,
+        counterparty_company_id: target.company_id,
       }),
       rep_id: repId,
       counterparty_person_id: target.person_id,
@@ -10786,8 +10788,11 @@ function isRepairableDraftRejection(
 
 interface SignalDispatchRow {
   event_id: string;
+  event_occurred_at: Date;
+  match_score: number | null;
   workspace_id: string;
   signal_id: string;
+  signal_title: string;
   company_id: string | null;
   company_name: string | null;
   company_domain: string | null;
@@ -11070,6 +11075,131 @@ async function publishSignalResearchGated(
   });
 }
 
+async function publishRelationshipSignalAttached(
+  engine: ProductEngine,
+  row: SignalDispatchRow,
+  conversation_id: string,
+  role: "primary" | "supporting",
+  reason: string,
+): Promise<void> {
+  const event = await engine.bus.publish({
+    workspace_id: row.workspace_id,
+    event_type: "conversation.signal.attached",
+    source: "system",
+    producer_ref: "product.dispatchSignalPlaysOnce",
+    correlation_id: row.event_id,
+    causation_id: row.event_id,
+    idempotency_key: [
+      "conversation-signal-attached",
+      `conversation:${conversation_id}`,
+      `signal:${row.signal_id}`,
+      `role:${role}`,
+    ].join(":"),
+    payload: {
+      conversation_id,
+      signal_id: row.signal_id,
+      role,
+      reason,
+      score: row.match_score,
+      attached_at: new Date().toISOString(),
+    },
+  });
+  await createConversationLifecycleProjection(engine.pool).apply(event);
+}
+
+async function ensureRelationshipConversation(
+  engine: ProductEngine,
+  row: SignalDispatchRow,
+  person_id: string,
+): Promise<string> {
+  const conversation_id = deterministicConversationId({
+    workspace_id: row.workspace_id,
+    counterparty_person_id: person_id,
+    counterparty_company_id: row.company_id,
+  });
+  const event = await engine.bus.publish({
+    workspace_id: row.workspace_id,
+    event_type: "conversation.opened",
+    source: "system",
+    producer_ref: "product.dispatchSignalPlaysOnce",
+    correlation_id: row.event_id,
+    causation_id: row.event_id,
+    idempotency_key: [
+      "relationship-conversation-opened",
+      `person:${person_id}`,
+      `company:${row.company_id ?? "none"}`,
+    ].join(":"),
+    payload: {
+      conversation_id,
+      rep_id: row.rep_id,
+      counterparty_person_id: person_id,
+      counterparty_company_id: row.company_id,
+      origin_signal_id: row.signal_id,
+      topic: row.signal_title,
+      properties: {
+        play_id: row.play_id,
+        arbitration: "pre_draft",
+      },
+      opened_at: new Date().toISOString(),
+    },
+  });
+  await createConversationLifecycleProjection(engine.pool).apply(event);
+  return conversation_id;
+}
+
+async function publishSignalOutreachSuppressed(
+  engine: ProductEngine,
+  input: {
+    row: SignalDispatchRow;
+    conversation_id: string;
+    person_id: string;
+    channel: string;
+    reason:
+      | "better_signal_selected"
+      | "recipient_cooldown"
+      | "conversation_active"
+      | "conversation_blocked";
+    selected_signal_id?: string | null;
+    retry_after: string | null;
+  },
+): Promise<void> {
+  const { row } = input;
+  await publishRelationshipSignalAttached(
+    engine,
+    row,
+    input.conversation_id,
+    "supporting",
+    input.reason,
+  );
+  await engine.bus.publish({
+    workspace_id: row.workspace_id,
+    event_type: "signal.outreach.suppressed",
+    source: "system",
+    producer_ref: "product.dispatchSignalPlaysOnce",
+    correlation_id: row.event_id,
+    causation_id: row.event_id,
+    idempotency_key: [
+      "signal-outreach-suppressed",
+      `signal:${row.signal_id}`,
+      `play:${row.play_id}`,
+      `reason:${input.reason}`,
+      `retry:${input.retry_after ?? "none"}`,
+    ].join(":"),
+    payload: {
+      signal_id: row.signal_id,
+      play_id: row.play_id,
+      conversation_id: input.conversation_id,
+      person_id: input.person_id,
+      company_id: row.company_id,
+      channel: input.channel,
+      reason: input.reason,
+      selected_signal_id: input.selected_signal_id ?? null,
+      retry_after: input.retry_after,
+      suppressed_at: new Date().toISOString(),
+    },
+  });
+}
+
 function stringOrNull(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
@@ -11111,8 +11241,11 @@ export async function dispatchSignalPlaysOnce(
   }
   const { rows } = await engine.pool.query<SignalDispatchRow>(
     `select e.id as event_id,
+            e.occurred_at as event_occurred_at,
+            nullif(e.payload->>'match_score', '')::float8 as match_score,
             e.workspace_id,
             e.payload->>'signal_id' as signal_id,
+            s.title as signal_title,
             s.related_company_id::text as company_id,
             co.name as company_name,
             co.domain::text as company_domain,
@@ -11200,6 +11333,16 @@ export async function dispatchSignalPlaysOnce(
           order by gated.occurred_at desc
           limit 1
        ) research_gate on true
+       left join lateral (
+         select suppressed.payload
+           from events suppressed
+          where suppressed.workspace_id = e.workspace_id
+            and suppressed.event_type = 'signal.outreach.suppressed'
+            and suppressed.payload->>'signal_id' = e.payload->>'signal_id'
+            and suppressed.payload->>'play_id' = p.id::text
+          order by suppressed.occurred_at desc
+          limit 1
+       ) relationship_suppression on true
        left join lateral (
          select cr.payload
            from events cr
@@ -11333,6 +11476,13 @@ export async function dispatchSignalPlaysOnce(
         and s.related_company_id is not null
         and campaign_skip.id is null
         and research_gate.id is null
+        and (
+          relationship_suppression.payload is null
+          or (
+            relationship_suppression.payload->>'reason' = 'recipient_cooldown'
+            and (relationship_suppression.payload->>'retry_after')::timestamptz <= now()
+          )
+        )
         and ($4::uuid is null or e.workspace_id = $4)
         and ($7::uuid is null or s.id = $7)
         and ($8::uuid is null or p.id = $8)
@@ -11404,9 +11554,17 @@ export async function dispatchSignalPlaysOnce(
       Number(b.allocation.should_dispatch) -
       Number(a.allocation.should_dispatch);
     if (dispatchRank !== 0) return dispatchRank;
+    const scoreRank =
+      (b.candidate.row.match_score ?? 0) -
+      (a.candidate.row.match_score ?? 0);
+    if (scoreRank !== 0) return scoreRank;
     const weightRank =
       b.allocation.allocation_weight - a.allocation.allocation_weight;
     if (weightRank !== 0) return weightRank;
+    const recencyRank =
+      b.candidate.row.event_occurred_at.getTime() -
+      a.candidate.row.event_occurred_at.getTime();
+    if (recencyRank !== 0) return recencyRank;
     return a.candidate.original_index - b.candidate.original_index;
   });
 
@@ -11427,6 +11585,10 @@ export async function dispatchSignalPlaysOnce(
   }
 
   let dispatched = 0;
+  const selectedRelationships = new Map<
+    string,
+    { conversation_id: string; signal_id: string }
+  >();
   for (const plan of planned) {
     if (!plan.allocation.should_dispatch) continue;
     if (dispatched >= dispatchLimit) break;
@@ -11464,6 +11626,69 @@ export async function dispatchSignalPlaysOnce(
       await publishSignalOutreachGated(engine, row, personId, contactChannel);
       continue;
     }
+    const relationshipKey = [
+      row.workspace_id,
+      personId,
+      row.company_id ?? "no-company",
+    ].join(":");
+    const alreadySelected = selectedRelationships.get(relationshipKey);
+    if (alreadySelected) {
+      await publishSignalOutreachSuppressed(engine, {
+        row,
+        conversation_id: alreadySelected.conversation_id,
+        person_id: personId,
+        channel: contactChannel,
+        reason: "better_signal_selected",
+        selected_signal_id: alreadySelected.signal_id,
+        retry_after: null,
+      });
+      continue;
+    }
+    const relationshipState = await loadRelationshipOutreachState(
+      engine.pool,
+      {
+        workspace_id: row.workspace_id,
+        person_id: personId,
+        company_id: row.company_id,
+      },
+    );
+    const evaluatedRelationship =
+      evaluateRelationshipOutreach(relationshipState);
+    const relationshipDecision =
+      playRepairKey &&
+      evaluatedRelationship.action === "suppress" &&
+      evaluatedRelationship.reason === "conversation_active" &&
+      !relationshipState?.has_reply
+        ? {
+            action: "allow" as const,
+            conversation_id: evaluatedRelationship.conversation_id,
+          }
+        : evaluatedRelationship;
+    if (relationshipDecision.action === "suppress") {
+      await publishSignalOutreachSuppressed(engine, {
+        row,
+        conversation_id: relationshipDecision.conversation_id,
+        person_id: personId,
+        channel: contactChannel,
+        reason: relationshipDecision.reason,
+        retry_after: relationshipDecision.retry_after,
+      });
+      continue;
+    }
+    const conversationId =
+      relationshipDecision.conversation_id ??
+      (await ensureRelationshipConversation(engine, row, personId));
+    await publishRelationshipSignalAttached(
+      engine,
+      row,
+      conversationId,
+      "primary",
+      "selected_for_outreach",
+    );
+    selectedRelationships.set(relationshipKey, {
+      conversation_id: conversationId,
+      signal_id: row.signal_id,
+    });
     if (row.workflow_name === SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW) {
       const action = parseLinkedInAction(row.target_channel) ?? "linkedin_dm";
       const policy = resolvePlayChannelPolicy(row.play_autonomy, action, {

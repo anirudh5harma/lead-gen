@@ -41,36 +41,35 @@ test("conversation lifecycle projection declares conversation event set", () => 
   const { pool } = fakePool();
   const projection = createConversationLifecycleProjection(pool);
   assert.equal(projection.name, CONVERSATION_LIFECYCLE_PROJECTION);
-  assert.deepEqual(projection.eventTypes, ["conversation.opened"]);
+  assert.deepEqual(projection.eventTypes, [
+    "conversation.opened",
+    "conversation.signal.attached",
+  ]);
 });
 
-test("conversation identity is stable per rep, counterparty, and origin signal", () => {
+test("conversation identity is stable across reps and signals for one relationship", () => {
   const workspace_id = randomUUID();
-  const rep_id = randomUUID();
   const counterparty_person_id = randomUUID();
-  const origin_signal_id = randomUUID();
+  const counterparty_company_id = randomUUID();
 
   const first = deterministicConversationId({
     workspace_id,
-    rep_id,
     counterparty_person_id,
-    origin_signal_id,
+    counterparty_company_id,
   });
   const second = deterministicConversationId({
     workspace_id,
-    rep_id,
     counterparty_person_id,
-    origin_signal_id,
+    counterparty_company_id,
   });
-  const differentRep = deterministicConversationId({
+  const differentCompany = deterministicConversationId({
     workspace_id,
-    rep_id: randomUUID(),
     counterparty_person_id,
-    origin_signal_id,
+    counterparty_company_id: randomUUID(),
   });
 
   assert.equal(first, second);
-  assert.notEqual(first, differentRep);
+  assert.notEqual(first, differentCompany);
   assert.match(first, /^[0-9a-f-]{36}$/);
 });
 
