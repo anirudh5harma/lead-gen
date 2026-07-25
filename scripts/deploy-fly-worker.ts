@@ -2,6 +2,7 @@
 import { execFile } from "node:child_process";
 import fs from "node:fs";
 import { pathToFileURL } from "node:url";
+import { REQUIRED_RESTATE_SERVICES } from "../core/product/health.ts";
 
 const REQUIRED_SECRET_KEYS = [
   "APP_ORIGIN",
@@ -22,6 +23,7 @@ const RECOMMENDED_SECRET_KEYS = [
 const CONDITIONAL_SECRET_GROUPS = [
   ["HUNTER_API_KEY", "EXA_API_KEY"],
   ["HUNTER_API_KEY", "ZEROBOUNCE_API_KEY"],
+  ["RESTATE_BEARER_TOKEN", "RESTATE_AUTH_TOKEN"],
 ] as const;
 
 const OPTIONAL_SECRET_KEYS = [
@@ -147,11 +149,16 @@ async function main(): Promise<void> {
   console.log(`[fly-worker] forcing active machine count to 1`);
   await scaleFlyAppToOne(options.appName);
 
-  console.log("[fly-worker] deployed. Next steps:");
+  const workerUrl = `https://${options.appName}.fly.dev`;
+  console.log(`[fly-worker] waiting for ${workerUrl}/health`);
+  await waitForWorkerHealth(workerUrl);
+
+  console.log(`[fly-worker] registering ${workerUrl} with Restate`);
+  const registered = await registerRestateDeployment(workerUrl, process.env);
   console.log(
-    `  1. Register https://${options.appName}.fly.dev in Restate Cloud if it is not already registered.`,
+    `[fly-worker] deployed and registered ${registered.serviceCount} required Restate services`,
   );
-  console.log("  2. Run npm run verify:fly-cutover");
+  console.log("[fly-worker] run npm run verify:fly-cutover for the complete production gate");
 }
 
 export function collectFlyWorkerSecrets(
@@ -185,6 +192,82 @@ export function collectFlyWorkerSecrets(
 export function parseFlyAppName(configContents: string): string | null {
   const match = configContents.match(/^\s*app\s*=\s*["']([^"']+)["']/m);
   return match?.[1]?.trim() || null;
+}
+
+export function normalizePersistentWorkerDatabaseUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    if (
+      url.hostname.endsWith(".pooler.supabase.com") &&
+      url.port === "6543"
+    ) {
+      url.port = "5432";
+      return url.toString();
+    }
+  } catch {
+    return value;
+  }
+  return value;
+}
+
+export function restateAdminUrl(
+  env: Record<string, string | undefined>,
+): string | null {
+  const explicit = env.RESTATE_ADMIN_URL?.trim();
+  if (explicit) return explicit.replace(/\/$/, "");
+  const ingress = env.RESTATE_INGRESS_URL?.trim();
+  if (!ingress) return null;
+  try {
+    const url = new URL(ingress);
+    url.port = "9070";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return null;
+  }
+}
+
+export async function registerRestateDeployment(
+  workerUrl: string,
+  env: Record<string, string | undefined>,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ serviceCount: number }> {
+  const adminUrl = restateAdminUrl(env);
+  if (!adminUrl) {
+    throw new Error("RESTATE_ADMIN_URL or RESTATE_INGRESS_URL is required after deployment");
+  }
+  const bearer = env.RESTATE_BEARER_TOKEN?.trim() || env.RESTATE_AUTH_TOKEN?.trim();
+  if (new URL(adminUrl).hostname.endsWith(".restate.cloud") && !bearer) {
+    throw new Error("Restate Cloud registration requires RESTATE_BEARER_TOKEN or RESTATE_AUTH_TOKEN");
+  }
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (bearer) headers.Authorization = `Bearer ${bearer}`;
+  const response = await fetchImpl(`${adminUrl}/deployments`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      uri: `${workerUrl.replace(/\/$/, "")}/`,
+      force: true,
+      use_http_11: true,
+    }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const raw = await response.text();
+  if (!response.ok) {
+    throw new Error(
+      `Restate deployment registration failed (HTTP ${response.status}): ${trimOutput(raw)}`,
+    );
+  }
+  const payload = JSON.parse(raw) as { services?: Array<{ name?: string }> };
+  const advertised = new Set(
+    (payload.services ?? []).flatMap((service) =>
+      typeof service.name === "string" ? [service.name] : []
+    ),
+  );
+  const missing = REQUIRED_RESTATE_SERVICES.filter((service) => !advertised.has(service));
+  if (missing.length > 0) {
+    throw new Error(`Restate discovery omitted required services: ${missing.join(", ")}`);
+  }
+  return { serviceCount: advertised.size };
 }
 
 function deployOptions(): DeployOptions {
@@ -281,10 +364,34 @@ function resolveSecretValue(
   const raw = env[key];
   if (!hasEnvValue(raw)) return null;
   const trimmed = raw!.trim();
+  if (key === "DATABASE_URL") {
+    return normalizePersistentWorkerDatabaseUrl(trimmed);
+  }
   if (key === "NATS_CREDS" && fs.existsSync(trimmed) && fs.statSync(trimmed).isFile()) {
     return fs.readFileSync(trimmed, "utf8");
   }
   return trimmed;
+}
+
+async function waitForWorkerHealth(
+  workerUrl: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<void> {
+  const healthUrl = `${workerUrl.replace(/\/$/, "")}/health`;
+  let lastFailure = "not attempted";
+  for (let attempt = 1; attempt <= 24; attempt += 1) {
+    try {
+      const response = await fetchImpl(healthUrl, {
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (response.ok) return;
+      lastFailure = `HTTP ${response.status}`;
+    } catch (error) {
+      lastFailure = error instanceof Error ? error.message : String(error);
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 5_000));
+  }
+  throw new Error(`Fly worker failed its health gate: ${lastFailure}`);
 }
 
 function loadDotenvFile(path: string): void {

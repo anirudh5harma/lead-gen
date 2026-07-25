@@ -430,6 +430,7 @@ The verifier expects these services:
 - `play.signal_to_linkedin.v1`
 - `play.reply_to_email.v1`
 - `contact.resolve_for_signal.v1`
+- `contact.enrichment.retry.v1`
 - `ingest_catalog_poll`
 - `ingest_workspace_poll`
 - `ingest_expire_sweep`

@@ -42,6 +42,7 @@ import {
   type LinkedInTransport,
 } from "../core/channels/linkedin/index.ts";
 import {
+  createContactResolutionRetryWorkflow,
   createContactResolutionProviders,
   createContactResolutionWorkflow,
 } from "../core/contacts/index.ts";
@@ -94,6 +95,7 @@ import {
 import { resolveRestateWorkflowPort } from "./worker-port.ts";
 
 console.log("[restate-workflows] booting");
+applyWorkerPoolOverride();
 const natsUrl = requiredEnv("NATS_URL");
 const natsCreds = process.env.NATS_CREDS?.trim();
 const pool = getPool();
@@ -206,6 +208,7 @@ const workflows = [
     pool,
     ...createContactResolutionProviders({ pool }),
   }),
+  createContactResolutionRetryWorkflow(),
   createCatalogPollWorkflow({
     pool,
     bus,
@@ -282,6 +285,11 @@ function requiredEnv(key: string): string {
   const value = process.env[key]?.trim();
   if (!value) throw new Error(`${key} is required for the Restate workflow worker`);
   return value;
+}
+
+function applyWorkerPoolOverride(): void {
+  const value = process.env.WORKER_DATABASE_POOL_MAX?.trim();
+  if (value) process.env.DATABASE_POOL_MAX = value;
 }
 
 function createProductLinkedInTransport(): LinkedInTransport {

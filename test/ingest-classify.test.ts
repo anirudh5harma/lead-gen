@@ -9,6 +9,7 @@ import type {
   CompletionResponse,
   LLMClient,
 } from "../core/agents/llm/types.ts";
+import { LLMBudgetExceededError } from "../core/agents/llm/budget.ts";
 import { classifySignal } from "../core/ingest/classify.ts";
 import { startClassifyWorkflow } from "../core/ingest/classify-workflow.ts";
 import { registerSignalProjectors } from "../core/ingest/projectors.ts";
@@ -584,6 +585,33 @@ test("classify: retry recovers a signal when first attempt is garbage", async (t
     assert.equal(callCount, 2);
     assert.equal(result.status, "matched");
     if (result.status === "matched") assert.equal(result.kind, "funding");
+  } finally {
+    await fx.close();
+  }
+});
+
+test("classify: LLM budget exhaustion becomes a durable defer decision", async (t) => {
+  const fx = await setupPg("cls_llm_budget");
+  if (!fx) return t.skip("DATABASE_URL not set");
+  const bus = await createProjectingBus(fx.pool);
+  try {
+    const { workspace_id } = await seedWorkspace(fx.pool);
+    const signal_id = await insertSignal(fx.pool, workspace_id, { kind: null });
+    const llm: LLMClient = {
+      async complete() {
+        throw new LLMBudgetExceededError({
+          workspace_id,
+          purpose: "classifier.signal",
+          token_cap: 100_000,
+          used_tokens: 100_000,
+          requested_tokens: 2_048,
+          retry_after: new Date(Date.now() + 86_400_000).toISOString(),
+        });
+      },
+    };
+
+    const result = await classifySignal({ pool: fx.pool, bus, llm }, { signal_id });
+    assert.deepEqual(result, { status: "skipped", reason: "budget" });
   } finally {
     await fx.close();
   }

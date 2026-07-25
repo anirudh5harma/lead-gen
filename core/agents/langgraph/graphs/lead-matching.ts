@@ -223,6 +223,7 @@ export async function runLeadMatchingGraphInWorkflowStep(opts: {
   ctx: RunContext;
   input: LeadMatchingGraphInput;
   bus?: EventBus;
+  step_name?: string;
   graphOptions?: Omit<LeadMatchingGraphOptions, "bus" | "toolOptions"> & {
     toolOptions?: Omit<LangGraphToolOptions, "bus">;
   };
@@ -249,6 +250,7 @@ export async function runLeadMatchingGraphInWorkflowStep(opts: {
     graph,
     ctx: opts.ctx,
     bus: opts.bus,
+    step_name: opts.step_name,
     state: {
       workspace_id,
       signal_id,

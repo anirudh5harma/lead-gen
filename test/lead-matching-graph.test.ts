@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 import { z } from "zod";
 import {
+  createWorkspaceSignalMatchingWorkflow,
   runLeadMatchingGraphInWorkflowStep,
   type BombsellLangGraphState,
   type LeadMatchingDecision,
@@ -199,6 +200,75 @@ test("lead matching graph: ranks Signal matches and does not send outreach", asy
   assert.equal(spanKinds.has("agent.run"), true);
   assert.equal(spanKinds.has("langgraph.node"), true);
   assert.equal(spanKinds.has("tool.call"), true);
+});
+
+test("signal matching workflow: parks budget deferrals before retrying", async () => {
+  _resetToolRegistry();
+  const bus = createInMemoryEventBus();
+  const runtime = createInProcessWorkflowRuntime({ bus });
+  const workspace_id = randomUUID();
+  const user_id = randomUUID();
+  const signal_id = randomUUID();
+  const icp_id = randomUUID();
+  let calls = 0;
+
+  registerTool({
+    name: "product.signal.match",
+    description: "Classify one Signal against enabled ICPs.",
+    kind: "write",
+    input: z.object({ signal_id: z.string().uuid() }),
+    output: SignalMatchToolOutputSchema,
+    async handler() {
+      calls += 1;
+      if (calls === 1) {
+        return {
+          workspace_id,
+          signal_id,
+          status: "skipped" as const,
+          kind: null,
+          matched_icp_ids: [],
+          match_score: null,
+          match_reason: "budget",
+          matches: [],
+          skip_reason: "budget" as const,
+        };
+      }
+      return {
+        workspace_id,
+        signal_id,
+        status: "matched" as const,
+        kind: "funding",
+        matched_icp_ids: [icp_id],
+        match_score: 0.9,
+        match_reason: "Budget window reopened.",
+        matches: [{
+          icp_segment: icp_id,
+          match_score: 0.9,
+          reason: "Budget window reopened.",
+        }],
+        skip_reason: null,
+      };
+    },
+  });
+  runtime.register(createWorkspaceSignalMatchingWorkflow({
+    bus,
+    budgetRetryDelayMs: 0,
+    budgetMaxRetries: 1,
+  }));
+
+  const run = await runtime.start({
+    workspace_id,
+    workflow_name: "workspace.signal.matching",
+    input: { workspace_id, user_id, signal_id },
+  });
+  await until(async () => (await runtime.get(run.id))?.status === "completed");
+  const completed = await runtime.get<LeadMatchingGraphInput, BombsellLangGraphState>(run.id);
+  const decision = completed?.output?.attributes?.lead_matching as
+    | LeadMatchingDecision
+    | undefined;
+
+  assert.equal(calls, 2);
+  assert.equal(decision?.next_action, "resolve_contacts");
 });
 
 test("lead matching graph: deterministically dedupes and ranks matches", async () => {

@@ -1,6 +1,7 @@
 import type { Pool } from "pg";
 import { z } from "zod";
 import type { EventBus, EventPayload } from "../substrate/events/index.ts";
+import { isLLMBudgetExceededError } from "../agents/llm/budget.ts";
 import type { LLMClient } from "../agents/llm/types.ts";
 import type { SignalKind } from "../primitives/signal.ts";
 import { listIcps, type IcpRow } from "./icps.ts";
@@ -301,7 +302,18 @@ export async function classifySignal(
     return { status: "skipped", reason: "budget" };
   }
 
-  const parsed = await callClassifier(deps, signal, shortlistedCandidates);
+  let parsed: ClassifyOutput | null;
+  try {
+    parsed = await callClassifier(deps, signal, shortlistedCandidates);
+  } catch (error) {
+    // Budget exhaustion is an expected gating decision, not a workflow
+    // failure. Returning it lets the durable matching workflow park until the
+    // next budget window instead of letting Restate retry a 500 in a hot loop.
+    if (isLLMBudgetExceededError(error)) {
+      return { status: "skipped", reason: "budget" };
+    }
+    throw error;
+  }
   if (!parsed) {
     await emitClassification(deps, signal, {
       kind: signal.kind,

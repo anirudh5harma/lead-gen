@@ -126,14 +126,14 @@ const sesConfigurationSet = process.env.SES_CONFIGURATION_SET?.trim()
   || "bombsell-outbound";
 const restateBearer = restateBearerFromEnv();
 applyWorkerPoolOverride();
-const productEventDispatchLimit = nonNegativeIntegerEnv("PRODUCT_EVENT_DISPATCH_LIMIT", 10);
-const productRedriveSignalLimit = nonNegativeIntegerEnv("PRODUCT_REDRIVE_SIGNAL_LIMIT", 5);
-const productRedriveReplyLimit = nonNegativeIntegerEnv("PRODUCT_REDRIVE_REPLY_LIMIT", 5);
+const productEventDispatchLimit = nonNegativeIntegerEnv("PRODUCT_EVENT_DISPATCH_LIMIT", 4);
+const productRedriveSignalLimit = nonNegativeIntegerEnv("PRODUCT_REDRIVE_SIGNAL_LIMIT", 2);
+const productRedriveReplyLimit = nonNegativeIntegerEnv("PRODUCT_REDRIVE_REPLY_LIMIT", 2);
 const productRedriveRecommendationLimit = nonNegativeIntegerEnv(
   "PRODUCT_REDRIVE_RECOMMENDATION_LIMIT",
-  2,
+  1,
 );
-const natsDispatchRedriveLimit = nonNegativeIntegerEnv("NATS_DISPATCH_REDRIVE_LIMIT", 10);
+const natsDispatchRedriveLimit = nonNegativeIntegerEnv("NATS_DISPATCH_REDRIVE_LIMIT", 4);
 const signalMatchingDispatchIntervalMs = nonNegativeIntegerEnv(
   "PRODUCT_SIGNAL_MATCHING_DISPATCH_INTERVAL_MS",
   1000,
@@ -420,17 +420,20 @@ async function redrivePendingDispatchesGuarded(): Promise<void> {
 }
 
 async function redriveProductPlayDispatches(): Promise<void> {
-  const [signalDispatched, replyDispatched, recommendationDispatched] = await Promise.all([
-    productRedriveSignalLimit > 0
-      ? dispatchSignalPlaysOnce({ limit: productRedriveSignalLimit })
-      : 0,
-    productRedriveReplyLimit > 0
-      ? dispatchReplyEmailPlaysOnce({ limit: productRedriveReplyLimit })
-      : 0,
-    productRedriveRecommendationLimit > 0
-      ? dispatchWorkspaceRecommendationResearchOnce({ limit: productRedriveRecommendationLimit })
-      : 0,
-  ]);
+  // Keep replay pressure below the shared database pool ceiling. These jobs all
+  // fan out into additional durable work, so parallel startup drains amplify a
+  // backlog into a connection storm.
+  const signalDispatched = productRedriveSignalLimit > 0
+    ? await dispatchSignalPlaysOnce({ limit: productRedriveSignalLimit })
+    : 0;
+  const replyDispatched = productRedriveReplyLimit > 0
+    ? await dispatchReplyEmailPlaysOnce({ limit: productRedriveReplyLimit })
+    : 0;
+  const recommendationDispatched = productRedriveRecommendationLimit > 0
+    ? await dispatchWorkspaceRecommendationResearchOnce({
+        limit: productRedriveRecommendationLimit,
+      })
+    : 0;
   if (signalDispatched > 0 || replyDispatched > 0 || recommendationDispatched > 0) {
     console.log(
       `[production-worker] product play redrive: ${signalDispatched} signal plays, ${replyDispatched} reply plays, ${recommendationDispatched} recommendation workflows`,
