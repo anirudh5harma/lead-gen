@@ -8,10 +8,6 @@ import { switchWorkspaceAction } from "@/app/dashboard/actions";
 import Icon from "@/components/Icon";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
 import VoiceAssistantDrawer from "@/components/dashboard/VoiceAssistantDrawer";
-import ActivationBanner from "@/components/dashboard/ActivationBanner";
-import BillingBanner from "@/components/dashboard/BillingBanner";
-import type { WorkspaceBillingState } from "@/components/dashboard/billing";
-import type { WorkspaceActivationState } from "@/core/product/activation-state.ts";
 
 interface NavItem {
   href: string;
@@ -76,14 +72,12 @@ export function DashboardShell({
   children,
   workspaces = [],
   activeWorkspaceId,
-  billing = null,
-  activation = null,
+  banners,
 }: {
   children: ReactNode;
   workspaces?: ShellWorkspace[];
   activeWorkspaceId?: string;
-  billing?: WorkspaceBillingState | null;
-  activation?: WorkspaceActivationState | null;
+  banners?: ReactNode;
 }) {
   const pathname = usePathname() ?? "/dashboard";
   const [pendingHref, setPendingHref] = useState<string | null>(null);
@@ -271,8 +265,7 @@ export function DashboardShell({
         className="relative z-20 mx-auto w-full min-w-0 max-w-[1200px] px-4 pb-16 pt-[124px] md:ml-[240px] md:w-[calc(100%-240px)] md:max-w-none md:px-8 md:pt-8 lg:px-12"
         aria-busy={routePending}
       >
-        <BillingBanner billing={billing} />
-        <ActivationBanner activation={activation} />
+        {banners}
         {children}
       </main>
     </div>

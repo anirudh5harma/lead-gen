@@ -3,6 +3,8 @@ import test from "node:test";
 import {
   contactResolutionStatusLabel,
   decodeHtmlEntities,
+  normalizedSignalHeading,
+  signalCategoryLabel,
   signalDisplayTitle,
   signalSourceLabel,
 } from "../core/signals/presentation.ts";
@@ -34,4 +36,26 @@ test("Signal source labels prefer configured names then public domains", () => {
   assert.equal(signalSourceLabel({ sourceName: "LinkedIn Feed" }), "LinkedIn");
   assert.equal(signalSourceLabel({ url: "https://www.example.com/jobs/1" }), "example.com");
   assert.equal(signalSourceLabel({ sourceKind: "job_board" }), "Job Board");
+});
+
+test("Signal categories and headings use a stable operator vocabulary", () => {
+  assert.equal(signalCategoryLabel("product_launch"), "Product launch");
+  assert.equal(signalCategoryLabel("leadership_change"), "Leadership");
+  assert.equal(signalCategoryLabel("unknown_kind"), "Other");
+  assert.equal(
+    normalizedSignalHeading({
+      kind: "funding",
+      companyName: "Acme",
+      evidenceTitle: "Acme secures Series A",
+    }),
+    "Acme raised funding",
+  );
+  assert.equal(
+    normalizedSignalHeading({
+      kind: "hiring",
+      companyName: null,
+      evidenceTitle: "Founding account executive",
+    }),
+    "Company is hiring",
+  );
 });

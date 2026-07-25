@@ -1232,7 +1232,7 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
   );
   assert.equal(outreach.outreach[0]?.message_id, message_id);
   assert.equal(outreach.outreach[0]?.person_name, "Maya Patel");
-  assert.match(outreach.outreach[0]?.href ?? "", /\/dashboard\/agent\/outreach\//);
+  assert.match(outreach.outreach[0]?.href ?? "", /\/dashboard\/conversations\//);
 
   const signals = await invokeTool<{
     stats: { qualified: number };
@@ -1264,7 +1264,7 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
   assert.equal(signals.signals[0]?.outreach_draft?.pending_approval_id, approval_id);
   assert.equal(signals.signals[0]?.next_handoff.label, "Review prepared outreach");
   assert.equal(signals.signals[0]?.next_handoff.stage, "review_draft");
-  assert.match(signals.signals[0]?.next_handoff.href ?? "", /\/dashboard\/agent\/outreach\//);
+  assert.match(signals.signals[0]?.next_handoff.href ?? "", /\/dashboard\/conversations\//);
   assert.match(signals.signals[0]?.next_handoff.detail ?? "", /Judged outreach/);
 
   const lanes = await invokeTool<{

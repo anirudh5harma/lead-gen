@@ -7,7 +7,7 @@
  *
  *   /dashboard               → morning brief with non-zero counts
  *   /dashboard/agent         → live work, sent outreach, contacts, and replies
- *   /dashboard/agent/outreach/<conversation_id> → exact sent draft + proof
+ *   /dashboard/conversations/<conversation_id> → exact sent draft + proof
  *   /dashboard/profile       → Profile, channels, contact quality, and tools
  *
  * Run: DATABASE_URL=... npm run demo:seed

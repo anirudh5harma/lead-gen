@@ -3063,7 +3063,7 @@ function BlocklistRow({ row }: { row: ProfileSuppressionRow }) {
 
   if (!row.conversation_id) return content;
   return (
-    <Link href={`/dashboard/agent/outreach/${row.conversation_id}`} prefetch>
+    <Link href={`/dashboard/conversations/${row.conversation_id}`} prefetch>
       {content}
     </Link>
   );

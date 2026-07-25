@@ -134,7 +134,7 @@ After seeding, check the current launch surfaces:
   reply, and meeting counts.
 - `/dashboard/agent` — live work, sent outreach, verified contacts, reply
   evidence, and learning.
-- `/dashboard/agent/outreach/<conversation-id>` — exact sent draft and
+- `/dashboard/conversations/<conversation-id>` — exact sent draft and
   signal-to-outreach proof for the seeded conversation.
 - `/dashboard/profile` — Profile, channel setup, contact quality, and Claude
   Code access.

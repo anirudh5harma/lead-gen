@@ -685,8 +685,8 @@ export async function generateMeetingPrepAction(formData: FormData) {
   const returnTo = dashboardReturnPath(
     formData,
     conversationId
-      ? `/dashboard/agent/outreach/${conversationId}`
-      : "/dashboard/agent#outreach",
+      ? `/dashboard/conversations/${conversationId}`
+      : "/dashboard/conversations",
   );
   if (!conversationId) {
     redirectWithToast(
@@ -702,7 +702,7 @@ export async function generateMeetingPrepAction(formData: FormData) {
       session,
     );
     revalidateProductPaths();
-    revalidatePath(`/dashboard/agent/outreach/${conversationId}`);
+    revalidatePath(`/dashboard/conversations/${conversationId}`);
   } catch (error) {
     unstable_rethrow(error);
     console.error("Meeting prep generation failed", error);

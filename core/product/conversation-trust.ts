@@ -7,6 +7,17 @@ import {
 import { WORKSPACE_MEETING_PREP_WORKFLOW } from "../agents/langgraph/index.ts";
 import { getPool } from "../substrate/storage/index.ts";
 
+export const CONVERSATION_TRUST_EVENT_TYPES = [
+  "rep.role.completed",
+  "draft.judged",
+  "message.sent",
+  "message.deferred",
+  "message.delivered",
+  "message.bounced",
+  "channel.account.errored",
+  "meeting.prep.generated",
+] as const;
+
 export interface ConversationTrustConversation {
   id: string;
   status: string;
@@ -751,7 +762,8 @@ async function loadEvents(
   const { rows } = await pool.query<ConversationTrustEvent>(
     `select id, event_type, source, payload, occurred_at
        from events
-      where workspace_id = $1
+     where workspace_id = $1
+        and event_type = any($7::text[])
         and (
           payload->>'conversation_id' = $2
           or payload->>'message_id' = any($3::text[])
@@ -786,6 +798,7 @@ async function loadEvents(
       input.signal_id,
       input.workflow_run_id,
       input.channel_account_ids,
+      CONVERSATION_TRUST_EVENT_TYPES,
     ],
   );
   return rows;

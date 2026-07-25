@@ -1,5 +1,6 @@
-export const PRODUCT_HOME_PATH = "/dashboard";
+export const PRODUCT_HOME_PATH = "/dashboard/outreach";
 export const ONBOARDING_PATH = "/onboarding";
+const DASHBOARD_ROOT_PATH = "/dashboard";
 
 export function safeNextPath(
   value: string | null | undefined,
@@ -18,6 +19,12 @@ export function postAuthDestination(
 ): string {
   const next = safeNextPath(requestedNext);
   if (hasCompletedOnboarding && isOnboardingPath(next)) return PRODUCT_HOME_PATH;
+  if (
+    hasCompletedOnboarding &&
+    pathnameFor(next) === DASHBOARD_ROOT_PATH
+  ) {
+    return PRODUCT_HOME_PATH;
+  }
   if (!hasCompletedOnboarding && isOnboardingPath(next)) return next;
   if (!hasCompletedOnboarding && requiresOnboarding(next)) return ONBOARDING_PATH;
   return next;
@@ -44,7 +51,7 @@ export function canonicalAuthStartUrl({
 
 export function authCallbackOrigin({
   appOrigin = process.env.APP_ORIGIN,
-  headers,
+  headers: _headers,
   nodeEnv = process.env.NODE_ENV,
   requestUrl,
 }: {
@@ -83,8 +90,8 @@ function normalizeWebsiteInput(value: string | null | undefined): string | null 
 function requiresOnboarding(value: string): boolean {
   const pathname = pathnameFor(value);
   return (
-    pathname === PRODUCT_HOME_PATH ||
-    pathname.startsWith(`${PRODUCT_HOME_PATH}/`) ||
+    pathname === DASHBOARD_ROOT_PATH ||
+    pathname.startsWith(`${DASHBOARD_ROOT_PATH}/`) ||
     pathname === "/brief" ||
     pathname.startsWith("/brief/")
   );

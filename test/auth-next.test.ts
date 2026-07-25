@@ -15,9 +15,9 @@ test("safeNextPath preserves internal paths and query strings", () => {
 });
 
 test("safeNextPath rejects external or protocol-relative redirects", () => {
-  assert.equal(safeNextPath("https://evil.example"), "/dashboard");
-  assert.equal(safeNextPath("//evil.example"), "/dashboard");
-  assert.equal(safeNextPath(null), "/dashboard");
+  assert.equal(safeNextPath("https://evil.example"), "/dashboard/outreach");
+  assert.equal(safeNextPath("//evil.example"), "/dashboard/outreach");
+  assert.equal(safeNextPath(null), "/dashboard/outreach");
 });
 
 test("googleAuthPath encodes sanitized next path", () => {
@@ -25,7 +25,10 @@ test("googleAuthPath encodes sanitized next path", () => {
     googleAuthPath("/onboarding?url=https%3A%2F%2Facme.com"),
     "/auth/google?next=%2Fonboarding%3Furl%3Dhttps%253A%252F%252Facme.com",
   );
-  assert.equal(googleAuthPath("https://evil.example"), "/auth/google?next=%2Fdashboard");
+  assert.equal(
+    googleAuthPath("https://evil.example"),
+    "/auth/google?next=%2Fdashboard%2Foutreach",
+  );
 });
 
 test("OAuth starts on the callback host so the PKCE verifier reaches the callback", () => {
@@ -107,12 +110,12 @@ test("onboardingPathForWebsite normalizes company URLs for auth handoff", () => 
 });
 
 test("postAuthDestination keeps completed users out of onboarding", () => {
-  assert.equal(postAuthDestination("/onboarding", true), "/dashboard");
+  assert.equal(postAuthDestination("/onboarding", true), "/dashboard/outreach");
   assert.equal(
     postAuthDestination("/onboarding?url=https%3A%2F%2Facme.com", true),
-    "/dashboard",
+    "/dashboard/outreach",
   );
-  assert.equal(postAuthDestination("/dashboard", true), "/dashboard");
+  assert.equal(postAuthDestination("/dashboard", true), "/dashboard/outreach");
 });
 
 test("postAuthDestination sends new users to onboarding before app surfaces", () => {

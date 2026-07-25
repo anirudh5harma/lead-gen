@@ -848,11 +848,11 @@ export default async function AgentOutreachDetailPage({
 
           <p className="text-xs text-[var(--color-text-3)]">
             <Link
-              href="/dashboard/agent#outreach"
+              href="/dashboard/conversations"
               prefetch
               className="hover:text-[var(--color-text-1)]"
             >
-              Back to sent outreach
+              Back to conversations
             </Link>
           </p>
         </aside>
@@ -882,7 +882,7 @@ function UnavailableOutreachDetail() {
 }
 
 function agentOutreachDetailHref(conversationId: string): string {
-  return `/dashboard/agent/outreach/${conversationId}`;
+  return `/dashboard/conversations/${conversationId}`;
 }
 
 function TrustPill({

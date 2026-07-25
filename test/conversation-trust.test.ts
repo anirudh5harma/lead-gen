@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import {
   buildGateExplanations,
   buildReplyProofs,
+  CONVERSATION_TRUST_EVENT_TYPES,
   type ConversationTrustApproval,
   type ConversationTrustEvent,
   type ConversationTrustMessage,
@@ -11,6 +12,19 @@ import {
 } from "../core/product/conversation-trust.ts";
 
 const now = new Date("2026-06-01T10:00:00.000Z");
+
+test("conversation trust reads only event types consumed by the detail surface", () => {
+  assert.deepEqual(CONVERSATION_TRUST_EVENT_TYPES, [
+    "rep.role.completed",
+    "draft.judged",
+    "message.sent",
+    "message.deferred",
+    "message.delivered",
+    "message.bounced",
+    "channel.account.errored",
+    "meeting.prep.generated",
+  ]);
+});
 
 function message(
   input: Partial<ConversationTrustMessage> & Pick<ConversationTrustMessage, "id" | "direction">,

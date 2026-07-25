@@ -297,7 +297,7 @@ export function presentToolResult(
           ? [
               {
                 label: "Open outreach proof",
-                href: `/dashboard/agent/outreach/${conversationId}`,
+                href: `/dashboard/conversations/${conversationId}`,
                 variant: "solid",
               },
             ]
@@ -334,7 +334,7 @@ export function presentToolResult(
           ? [
               {
                 label: "Open outreach proof",
-                href: `/dashboard/agent/outreach/${conversationId}`,
+                href: `/dashboard/conversations/${conversationId}`,
                 variant: "solid",
               },
             ]

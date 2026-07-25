@@ -1,10 +1,16 @@
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { ToastProvider } from "@/components/Toast";
 import { DashboardShell } from "@/components/dashboard/Shell";
+import ActivationBanner from "@/components/dashboard/ActivationBanner";
+import BillingBanner from "@/components/dashboard/BillingBanner";
 import { getRequestAuthIdentity } from "@/lib/auth";
 import { findCompletedOnboardingForAuthIdentity } from "@/lib/auth/onboarding";
-import { googleAuthPath, ONBOARDING_PATH } from "@/lib/auth/next";
+import {
+  googleAuthPath,
+  ONBOARDING_PATH,
+  PRODUCT_HOME_PATH,
+} from "@/lib/auth/next";
 import {
   getActiveWorkspaceSessionForDashboard,
   listWorkspacesForDashboard,
@@ -14,18 +20,14 @@ import { getPool } from "@/core/substrate/storage/index.ts";
 import { getWorkspaceBillingState } from "@/core/billing/index.ts";
 import {
   getWorkspaceActivationState,
-  type WorkspaceActivationState,
 } from "@/core/product/activation-state.ts";
 import { ensureDefaultSignalSourcesForWorkspace } from "@/core/product/self-heal.ts";
-import type { WorkspaceBillingState } from "@/components/dashboard/billing";
 
 type DashboardChromeState =
   | {
       kind: "ready";
       workspaceId: string;
       workspaces: ActiveWorkspace[];
-      billing: WorkspaceBillingState | null;
-      activation: WorkspaceActivationState | null;
     }
   | { kind: "onboarding" }
   | { kind: "unavailable" };
@@ -36,7 +38,7 @@ export default async function DashboardLayout({
   children: ReactNode;
 }) {
   const identity = await getRequestAuthIdentity();
-  if (!identity) redirect(googleAuthPath("/dashboard"));
+  if (!identity) redirect(googleAuthPath(PRODUCT_HOME_PATH));
   const chrome = await loadDashboardChrome(identity);
   if (chrome.kind === "onboarding") redirect(ONBOARDING_PATH);
   if (chrome.kind === "unavailable") {
@@ -58,8 +60,11 @@ export default async function DashboardLayout({
           id: workspace.id,
           name: workspace.name,
         }))}
-        billing={chrome.billing}
-        activation={chrome.activation}
+        banners={
+          <Suspense fallback={null}>
+            <DashboardBanners workspaceId={chrome.workspaceId} />
+          </Suspense>
+        }
       >
         {children}
       </DashboardShell>
@@ -83,27 +88,36 @@ async function loadDashboardChrome(
     // Fire-and-forget self-heal: reseed default signal sources if the
     // workspace has none (activation setup can die mid-run). Idempotent.
     void ensureDefaultSignalSourcesForWorkspace(pool, workspaceId, identity.id);
-    const [billing, activation] = await Promise.all([
-      getWorkspaceBillingState(pool, workspaceId).catch((err) => {
-        console.error("[dashboard/layout] failed to load billing state", err);
-        return null;
-      }),
-      getWorkspaceActivationState(pool, workspaceId).catch((err) => {
-        console.error("[dashboard/layout] failed to load activation state", err);
-        return null;
-      }),
-    ]);
     return {
       kind: "ready",
       workspaceId,
       workspaces,
-      billing,
-      activation,
     };
   } catch (err) {
     console.error("[dashboard/layout] failed to load dashboard chrome", err);
     return { kind: "unavailable" };
   }
+}
+
+async function DashboardBanners({ workspaceId }: { workspaceId: string }) {
+  const pool = getPool();
+  const [billing, activation] = await Promise.all([
+    getWorkspaceBillingState(pool, workspaceId).catch((err) => {
+      console.error("[dashboard/layout] failed to load billing state", err);
+      return null;
+    }),
+    getWorkspaceActivationState(pool, workspaceId).catch((err) => {
+      console.error("[dashboard/layout] failed to load activation state", err);
+      return null;
+    }),
+  ]);
+
+  return (
+    <>
+      <BillingBanner billing={billing} />
+      <ActivationBanner activation={activation} />
+    </>
+  );
 }
 
 function DashboardUnavailable() {

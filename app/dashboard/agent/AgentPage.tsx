@@ -5936,7 +5936,7 @@ function AcceptedConnectionFollowupLink({
 function acceptedConnectionHref(
   row: AgentAcceptedConnectionFollowupRow,
 ): string {
-  if (row.conversation_id) return `/dashboard/agent/outreach/${row.conversation_id}`;
+  if (row.conversation_id) return `/dashboard/conversations/${row.conversation_id}`;
   if (row.person_id) return `/dashboard/agent/contacts/${row.person_id}`;
   return "/dashboard/agent#outreach";
 }
@@ -6279,7 +6279,7 @@ function AgentRepliesPanel({
 }
 
 function AgentReplyLink({ reply }: { reply: AgentReplyRow }) {
-  const href = `/dashboard/agent/outreach/${reply.conversation_id}#message-${reply.inbound_message_id}`;
+  const href = `/dashboard/conversations/${reply.conversation_id}#message-${reply.inbound_message_id}`;
   const needsPrep = reply.intent_class === "meeting_intent" || reply.intent_class === "positive";
   const needsApproval =
     reply.reply_approval_id != null &&
@@ -6709,7 +6709,7 @@ function outreachEvalScore(score: string | null): number | null {
 }
 
 function sentDraftHref(conversationId: string, messageId: string): string {
-  return `/dashboard/agent/outreach/${conversationId}#message-${messageId}`;
+  return `/dashboard/conversations/${conversationId}#message-${messageId}`;
 }
 
 function reviewProofHref(approval: AgentReviewRow): string | null {
@@ -6717,7 +6717,7 @@ function reviewProofHref(approval: AgentReviewRow): string | null {
   if (approval.message_id) {
     return sentDraftHref(approval.conversation_id, approval.message_id);
   }
-  return `/dashboard/agent/outreach/${approval.conversation_id}`;
+  return `/dashboard/conversations/${approval.conversation_id}`;
 }
 
 function reviewKindLabel(kind: string): string {

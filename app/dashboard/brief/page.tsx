@@ -1733,7 +1733,7 @@ function OutcomeInsightRow({ insight }: { insight: BriefOutcomeInsight }) {
   const company = insight.company_name ? ` at ${insight.company_name}` : "";
   const needsPrep = insightNeedsMeetingPrep(insight);
   const href = insight.conversation_id
-    ? `/dashboard/agent/outreach/${insight.conversation_id}${
+    ? `/dashboard/conversations/${insight.conversation_id}${
         insight.attributed_message_id ? `#message-${insight.attributed_message_id}` : ""
       }`
     : "/dashboard/agent#outreach";

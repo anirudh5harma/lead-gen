@@ -7,6 +7,53 @@ const NAMED_ENTITIES: Record<string, string> = {
   quot: '"',
 };
 
+const SIGNAL_CATEGORY_LABELS: Record<string, string> = {
+  funding: "Funding",
+  hiring: "Hiring",
+  leadership_change: "Leadership",
+  product_launch: "Product launch",
+  acquisition: "Acquisition",
+  churn_risk: "Churn risk",
+  competitor_move: "Competitor",
+  podcast_mention: "Podcast",
+  press_mention: "Press",
+  regulation: "Regulation",
+  expansion: "Expansion",
+  layoff: "Layoff",
+  other: "Other",
+};
+
+const SIGNAL_ACTIONS: Record<string, string> = {
+  funding: "raised funding",
+  hiring: "is hiring",
+  leadership_change: "changed leadership",
+  product_launch: "launched a product",
+  acquisition: "announced an acquisition",
+  churn_risk: "shows churn risk",
+  competitor_move: "made a competitive move",
+  podcast_mention: "was featured on a podcast",
+  press_mention: "was mentioned in the press",
+  regulation: "faces a regulatory change",
+  expansion: "is expanding",
+  layoff: "announced layoffs",
+};
+
+export function signalCategoryLabel(kind: string | null | undefined): string {
+  return SIGNAL_CATEGORY_LABELS[kind ?? "other"] ?? SIGNAL_CATEGORY_LABELS.other;
+}
+
+export function normalizedSignalHeading(input: {
+  kind?: string | null;
+  companyName?: string | null;
+  evidenceTitle: string;
+}): string {
+  const subject = signalDisplayTitle(input.companyName ?? "", 60) || "Company";
+  const action = SIGNAL_ACTIONS[input.kind ?? ""];
+  return action
+    ? `${subject} ${action}`
+    : signalDisplayTitle(input.evidenceTitle);
+}
+
 export function signalDisplayTitle(value: string, maxLength = 150): string {
   const normalized = decodeHtmlEntities(value)
     .replace(/<[^>]+>/g, " ")

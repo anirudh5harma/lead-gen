@@ -1,10 +1,11 @@
-import { redirect } from "next/navigation";
+import AgentOutreachDetailPage from "@/app/dashboard/agent/outreach/[id]/page";
 
-export default async function LegacyConversationDetailPage({
+export const dynamic = "force-dynamic";
+
+export default function ConversationDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { id } = await params;
-  redirect(`/dashboard/agent/outreach/${id}`);
+  return <AgentOutreachDetailPage params={params} />;
 }

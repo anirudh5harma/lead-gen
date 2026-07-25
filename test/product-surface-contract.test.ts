@@ -218,10 +218,10 @@ test("legacy list and Profile routes redirect to current product hubs", () => {
     source("app/dashboard/prospects/page.tsx"),
     /redirect\("\/dashboard\/agent#verified-contacts"\)/,
   );
-  // Conversations is now a live surface listing Outlook + LinkedIn threads.
+  // Conversations is a live surface with a canonical detail route.
   assert.match(
     source("app/dashboard/conversations/[id]/page.tsx"),
-    /redirect\(`\/dashboard\/agent\/outreach\/\$\{id\}`\)/,
+    /AgentOutreachDetailPage/,
   );
   assert.match(
     source("app/dashboard/review/page.tsx"),
@@ -261,7 +261,7 @@ test("legacy list and Profile routes redirect to current product hubs", () => {
   assert.match(nextConfig, /source: "\/dashboard\/prospects"/);
   assert.match(nextConfig, /source: "\/dashboard\/prospects\/:id"/);
   assert.doesNotMatch(nextConfig, /source: "\/dashboard\/conversations"/);
-  assert.match(nextConfig, /source: "\/dashboard\/conversations\/:id"/);
+  assert.doesNotMatch(nextConfig, /source: "\/dashboard\/conversations\/:id"/);
   assert.match(nextConfig, /source: "\/dashboard\/review"/);
   assert.match(nextConfig, /source: "\/dashboard\/approvals"/);
   assert.match(nextConfig, /source: "\/dashboard\/outcomes"/);
@@ -272,7 +272,7 @@ test("legacy list and Profile routes redirect to current product hubs", () => {
   assert.match(nextConfig, /destination: "\/dashboard\/agent#qualified-signals"/);
   assert.match(nextConfig, /destination: "\/dashboard\/agent#verified-contacts"/);
   assert.match(nextConfig, /destination: "\/dashboard\/agent\/contacts\/:id"/);
-  assert.match(nextConfig, /destination: "\/dashboard\/agent\/outreach\/:id"/);
+  assert.doesNotMatch(nextConfig, /destination: "\/dashboard\/agent\/outreach\/:id"/);
 
   const actions = source("app/dashboard/actions.ts");
   assert.match(actions, /revalidatePath\("\/dashboard\/profile"\)/);
@@ -386,7 +386,7 @@ test("Dashboard routes setup work through Profile and current surfaces", () => {
   assert.match(dashboard, /value="\/dashboard\/brief#reply-insights"/);
   assert.match(dashboard, /Prepare meeting/);
   assert.match(dashboard, /Meeting prep ready/);
-  assert.match(dashboard, /\/dashboard\/agent\/outreach\/\$\{insight\.conversation_id\}/);
+  assert.match(dashboard, /\/dashboard\/conversations\/\$\{insight\.conversation_id\}/);
   assert.doesNotMatch(dashboard, /Signal mix/);
   assert.doesNotMatch(dashboard, /href: "\/dashboard\/prospecting"/);
 
@@ -638,7 +638,7 @@ test("Reply insights keep outcome data under the simplified dashboard", () => {
   assert.match(dashboard, /reply_intent/);
   assert.match(dashboard, /OutcomeInsightRow/);
   assert.match(dashboard, /insight\.kind === "meeting_booked" \? "event_available" : "mark_email_read"/);
-  assert.match(dashboard, /\/dashboard\/agent\/outreach\/\$\{insight\.conversation_id\}/);
+  assert.match(dashboard, /\/dashboard\/conversations\/\$\{insight\.conversation_id\}/);
   assert.match(dashboard, /meeting\.prep\.generated/);
   assert.match(dashboard, /generateMeetingPrepAction/);
   assert.match(dashboard, /Prepare meeting/);
@@ -795,8 +795,8 @@ test("dashboard app surfaces do not leak legacy named agents", () => {
   assert.match(readme, /\/dashboard\/brief/);
   assert.match(readme, /\/dashboard\/agent/);
   assert.match(readme, /\/dashboard\/profile/);
-  assert.match(readme, /\/dashboard\/agent\/outreach\/<conversation-id>/);
-  assert.match(demoSeed, /\/dashboard\/agent\/outreach\/<conversation_id>/);
+  assert.match(readme, /\/dashboard\/conversations\/<conversation-id>/);
+  assert.match(demoSeed, /\/dashboard\/conversations\/<conversation_id>/);
   assert.match(demoSeed, /without sending external email/);
   assert.doesNotMatch(
     readme,
@@ -804,7 +804,6 @@ test("dashboard app surfaces do not leak legacy named agents", () => {
   );
   assert.doesNotMatch(readme, /\/dashboard\/campaigns`/);
   assert.doesNotMatch(readme, /mocked LLM \+ SES/);
-  assert.doesNotMatch(demoSeed, /\/dashboard\/conversations/);
   assert.doesNotMatch(demoSeed, /\/dashboard\/reps/);
 });
 
@@ -912,24 +911,23 @@ test("sent outreach links open the exact draft in the conversation trace", () =>
   const actions = source("app/dashboard/actions.ts");
   const aliases = source("core/product/bombsell-tools.ts");
 
-  // /dashboard/conversations is now a live surface listing threads; individual
-  // thread deep-links still land in the Agent outreach trace via [id]/page.tsx.
+  // /dashboard/conversations owns thread discovery and the canonical detail URL.
   assert.match(outreach, /Conversations \| Bombsell/);
-  assert.match(legacyDetail, /redirect\(`\/dashboard\/agent\/outreach\/\$\{id\}`\)/);
+  assert.match(legacyDetail, /AgentOutreachDetailPage/);
   assert.match(reps, /<AgentConversationsPanel/);
   assert.match(reps, /kind: "sent"/);
   assert.match(reps, /AgentOutreachLink message=\{item\.message\}/);
   assert.match(trust, /the Agent is set to research-only for replies/);
   assert.match(reps, /href=\{sentDraftHref\(message\.conversation_id, message\.id\)\}/);
-  assert.match(reps, /\/dashboard\/agent\/outreach\/\$\{conversationId\}#message-\$\{messageId\}/);
-  assert.match(reps, /\/dashboard\/agent\/outreach\/\$\{reply\.conversation_id\}#message-\$\{reply\.inbound_message_id\}/);
-  assert.match(reps, /\/dashboard\/agent\/outreach\/\$\{row\.conversation_id\}/);
-  assert.match(dashboard, /\/dashboard\/agent\/outreach\/\$\{insight\.conversation_id\}/);
-  assert.match(profile, /\/dashboard\/agent\/outreach\/\$\{row\.conversation_id\}/);
-  assert.match(contact, /\/dashboard\/agent\/outreach\/\$\{conversation\.id\}/);
-  assert.match(actions, /revalidatePath\(`\/dashboard\/agent\/outreach\/\$\{conversationId\}`\)/);
-  assert.match(aliases, /\/dashboard\/agent\/outreach\/\$\{message\.conversation_id\}#message-\$\{message\.id\}/);
-  assert.doesNotMatch(aliases, /\/dashboard\/conversations\/\$\{message\.conversation_id\}/);
+  assert.match(reps, /\/dashboard\/conversations\/\$\{conversationId\}#message-\$\{messageId\}/);
+  assert.match(reps, /\/dashboard\/conversations\/\$\{reply\.conversation_id\}#message-\$\{reply\.inbound_message_id\}/);
+  assert.match(reps, /\/dashboard\/conversations\/\$\{row\.conversation_id\}/);
+  assert.match(dashboard, /\/dashboard\/conversations\/\$\{insight\.conversation_id\}/);
+  assert.match(profile, /\/dashboard\/conversations\/\$\{row\.conversation_id\}/);
+  assert.match(contact, /\/dashboard\/conversations\/\$\{conversation\.id\}/);
+  assert.match(actions, /revalidatePath\(`\/dashboard\/conversations\/\$\{conversationId\}`\)/);
+  assert.match(aliases, /\/dashboard\/conversations\/\$\{message\.conversation_id\}#message-\$\{message\.id\}/);
+  assert.doesNotMatch(aliases, /\/dashboard\/agent\/outreach\/\$\{message\.conversation_id\}/);
   assert.match(detail, /brief-kicker">Agent/);
   assert.match(detail, /OutreachProofTimeline/);
   assert.match(detail, /Signal-to-outreach trace/);
@@ -943,7 +941,7 @@ test("sent outreach links open the exact draft in the conversation trace", () =>
   assert.match(detail, /completedStepCount/);
   assert.match(detail, /id=\{`message-\$\{m\.id\}`\}/);
   assert.match(detail, /target:ring-\[var\(--color-accent\)\]/);
-  assert.match(detail, /Back to sent outreach/);
+  assert.match(detail, /Back to conversations/);
   assert.match(detail, /Contact trust/);
   assert.match(detail, /contactEmailStatusLabel\(conv\.counterparty_email_status\)/);
   assert.match(detail, /conv\.counterparty_linkedin_ready \? "LinkedIn profile" : "No LinkedIn profile"/);
@@ -956,10 +954,6 @@ test("sent outreach links open the exact draft in the conversation trace", () =>
   assert.match(trust, /jsonb_each\(coalesce\(p\.properties->'email_verification'/);
   assert.doesNotMatch(detail, /brief-kicker">Inbox/);
   assert.doesNotMatch(detail, /Back to Inbox/);
-  assert.doesNotMatch(reps, /\/dashboard\/conversations\/\$\{conversationId\}/);
-  assert.doesNotMatch(dashboard, /\/dashboard\/conversations\/\$\{insight\.conversation_id\}/);
-  assert.doesNotMatch(profile, /\/dashboard\/conversations\/\$\{row\.conversation_id\}/);
-  assert.doesNotMatch(contact, /\/dashboard\/conversations\/\$\{conversation\.id\}/);
   assert.doesNotMatch(trust, /the Play is set to research-only/);
 });
 
@@ -1145,8 +1139,7 @@ test("dashboard surface verifier covers the simplified product flow", () => {
   assert.match(verifier, /"Use Bombsell in Claude Code"/);
   assert.match(verifier, /"http:\/\/127\.0\.0\.1:3023"/);
   assert.doesNotMatch(capabilityMap, /\/dashboard\/agent#sources/);
-  assert.doesNotMatch(capabilityMap, /\/dashboard\/conversations\/\[id\]/);
-  assert.match(capabilityMap, /\/dashboard\/agent\/outreach\/\[id\]/);
+  assert.match(capabilityMap, /\/dashboard\/conversations\/\[id\]/);
   assert.match(capabilityMap, /\/dashboard\/profile#signal-setup/);
 });
 
