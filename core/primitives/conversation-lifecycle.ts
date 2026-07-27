@@ -48,8 +48,8 @@ async function projectConversationOpened(
         and (
           id = $2
           or (
-            counterparty_person_id = $4
-            and counterparty_company_id is not distinct from $5::uuid
+            counterparty_person_id = $3
+            and counterparty_company_id is not distinct from $4::uuid
           )
         )
       order by case when id = $2 then 0 else 1 end

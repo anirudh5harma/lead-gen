@@ -102,6 +102,7 @@ test("conversation lifecycle projection materializes opened conversations", asyn
     person_id,
     company_id,
   ]);
+  assert.doesNotMatch(existing.sql, /\$5|\$6/);
   assert.equal(insert.values?.[0], conversation_id);
   assert.equal(insert.values?.[2], rep_id);
   assert.equal(insert.values?.[3], person_id);
