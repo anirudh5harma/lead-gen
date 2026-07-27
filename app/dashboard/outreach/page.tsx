@@ -340,11 +340,13 @@ async function loadMatchedLeads(
   };
 }
 
-export default function OutreachPage({
+export default async function OutreachPage({
   searchParams,
 }: {
   searchParams: OutreachSearchParams;
 }) {
+  const filters = parseFilters(await searchParams);
+
   return (
     <div className="space-y-6">
       <header>
@@ -359,19 +361,24 @@ export default function OutreachPage({
         </p>
       </header>
 
-      <Suspense fallback={<OutreachResultsSkeleton />}>
-        <OutreachLeads searchParams={searchParams} />
-      </Suspense>
+      <section className="space-y-3">
+        <LeadsFilters
+          filters={filters}
+          signalKinds={SIGNAL_KINDS.map((kind) => ({ value: kind, label: signalCategoryLabel(kind) }))}
+        />
+        <Suspense fallback={<OutreachResultsSkeleton />}>
+          <OutreachResults filters={filters} />
+        </Suspense>
+      </section>
     </div>
   );
 }
 
-async function OutreachLeads({
-  searchParams,
+async function OutreachResults({
+  filters,
 }: {
-  searchParams: OutreachSearchParams;
+  filters: OutreachFilters;
 }) {
-  const filters = parseFilters(await searchParams);
   const session = await getActiveWorkspaceSessionForDashboard("outreach");
   if (!session) return <OutreachEmpty />;
   const reviewMode = session.workspace.autonomy_mode === "review_only";
@@ -380,27 +387,15 @@ async function OutreachLeads({
     return { leads: [] as MatchedLeadRow[], total: 0 };
   });
 
+  if (result.leads.length === 0) {
+    return hasFilters(filters) ? <FilteredEmpty noun="leads" /> : <OutreachEmpty />;
+  }
+
   return (
-    <section className="space-y-3">
-      <LeadsFilters
-        key={filters.q}
-        filters={filters}
-        resultCount={result.total}
-        signalKinds={SIGNAL_KINDS.map((kind) => ({ value: kind, label: signalCategoryLabel(kind) }))}
-      />
-      {result.leads.length === 0 ? (
-        hasFilters(filters) ? (
-          <FilteredEmpty noun="leads" />
-        ) : (
-          <OutreachEmpty />
-        )
-      ) : (
-        <>
-          <LeadsTable leads={result.leads} reviewMode={reviewMode} />
-          <LeadsPagination filters={filters} total={result.total} />
-        </>
-      )}
-    </section>
+    <>
+      <LeadsTable leads={result.leads} reviewMode={reviewMode} />
+      <LeadsPagination filters={filters} total={result.total} />
+    </>
   );
 }
 
@@ -408,7 +403,6 @@ function OutreachResultsSkeleton() {
   return (
     <div className="space-y-3" aria-busy="true" aria-live="polite">
       <p className="sr-only">Loading matched leads</p>
-      <div className="dashboard-loader-skeleton h-16 rounded-[8px]" />
       <div className="overflow-hidden rounded-[8px] border border-[var(--color-line-1)]">
         <TableHeader reviewMode />
         {[0, 1, 2, 3, 4].map((row) => (

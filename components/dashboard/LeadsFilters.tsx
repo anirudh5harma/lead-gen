@@ -13,11 +13,9 @@ interface LeadsFiltersState {
 
 export function LeadsFilters({
   filters,
-  resultCount,
   signalKinds,
 }: {
   filters: LeadsFiltersState;
-  resultCount: number;
   signalKinds: Array<{ value: string; label: string }>;
 }) {
   const router = useRouter();
@@ -95,8 +93,8 @@ export function LeadsFilters({
           Clear
         </button>
       ) : null}
-      <span className="ml-auto whitespace-nowrap text-[11px] tabular-nums text-[var(--color-text-4)]" aria-live="polite">
-        {isPending ? "Updating…" : `${resultCount} leads`}
+      <span className="ml-auto whitespace-nowrap text-[11px] text-[var(--color-text-4)]" aria-live="polite">
+        {isPending ? "Updating leads…" : "All qualified leads"}
       </span>
     </section>
   );

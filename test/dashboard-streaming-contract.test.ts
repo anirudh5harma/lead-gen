@@ -25,9 +25,11 @@ test("outreach renders its heading before the leads query resolves", () => {
   const outreach = source("app/dashboard/outreach/page.tsx");
   const filters = source("components/dashboard/LeadsFilters.tsx");
 
-  assert.match(outreach, /export default function OutreachPage/);
+  assert.match(outreach, /export default async function OutreachPage/);
   assert.match(outreach, /<Suspense fallback=\{<OutreachResultsSkeleton \/>\}>/);
-  assert.match(outreach, /async function OutreachLeads/);
+  assert.match(outreach, /async function OutreachResults/);
+  assert.match(outreach, /<LeadsFilters\s+filters=\{filters\}/);
+  assert.doesNotMatch(outreach, /key=\{filters\.q\}/);
   assert.match(outreach, /with qualified_signals as materialized/);
   assert.match(outreach, /e\.payload \? 'signal_id'/);
   assert.match(outreach, />Account</);
@@ -43,6 +45,7 @@ test("outreach renders its heading before the leads query resolves", () => {
   assert.match(filters, /label="Verified channel"/);
   assert.match(filters, /label="Company size"/);
   assert.match(filters, /setTimeout\(\(\) => replaceParams\(\{ q: query \}\), 300\)/);
+  assert.match(filters, /router\.replace\(destination, \{ scroll: false \}\)/);
   assert.match(outreach, /const PAGE_SIZE = 20/);
   assert.match(outreach, /limit \$7\s+offset \$8/);
   assert.doesNotMatch(outreach, /make_interval\(days/);

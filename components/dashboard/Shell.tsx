@@ -312,46 +312,54 @@ function WorkspaceModeSwitch({
   }
 
   return (
-    <div
-      role="group"
-      aria-label="Outreach operating mode"
-      aria-busy={isPending}
-      className={
-        "relative grid grid-cols-2 rounded-[10px] bg-[var(--color-ink-2)] p-1 ring-1 ring-[var(--color-line-1)] " +
-        (compact ? "w-[116px]" : "w-[148px]")
-      }
-    >
-      <span
-        aria-hidden="true"
+    <>
+      <div
+        role="group"
+        aria-label="Outreach operating mode"
+        aria-busy={isPending}
         className={
-          "pointer-events-none absolute bottom-1 left-1 top-1 w-[calc(50%-4px)] transform-gpu rounded-[7px] bg-[var(--color-cta-bg)] shadow-[0_1px_2px_rgba(0,0,0,0.12)] transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none " +
-          (selectedMode === "review_only" ? "translate-x-full" : "translate-x-0")
+          "relative grid grid-cols-2 rounded-[10px] bg-[var(--color-ink-2)] p-1 ring-1 ring-[var(--color-line-1)] " +
+          (compact ? "w-[116px]" : "w-[148px]")
         }
-      />
-      <ModeOption
-        value="autonomous"
-        label="Auto"
-        active={selectedMode === "autonomous"}
-        disabled={isPending}
-        onSelect={selectMode}
-        compact={compact}
-        title="Auto: send outreach after quality and channel checks pass"
-      />
-      <ModeOption
-        value="review_only"
-        label="Review"
-        active={selectedMode === "review_only"}
-        disabled={isPending}
-        onSelect={selectMode}
-        compact={compact}
-        title="Review: hold judged drafts for approval before sending"
-      />
-      <span className="sr-only" aria-live="polite">
-        {isPending
-          ? `Switching to ${selectedMode === "autonomous" ? "Auto" : "Review"} mode`
-          : `${selectedMode === "autonomous" ? "Auto" : "Review"} mode active`}
-      </span>
-    </div>
+      >
+        <span
+          aria-hidden="true"
+          className={
+            "pointer-events-none absolute bottom-1 left-1 top-1 w-[calc(50%-4px)] transform-gpu rounded-[7px] bg-[var(--color-cta-bg)] shadow-[0_1px_2px_rgba(0,0,0,0.12)] transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none " +
+            (selectedMode === "review_only" ? "translate-x-full" : "translate-x-0")
+          }
+        />
+        <ModeOption
+          value="autonomous"
+          label="Auto"
+          active={selectedMode === "autonomous"}
+          disabled={isPending}
+          onSelect={selectMode}
+          compact={compact}
+          title="Auto: send outreach after quality and channel checks pass"
+        />
+        <ModeOption
+          value="review_only"
+          label="Review"
+          active={selectedMode === "review_only"}
+          disabled={isPending}
+          onSelect={selectMode}
+          compact={compact}
+          title="Review: hold judged drafts for approval before sending"
+        />
+        <span className="sr-only" aria-live="polite">
+          {isPending
+            ? `Switching to ${selectedMode === "autonomous" ? "Auto" : "Review"} mode`
+            : `${selectedMode === "autonomous" ? "Auto" : "Review"} mode active`}
+        </span>
+      </div>
+      {isPending ? (
+        <div className="pointer-events-none fixed left-1/2 top-1/2 z-50 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-[8px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] px-3 py-2 text-[12px] font-medium text-[var(--color-text-2)] shadow-[0_6px_12px_rgba(0,0,0,0.1)]" role="status" aria-live="polite">
+          <span className="size-3 animate-spin rounded-full border-2 border-[var(--color-line-2)] border-t-[var(--color-accent)] motion-reduce:animate-none" />
+          Switching to {selectedMode === "autonomous" ? "Auto" : "Review"} mode
+        </div>
+      ) : null}
+    </>
   );
 }
 

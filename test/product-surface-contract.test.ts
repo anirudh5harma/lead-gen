@@ -94,6 +94,8 @@ test("dashboard shell keeps route chrome simple and avoids extra flow queries", 
   assert.match(shell, /useTransition/);
   assert.match(shell, /translate-x-full/);
   assert.match(shell, /motion-reduce:transition-none/);
+  assert.match(shell, /pointer-events-none fixed left-1\/2 top-1\/2/);
+  assert.match(shell, /Switching to \{selectedMode === "autonomous" \? "Auto" : "Review"\} mode/);
   assert.doesNotMatch(modeSwitch, /<form/);
   assert.match(shell, />Sign out</);
   assert.match(layout, /autonomyMode=\{chrome\.autonomyMode\}/);
