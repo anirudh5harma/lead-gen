@@ -190,6 +190,7 @@ export async function GET(req: NextRequest): Promise<Response> {
         display_name: displayName,
         daily_cap: Number(process.env.OUTLOOK_DEFAULT_DAILY_CAP ?? 25),
         encrypted_credentials: credentials,
+        scope: tokens.scope,
         ms_user_id: me.id,
         mailbox_email: mailboxEmail,
       },

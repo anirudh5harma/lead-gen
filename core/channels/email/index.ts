@@ -128,11 +128,14 @@ export type {
 } from "./outlook-subscription-workflow.ts";
 export {
   getOutlookCalendarAvailability,
+  getOutlookCalendarConnectionStatus,
   suggestOutlookMeetingTimes,
 } from "./outlook-calendar.ts";
 export type {
   OutlookCalendarAvailability,
+  OutlookCalendarConnectionStatus,
   OutlookCalendarAvailabilityOptions,
+  OutlookCalendarConnectionOptions,
   OutlookCalendarAvailabilityReason,
 } from "./outlook-calendar.ts";
 export {

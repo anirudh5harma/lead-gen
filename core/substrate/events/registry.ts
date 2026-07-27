@@ -833,6 +833,7 @@ const OutlookAuthorizationReceived = z.object({
     tag: z.string().min(1),
     ciphertext: z.string().min(1),
   }),
+  scope: z.string().min(1).optional(),
   ms_user_id: z.string().min(1),
   mailbox_email: z.string().min(1).nullable().optional(),
 });

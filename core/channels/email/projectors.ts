@@ -214,6 +214,9 @@ export async function projectOutlookAuthorization(
   if (payload.mailbox_email?.trim()) {
     properties.mailbox_email = payload.mailbox_email.trim().toLowerCase();
   }
+  if (payload.scope?.toLowerCase().includes("calendars.read")) {
+    properties.calendar_scope_granted = "true";
+  }
   const result = await pool.query(
     `insert into channel_accounts (
        id, workspace_id, user_id, kind, display_name, status,

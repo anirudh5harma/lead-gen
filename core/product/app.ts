@@ -106,6 +106,7 @@ import {
   createDryRunEmailTransport,
   createDeepSeekIntentClassifier,
   getOutlookCalendarAvailability,
+  getOutlookCalendarConnectionStatus,
   handleInboundEmail,
   createOutlookSender,
   createPostgresOwnedDomainEmailChannel,
@@ -114,6 +115,7 @@ import {
   type EmailTransport,
   type EmailChannel,
   type OutlookCalendarAvailability,
+  type OutlookCalendarConnectionStatus,
   type OutlookSender,
   type ReplyIntent,
 } from "../channels/email/index.ts";
@@ -8564,6 +8566,22 @@ export async function getProductOutlookCalendarAvailability(
   const engine = await getProductEngine();
   await assertProductWorkspaceAccess(session, engine.pool);
   return resolveMeetingPrepCalendar(engine, session.workspace_id, session.user_id);
+}
+
+export async function getProductOutlookCalendarConnectionStatus(
+  session: ProductWorkspaceSession,
+): Promise<OutlookCalendarConnectionStatus> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  return getOutlookCalendarConnectionStatus({
+    pool: engine.pool,
+    providerConfigured: Boolean(
+      process.env.MICROSOFT_CLIENT_ID &&
+      process.env.MICROSOFT_CLIENT_SECRET,
+    ),
+    workspace_id: session.workspace_id,
+    user_id: session.user_id,
+  });
 }
 
 export async function configureEmailAccount(

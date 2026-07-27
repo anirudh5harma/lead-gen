@@ -23,6 +23,14 @@ export interface OutlookCalendarAvailability {
   reason: OutlookCalendarAvailabilityReason;
 }
 
+export interface OutlookCalendarConnectionStatus {
+  connected: boolean;
+  provider: "outlook";
+  channel_account_id: string | null;
+  account_display_name: string | null;
+  reason: "connected" | "calendar_not_configured" | "no_connected_calendar";
+}
+
 export interface OutlookCalendarAvailabilityOptions {
   pool: Pool;
   accessTokens: OutlookAccessTokenProvider | null | undefined;
@@ -31,6 +39,13 @@ export interface OutlookCalendarAvailabilityOptions {
   now?: Date;
   fetchImpl?: typeof fetch;
   maxSuggestions?: number;
+}
+
+export interface OutlookCalendarConnectionOptions {
+  pool: Pool;
+  providerConfigured?: boolean;
+  workspace_id: string;
+  user_id: string;
 }
 
 interface OutlookCalendarAccountRow {
@@ -136,6 +151,28 @@ export async function getOutlookCalendarAvailability(
   );
 }
 
+export async function getOutlookCalendarConnectionStatus(
+  opts: OutlookCalendarConnectionOptions,
+): Promise<OutlookCalendarConnectionStatus> {
+  if (opts.providerConfigured === false) {
+    return connectionUnavailable("calendar_not_configured");
+  }
+  await repairUserConnectedChannelAccountOwners(opts.pool, opts.workspace_id);
+  const account = await loadOutlookCalendarAccount(
+    opts.pool,
+    opts.workspace_id,
+    opts.user_id,
+  );
+  if (!account) return connectionUnavailable("no_connected_calendar");
+  return {
+    connected: true,
+    provider: "outlook",
+    channel_account_id: account.id,
+    account_display_name: account.display_name,
+    reason: "connected",
+  };
+}
+
 export function suggestOutlookMeetingTimes(input: {
   availabilityView: string;
   start: string | Date;
@@ -170,7 +207,13 @@ async function loadOutlookCalendarAccount(
         and user_id = $2
         and kind = 'oauth_outlook'
         and status = 'connected'
-      order by last_used_at nulls first, created_at asc
+      order by case
+                 when properties ->> 'calendar_scope_granted' = 'true' then 0
+                 else 1
+               end,
+               updated_at desc,
+               last_used_at nulls first,
+               created_at desc
       limit 1`,
     [workspace_id, user_id],
   );
@@ -210,6 +253,18 @@ function unavailable(reason: OutlookCalendarAvailabilityReason): OutlookCalendar
     channel_account_id: null,
     account_display_name: null,
     suggested_times: [],
+    reason,
+  };
+}
+
+function connectionUnavailable(
+  reason: OutlookCalendarConnectionStatus["reason"],
+): OutlookCalendarConnectionStatus {
+  return {
+    connected: false,
+    provider: "outlook",
+    channel_account_id: null,
+    account_display_name: null,
     reason,
   };
 }

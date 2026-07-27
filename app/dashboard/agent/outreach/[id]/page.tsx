@@ -16,6 +16,8 @@ import {
   type ConversationTrustSignal,
   type ConversationTrustTrace,
 } from "@/core/product/conversation-trust";
+import { getProductOutlookCalendarConnectionStatus } from "@/core/product/app";
+import type { OutlookCalendarConnectionStatus } from "@/core/channels/email";
 import { getActiveWorkspaceSessionForDashboard } from "@/lib/workspace";
 import {
   decideApprovalWithDraftAction,
@@ -26,9 +28,15 @@ import { loadDashboardData } from "../../../server-data";
 export const dynamic = "force-dynamic";
 
 type ConversationTrustTraceLoadResult =
-  | { status: "found"; trace: ConversationTrustTrace }
+  | {
+      status: "found";
+      trace: ConversationTrustTrace;
+      calendarConnection: OutlookCalendarConnectionStatus | null;
+    }
   | { status: "missing" }
   | { status: "unavailable" };
+
+type ConversationSection = "thread" | "proof" | "prep";
 
 function preview(body: string | null, max = 600): string {
   if (!body) return "(empty)";
@@ -269,16 +277,27 @@ interface MeetingPrepCard {
   suggested_questions: string[];
   suggested_times: string[];
   availability_status: "included" | "omitted_no_consent";
+  availability_reason: string;
+  calendar_account_id: string | null;
+  calendar_account_display_name: string | null;
   source_refs: Array<{ type: string; id: string; label: string; url?: string | null }>;
 }
 
 function MeetingPrepPanel({
   conversationId,
   prep,
+  calendarConnection,
 }: {
   conversationId: string;
   prep: MeetingPrepCard | null;
+  calendarConnection: OutlookCalendarConnectionStatus | null;
 }) {
+  const calendarConnected =
+    calendarConnection?.connected === true || Boolean(prep?.calendar_account_id);
+  const calendarName =
+    calendarConnection?.account_display_name ??
+    prep?.calendar_account_display_name ??
+    "Outlook calendar";
   return (
     <div className="section-note">
       <div className="flex items-start gap-3">
@@ -310,11 +329,18 @@ function MeetingPrepPanel({
             value={meetingPrepActionLabel(prep.next_action)}
             meta={
               prep.availability_status === "omitted_no_consent"
-                ? "Availability omitted until calendar consent exists."
+                ? calendarConnected
+                  ? "Calendar is connected. Prepare again to refresh suggested times."
+                  : "Availability omitted until calendar consent exists."
                 : prep.suggested_times.join(", ")
             }
           />
-          {prep.availability_status === "omitted_no_consent" ? (
+          {calendarConnected ? (
+            <div className="inline-flex w-fit items-center gap-1.5 rounded-[8px] bg-[var(--color-pos-bg)] px-2.5 py-1 text-xs font-medium text-[var(--color-pos)]">
+              <Icon name="event_available" size={14} />
+              Calendar connected: {calendarName}
+            </div>
+          ) : prep.availability_status === "omitted_no_consent" ? (
             <Link
               href={{
                 pathname: "/api/auth/outlook",
@@ -348,9 +374,32 @@ function MeetingPrepPanel({
           ) : null}
         </div>
       ) : (
-        <p className="mt-3 text-xs leading-5 text-[var(--color-text-3)]">
-          No prep note yet.
-        </p>
+        <div className="mt-3 grid gap-3">
+          <p className="text-xs leading-5 text-[var(--color-text-3)]">
+            No prep note yet.
+          </p>
+          {calendarConnected ? (
+            <div className="inline-flex w-fit items-center gap-1.5 rounded-[8px] bg-[var(--color-pos-bg)] px-2.5 py-1 text-xs font-medium text-[var(--color-pos)]">
+              <Icon name="event_available" size={14} />
+              Calendar connected: {calendarName}
+            </div>
+          ) : (
+            <Link
+              href={{
+                pathname: "/api/auth/outlook",
+                query: {
+                  intent: "calendar",
+                  return_to: agentOutreachDetailHref(conversationId),
+                },
+              }}
+              prefetch
+              className="btn-quiet-sm w-fit"
+            >
+              <Icon name="event_available" size={14} />
+              Connect calendar
+            </Link>
+          )}
+        </div>
       )}
     </div>
   );
@@ -455,6 +504,125 @@ function outcomeLabel(kind: string): string {
   return kind.replace(/_/g, " ");
 }
 
+function ConversationContextPanel({
+  conv,
+  signals,
+  compact = false,
+}: {
+  conv: ConversationTrustConversation;
+  signals: ConversationTrustSignal[];
+  compact?: boolean;
+}) {
+  return (
+    <div className="section-note">
+      <div className={compact ? "grid gap-4" : ""}>
+        <div>
+          <p className="text-sm font-semibold text-[var(--color-text-1)]">Contact</p>
+          <p className="mt-1 font-sans text-sm text-[var(--color-text-1)]">
+            {conv.counterparty_name ?? "Unknown contact"}
+          </p>
+          {conv.counterparty_title ? (
+            <p className="mt-0.5 font-sans text-xs text-[var(--color-text-2)]">
+              {conv.counterparty_title}
+            </p>
+          ) : null}
+          {conv.company_name ? (
+            <p className="mt-0.5 font-sans text-xs text-[var(--color-text-2)]">
+              {conv.company_name}
+            </p>
+          ) : null}
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <TrustPill
+            ready={conv.counterparty_email_status === "verified"}
+            icon="mail"
+          >
+            {contactEmailStatusLabel(conv.counterparty_email_status)}
+          </TrustPill>
+          <TrustPill
+            ready={conv.counterparty_linkedin_ready === true}
+            icon="linkedin"
+          >
+            {conv.counterparty_linkedin_ready ? "LinkedIn profile" : "No LinkedIn profile"}
+          </TrustPill>
+          {conv.counterparty_fit_decision ? (
+            <TrustPill
+              ready={conv.counterparty_fit_decision === "fit"}
+              icon="fact_check"
+            >
+              {contactFitLabel(conv.counterparty_fit_decision)}
+            </TrustPill>
+          ) : null}
+        </div>
+        <div className="mt-4 grid gap-2 border-t border-[var(--color-line-1)] pt-4">
+          <ContactHandle
+            label="Email"
+            value={conv.counterparty_emails?.[0] ?? "Missing"}
+          />
+          <ContactHandle
+            label="LinkedIn"
+            value={conv.counterparty_linkedin_url ?? "Missing"}
+            href={conv.counterparty_linkedin_url}
+          />
+        </div>
+        {conv.signal_title ? (
+          <div className="mt-4 border-t border-[var(--color-line-1)] pt-4">
+            <p className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-4)]">
+              Why now
+            </p>
+            <p className="mt-1 font-sans text-sm leading-5 text-[var(--color-text-1)]">
+              {conv.signal_title}
+            </p>
+          </div>
+        ) : null}
+        <ConversationSignals signals={signals} />
+      </div>
+    </div>
+  );
+}
+
+function ConversationPrepGuide({
+  calendarConnection,
+  latestPrep,
+}: {
+  calendarConnection: OutlookCalendarConnectionStatus | null;
+  latestPrep: MeetingPrepCard | null;
+}) {
+  const connected =
+    calendarConnection?.connected === true || Boolean(latestPrep?.calendar_account_id);
+  return (
+    <aside className="section-note">
+      <p className="text-sm font-semibold text-[var(--color-text-1)]">Prep readiness</p>
+      <div className="mt-4 grid gap-3">
+        <TraceRow
+          label="Calendar"
+          value={
+            connected
+              ? calendarConnection?.account_display_name ??
+                latestPrep?.calendar_account_display_name ??
+                "Connected"
+              : "Not connected"
+          }
+          meta={
+            connected
+              ? "Availability can be included when prep is regenerated."
+              : "Connect Outlook calendar before asking for specific meeting times."
+          }
+        />
+        <TraceRow
+          label="Last prep"
+          value={latestPrep ? new Date(latestPrep.generated_at).toLocaleString() : "None yet"}
+          meta={
+            latestPrep?.availability_reason
+              ? latestPrep.availability_reason.replace(/_/g, " ")
+              : undefined
+          }
+        />
+      </div>
+    </aside>
+  );
+}
+
 function strongestGateExplanation(
   gates: ConversationTrustGateExplanation[],
 ): ConversationTrustGateExplanation | null {
@@ -529,15 +697,167 @@ function messageStatusLabel(status: string): string {
   return status.replace(/_/g, " ");
 }
 
+function conversationSection(value: string | string[] | undefined): ConversationSection {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return raw === "proof" || raw === "prep" ? raw : "thread";
+}
+
+function ConversationSectionSwitch({
+  active,
+  conversationId,
+  counts,
+}: {
+  active: ConversationSection;
+  conversationId: string;
+  counts: { messages: number; proof: number; prep: number };
+}) {
+  const items: Array<{
+    key: ConversationSection;
+    label: string;
+    icon: string;
+    count: number;
+  }> = [
+    { key: "thread", label: "Thread", icon: "forum", count: counts.messages },
+    { key: "proof", label: "Proof", icon: "account_tree", count: counts.proof },
+    { key: "prep", label: "Prep", icon: "event_note", count: counts.prep },
+  ];
+  return (
+    <nav
+      aria-label="Conversation sections"
+      className="grid w-full grid-cols-3 rounded-[10px] bg-[var(--color-ink-2)] p-1 ring-1 ring-[var(--color-line-1)] sm:w-[360px]"
+    >
+      {items.map((item) => {
+        const selected = active === item.key;
+        return (
+          <Link
+            key={item.key}
+            href={{
+              pathname: agentOutreachDetailHref(conversationId),
+              query: item.key === "thread" ? {} : { section: item.key },
+            }}
+            prefetch
+            aria-current={selected ? "page" : undefined}
+            className={
+              "inline-flex h-9 items-center justify-center gap-1.5 rounded-[7px] px-2 text-xs font-medium transition-colors " +
+              (selected
+                ? "bg-[var(--color-cta-bg)] text-[var(--color-cta-text)]"
+                : "text-[var(--color-text-3)] hover:bg-[var(--color-ink-0)] hover:text-[var(--color-text-1)]")
+            }
+          >
+            <Icon name={item.icon} size={14} />
+            <span>{item.label}</span>
+            <span
+              className={
+                "rounded-full px-1.5 py-0.5 text-[10px] " +
+                (selected
+                  ? "bg-white/15 text-[var(--color-cta-text)]"
+                  : "bg-[var(--color-ink-0)] text-[var(--color-text-4)]")
+              }
+            >
+              {item.count}
+            </span>
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+function MessagesPanel({ messages }: { messages: ConversationTrustMessage[] }) {
+  return (
+    <section className="section-note">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-[var(--color-text-1)]">Thread</h2>
+          <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
+            Emails, replies, drafts, and channel status for this conversation.
+          </p>
+        </div>
+        <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-3)]">
+          {messages.length} messages
+        </span>
+      </div>
+      {messages.length === 0 ? (
+        <EmptyState title="No messages yet" />
+      ) : (
+        <ul className="grid gap-3">
+          {messages.map((message) => (
+            <MessageItem key={message.id} message={message} />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function MessageItem({ message: m }: { message: ConversationTrustMessage }) {
+  return (
+    <li
+      id={`message-${m.id}`}
+      className={
+        "scroll-mt-24 rounded-[10px] border p-4 transition-shadow target:ring-2 target:ring-[var(--color-accent)] target:ring-offset-2 target:ring-offset-[var(--color-ink-1)] " +
+        (m.direction === "outbound"
+          ? "border-[var(--color-line-1)] bg-[var(--color-ink-0)]"
+          : "border-[var(--color-line-2)] bg-[var(--color-accent-bg)]")
+      }
+    >
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <span className="rounded-full bg-[var(--color-ink-2)] px-2 py-1 text-xs text-[var(--color-text-3)]">
+          {messageDirectionLabel(m.direction)}
+        </span>
+        <span
+          className={
+            "rounded-full px-2 py-1 text-xs " +
+            (m.status === "sent" || m.status === "delivered"
+              ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+              : m.status === "bounced" || m.status === "failed"
+                ? "bg-[var(--color-neg-bg)] text-[var(--color-neg)]"
+                : m.status === "deferred"
+                  ? "bg-[var(--color-warn-bg)] text-[var(--color-warn)]"
+                  : "bg-[var(--color-ink-3)] text-[var(--color-text-2)]")
+          }
+        >
+          {messageStatusLabel(m.status)}
+        </span>
+        {m.intent_class ? (
+          <span className="rounded-full bg-[var(--color-ink-3)] px-2 py-1 text-xs text-[var(--color-text-2)]">
+            Reply: {m.intent_class.replace(/_/g, " ")}
+          </span>
+        ) : null}
+        {m.eval_score ? (
+          <span className="rounded-full bg-[var(--color-ink-3)] px-2 py-1 text-xs text-[var(--color-text-2)]">
+            {m.eval_passed === false ? "Needs review" : "Ready"}
+          </span>
+        ) : null}
+        <span className="ml-auto text-xs text-[var(--color-text-3)]">
+          {new Date(m.sent_at ?? m.created_at).toLocaleString()}
+        </span>
+      </div>
+      {m.subject ? (
+        <p className="mb-2 font-sans text-sm font-medium text-[var(--color-text-1)]">
+          {m.subject}
+        </p>
+      ) : null}
+      <p className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-[var(--color-text-2)]">
+        {preview(m.body)}
+      </p>
+    </li>
+  );
+}
+
 export default async function AgentOutreachDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams?: Promise<{ section?: string | string[] }>;
 }) {
   const { id } = await params;
+  const sectionParams = searchParams ? await searchParams : {};
+  const activeSection = conversationSection(sectionParams.section);
   const active = await getActiveWorkspaceSessionForDashboard("agent/outreach");
   const workspace = active?.workspace ?? null;
-  if (!workspace) {
+  if (!active || !workspace) {
     return (
       <section className="section-canvas p-6">
         <p className="brief-kicker">Agent</p>
@@ -552,11 +872,20 @@ export default async function AgentOutreachDetailPage({
     "conversation trust trace",
     { status: "unavailable" },
     async () => {
-      const trace = await getConversationTrustTrace({
-        workspace_id: workspace.id,
-        conversation_id: id,
-      });
-      return trace ? { status: "found", trace } : { status: "missing" };
+      const [trace, calendarConnection] = await Promise.all([
+        getConversationTrustTrace({
+          workspace_id: workspace.id,
+          conversation_id: id,
+        }),
+        getProductOutlookCalendarConnectionStatus({
+          workspace_id: workspace.id,
+          user_id: active.user_id,
+        }).catch((error) => {
+          console.error("[conversation/detail] failed to load calendar status", error);
+          return null;
+        }),
+      ]);
+      return trace ? { status: "found", trace, calendarConnection } : { status: "missing" };
     },
   );
   if (loaded.status === "missing") return notFound();
@@ -579,8 +908,8 @@ export default async function AgentOutreachDetailPage({
   const latestPrep = latestMeetingPrep(events);
 
   return (
-    <div className="space-y-6">
-      <header className="border-b border-[var(--color-line-1)] pb-5">
+    <div className="space-y-5">
+      <header className="section-note">
         <Link
           href="/dashboard/conversations"
           prefetch
@@ -589,163 +918,45 @@ export default async function AgentOutreachDetailPage({
           <Icon name="arrow_back" size={14} />
           Conversations
         </Link>
-        <p className="mt-5 brief-kicker">Conversation</p>
-        <h1 className="mt-2 max-w-3xl text-[32px] font-semibold leading-tight text-[var(--color-text-1)] sm:text-[38px]">
-          {conv.counterparty_name ?? "Unknown contact"}
-        </h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--color-text-2)]">
-          {conv.topic ?? conv.signal_title ?? "Conversation detail and proof of work."}
-        </p>
+        <div className="mt-5 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0">
+            <p className="brief-kicker">Conversation</p>
+            <h1 className="mt-3 max-w-3xl text-[32px] font-semibold leading-tight text-[var(--color-text-1)] sm:text-[38px]">
+              {conv.counterparty_name ?? "Unknown contact"}
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--color-text-2)]">
+              {conv.topic ?? conv.signal_title ?? "Conversation detail and proof of work."}
+            </p>
+          </div>
+          <ConversationSectionSwitch
+            active={activeSection}
+            conversationId={conv.id}
+            counts={{
+              messages: messages.length,
+              proof: gateExplanations.length + (workflow?.steps.length ?? 0),
+              prep: latestPrep ? 1 : 0,
+            }}
+          />
+        </div>
       </header>
 
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <section>
-          <h2 className="mb-3 text-lg font-semibold text-[var(--color-text-1)]">Messages</h2>
-          {messages.length === 0 ? (
-            <EmptyState title="No messages yet" />
-          ) : (
-            <ul className="grid gap-4">
-              {messages.map((m) => (
-                <li
-                  key={m.id}
-                  id={`message-${m.id}`}
-                  className={
-                    "scroll-mt-24 rounded-[14px] border p-4 transition-shadow target:ring-2 target:ring-[var(--color-accent)] target:ring-offset-2 target:ring-offset-[var(--color-ink-1)] " +
-                    (m.direction === "outbound"
-                      ? "border-[var(--color-line-1)] bg-[var(--color-ink-0)]"
-                      : "border-[var(--color-line-2)] bg-[rgba(17,15,11,0.76)]")
-                  }
-                >
-                  <div className="mb-2 flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-[var(--color-ink-2)] px-2 py-1 text-xs text-[var(--color-text-3)]">
-                      {messageDirectionLabel(m.direction)}
-                    </span>
-                    <span
-                      className={
-                        "rounded-full px-2 py-1 text-xs " +
-                        (m.status === "sent" || m.status === "delivered"
-                          ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
-                          : m.status === "bounced" || m.status === "failed"
-                            ? "bg-[var(--color-neg-bg)] text-[var(--color-neg)]"
-                            : m.status === "deferred"
-                              ? "bg-[var(--color-warn-bg)] text-[var(--color-warn)]"
-                              : "bg-[var(--color-ink-3)] text-[var(--color-text-2)]")
-                      }
-                    >
-                      {messageStatusLabel(m.status)}
-                    </span>
-                    {m.intent_class ? (
-                      <span className="rounded-full bg-[var(--color-ink-3)] px-2 py-1 text-xs text-[var(--color-text-2)]">
-                        Reply: {m.intent_class.replace(/_/g, " ")}
-                      </span>
-                    ) : null}
-                    {m.eval_score ? (
-                      <span className="rounded-full bg-[var(--color-ink-3)] px-2 py-1 text-xs text-[var(--color-text-2)]">
-                        {m.eval_passed === false ? "Needs review" : "Ready"}
-                      </span>
-                    ) : null}
-                    <span className="ml-auto text-xs text-[var(--color-text-3)]">
-                      {new Date(m.sent_at ?? m.created_at).toLocaleString()}
-                    </span>
-                  </div>
-                  {m.subject ? (
-                    <p className="font-sans text-sm text-[var(--color-text-1)] font-medium mb-2">
-                      {m.subject}
-                    </p>
-                  ) : null}
-                  <p className="font-sans text-sm text-[var(--color-text-2)] whitespace-pre-wrap leading-relaxed">
-                    {preview(m.body)}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <aside className="grid gap-4">
-          {pendingApproval ? (
-            <PendingApprovalPanel
-              approval={pendingApproval}
-              conversationId={conv.id}
-            />
-          ) : null}
-
-          <MeetingPrepPanel conversationId={conv.id} prep={latestPrep} />
-
-          <div className="section-note">
-            <p className="text-sm font-semibold text-[var(--color-text-1)]">Contact</p>
-            <p className="mt-1 font-sans text-sm text-[var(--color-text-1)]">
-              {conv.counterparty_name}
-            </p>
-            {conv.counterparty_title ? (
-              <p className="mt-0.5 font-sans text-xs text-[var(--color-text-2)]">
-                {conv.counterparty_title}
-              </p>
-            ) : null}
-            {conv.company_name ? (
-              <p className="mt-0.5 font-sans text-xs text-[var(--color-text-2)]">
-                {conv.company_name}
-              </p>
-            ) : null}
-            <div className="mt-4 flex flex-wrap gap-2">
-              <TrustPill
-                ready={conv.counterparty_email_status === "verified"}
-                icon="mail"
-              >
-                {contactEmailStatusLabel(conv.counterparty_email_status)}
-              </TrustPill>
-              <TrustPill
-                ready={conv.counterparty_linkedin_ready === true}
-                icon="linkedin"
-              >
-                {conv.counterparty_linkedin_ready ? "LinkedIn profile" : "No LinkedIn profile"}
-              </TrustPill>
-              {conv.counterparty_fit_decision ? (
-                <TrustPill
-                  ready={conv.counterparty_fit_decision === "fit"}
-                  icon="fact_check"
-                >
-                  {contactFitLabel(conv.counterparty_fit_decision)}
-                </TrustPill>
-              ) : null}
-            </div>
-            <div className="mt-4 grid gap-2 border-t border-[var(--color-line-1)] pt-4">
-              <ContactHandle
-                label="Email"
-                value={conv.counterparty_emails?.[0] ?? "Missing"}
+      {activeSection === "thread" ? (
+        <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <MessagesPanel messages={messages} />
+          <aside className="grid gap-4 lg:sticky lg:top-8">
+            {pendingApproval ? (
+              <PendingApprovalPanel
+                approval={pendingApproval}
+                conversationId={conv.id}
               />
-              <ContactHandle
-                label="LinkedIn"
-                value={conv.counterparty_linkedin_url ?? "Missing"}
-                href={conv.counterparty_linkedin_url}
-              />
-            </div>
-            {conv.signal_title ? (
-              <div className="mt-4 border-t border-[var(--color-line-1)] pt-4">
-                <p className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-4)]">
-                  Why now
-                </p>
-                <p className="mt-1 font-sans text-sm leading-5 text-[var(--color-text-1)]">
-                {conv.signal_title}
-                </p>
-              </div>
             ) : null}
-            <ConversationSignals signals={signals} />
-          </div>
-        </aside>
-      </div>
+            <ConversationContextPanel conv={conv} signals={signals} />
+          </aside>
+        </div>
+      ) : null}
 
-      <details className="group rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)]">
-        <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-[var(--color-text-2)]">
-          <Icon name="account_tree" size={15} />
-          Delivery and workflow proof
-          <Icon
-            name="expand_more"
-            size={16}
-            className="ml-auto transition-transform group-open:rotate-180"
-          />
-        </summary>
-        <div className="border-t border-[var(--color-line-1)] p-3 sm:p-4">
+      {activeSection === "proof" ? (
+        <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
           <OutreachProofTimeline
             conversation={conv}
             messages={messages}
@@ -754,8 +965,23 @@ export default async function AgentOutreachDetailPage({
             gateExplanations={gateExplanations}
             workflow={workflow}
           />
+          <ConversationContextPanel conv={conv} signals={signals} compact />
         </div>
-      </details>
+      ) : null}
+
+      {activeSection === "prep" ? (
+        <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <MeetingPrepPanel
+            conversationId={conv.id}
+            prep={latestPrep}
+            calendarConnection={loaded.calendarConnection}
+          />
+          <ConversationPrepGuide
+            calendarConnection={loaded.calendarConnection}
+            latestPrep={latestPrep}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -922,6 +1148,9 @@ function parseMeetingPrep(payload: Record<string, unknown>): MeetingPrepCard | n
     suggested_times: stringArray(payload.suggested_times),
     availability_status:
       payload.availability_status === "included" ? "included" : "omitted_no_consent",
+    availability_reason: textValue(payload.availability_reason) ?? "no_calendar_consent",
+    calendar_account_id: textValue(payload.calendar_account_id),
+    calendar_account_display_name: textValue(payload.calendar_account_display_name),
     source_refs: Array.isArray(payload.source_refs)
       ? payload.source_refs.map(parseSourceRef).filter(isSourceRef)
       : [],

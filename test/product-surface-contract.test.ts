@@ -947,8 +947,12 @@ test("sent outreach links open the exact draft in the conversation trace", () =>
   assert.match(detail, /brief-kicker">Conversation/);
   assert.match(detail, /OutreachProofTimeline/);
   assert.match(detail, /Signal-to-outreach trace/);
-  assert.match(detail, /Delivery and workflow proof/);
-  assert.match(detail, /<details className="group/);
+  assert.match(detail, /ConversationSectionSwitch/);
+  assert.match(detail, /label: "Thread"/);
+  assert.match(detail, /label: "Proof"/);
+  assert.match(detail, /label: "Prep"/);
+  assert.doesNotMatch(detail, /Delivery and workflow proof/);
+  assert.doesNotMatch(detail, /<details className="group/);
   assert.match(detail, /timing signal,\s+verified contact, judged draft, channel handoff, and reply learning/);
   assert.match(detail, /gate_explanations: gateExplanations/);
   assert.match(detail, /workflow=\{workflow\}/);
@@ -957,7 +961,7 @@ test("sent outreach links open the exact draft in the conversation trace", () =>
   assert.match(detail, /contactEmailStatusLabel\(conversation\.counterparty_email_status\)/);
   assert.match(detail, /\/dashboard\/agent\/contacts\/\$\{conversation\.counterparty_person_id\}/);
   assert.match(detail, /completedStepCount/);
-  assert.match(detail, /id=\{`message-\$\{m\.id\}`\}/);
+  assert.match(detail, /id=\{`message-\$\{m\.id\}`\}|id=\{`message-\$\{message\.id\}`\}/);
   assert.match(detail, /target:ring-\[var\(--color-accent\)\]/);
   assert.match(detail, />\s*Conversations\s*</);
   assert.match(detail, />Contact</);

@@ -25,7 +25,7 @@ const TOKEN_ENDPOINT =
   "https://login.microsoftonline.com/common/oauth2/v2.0/token";
 const SEND_MAIL_ENDPOINT = "https://graph.microsoft.com/v1.0/me/sendMail";
 const DEFAULT_REFRESH_SCOPE =
-  "offline_access https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/User.Read";
+  "offline_access https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/Calendars.ReadBasic https://graph.microsoft.com/User.Read";
 
 export interface OutlookCredentials {
   access_token: string;
