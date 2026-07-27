@@ -49,7 +49,7 @@ async function projectConversationOpened(
           id = $2
           or (
             counterparty_person_id = $4
-            and counterparty_company_id is not distinct from $6::uuid
+            and counterparty_company_id is not distinct from $5::uuid
           )
         )
       order by case when id = $2 then 0 else 1 end
@@ -57,9 +57,7 @@ async function projectConversationOpened(
     [
       event.workspace_id,
       payload.conversation_id,
-      payload.rep_id,
       payload.counterparty_person_id,
-      payload.origin_signal_id,
       payload.counterparty_company_id ?? null,
     ],
   );

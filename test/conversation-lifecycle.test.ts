@@ -81,9 +81,7 @@ test("conversation lifecycle projection materializes opened conversations", asyn
   const company_id = randomUUID();
   const signal_id = randomUUID();
 
-  await projectConversationLifecycleEvent(
-    pool,
-    event({
+  const opened = event({
       conversation_id,
       rep_id,
       counterparty_person_id: person_id,
@@ -91,11 +89,19 @@ test("conversation lifecycle projection materializes opened conversations", asyn
       origin_signal_id: signal_id,
       topic: "Series A",
       properties: { play_id: randomUUID() },
-    }),
-  );
+    });
+  await projectConversationLifecycleEvent(pool, opened);
 
   const insert = calls.find((call) => /insert into conversations/.test(call.sql));
   assert.ok(insert);
+  const existing = calls.find((call) => /from conversations/.test(call.sql));
+  assert.ok(existing);
+  assert.deepEqual(existing.values, [
+    opened.workspace_id,
+    conversation_id,
+    person_id,
+    company_id,
+  ]);
   assert.equal(insert.values?.[0], conversation_id);
   assert.equal(insert.values?.[2], rep_id);
   assert.equal(insert.values?.[3], person_id);
