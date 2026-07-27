@@ -63,6 +63,11 @@ interface StoredMessageSendState {
 }
 
 const TRANSPORT_IDEMPOTENCY_RETRY_WINDOW_MS = 23 * 60 * 60 * 1000;
+const PLAUSIBLE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function isPlausibleRecipientEmail(value: string | null | undefined): boolean {
+  return Boolean(value && PLAUSIBLE_EMAIL.test(value.trim()));
+}
 
 export interface PostgresOwnedDomainEmailChannelOptions {
   pool: Pool;
@@ -404,6 +409,9 @@ export function createPostgresOwnedDomainEmailChannel(
       }
       if (!conversation.counterparty_email) {
         return publishDeferred(opts.pool, draft, ctx, "missing_recipient_email", null);
+      }
+      if (!isPlausibleRecipientEmail(conversation.counterparty_email)) {
+        return publishDeferred(opts.pool, draft, ctx, "invalid_recipient_email", null);
       }
 
       const client = await opts.pool.connect();
