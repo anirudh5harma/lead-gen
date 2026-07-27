@@ -23,11 +23,12 @@ test("dashboard chrome streams non-critical banners after the shell", () => {
 
 test("outreach renders its heading before the leads query resolves", () => {
   const outreach = source("app/dashboard/outreach/page.tsx");
+  const filters = source("components/dashboard/LeadsFilters.tsx");
 
   assert.match(outreach, /export default function OutreachPage/);
   assert.match(outreach, /<Suspense fallback=\{<OutreachResultsSkeleton \/>\}>/);
   assert.match(outreach, /async function OutreachLeads/);
-  assert.match(outreach, /with recent_signals as materialized/);
+  assert.match(outreach, /with qualified_signals as materialized/);
   assert.match(outreach, /e\.payload \? 'signal_id'/);
   assert.match(outreach, />Account</);
   assert.match(outreach, />Signal</);
@@ -38,11 +39,14 @@ test("outreach renders its heading before the leads query resolves", () => {
   assert.match(outreach, /conversation_signals cs/);
   assert.match(outreach, /DraftPreviewButton/);
   assert.doesNotMatch(outreach, />Fit</);
-  assert.match(outreach, /name="kind"/);
-  assert.match(outreach, /name="readiness"/);
-  assert.match(outreach, /name="freshness"/);
-  assert.match(outreach, /name="size"/);
-  assert.match(outreach, /name="industry"/);
+  assert.match(filters, /label="Signal type"/);
+  assert.match(filters, /label="Verified channel"/);
+  assert.match(filters, /label="Company size"/);
+  assert.match(filters, /setTimeout\(\(\) => replaceParams\(\{ q: query \}\), 300\)/);
+  assert.match(outreach, /const PAGE_SIZE = 20/);
+  assert.match(outreach, /limit \$7\s+offset \$8/);
+  assert.doesNotMatch(outreach, /make_interval\(days/);
+  assert.doesNotMatch(outreach, /More filters/);
 });
 
 test("Conversations is the canonical filtered thread surface", () => {

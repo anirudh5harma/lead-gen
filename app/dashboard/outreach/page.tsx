@@ -4,6 +4,7 @@ import { Suspense, type ReactNode } from "react";
 import Icon from "@/components/Icon";
 import { EmptyState } from "@/components/dashboard/Shell";
 import { DraftPreviewButton, type ReviewDraftPreview } from "@/components/dashboard/DraftPreviewButton";
+import { LeadsFilters } from "@/components/dashboard/LeadsFilters";
 import { resolveQualifiedSignalContactsAction } from "@/app/dashboard/actions";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { SIGNAL_OUTREACH_ELIGIBILITY_SQL } from "@/core/product/signal-outreach-eligibility";
@@ -20,11 +21,11 @@ export const metadata: Metadata = { title: "Leads | Bombsell" };
 export const dynamic = "force-dynamic";
 
 const SIGNAL_KINDS = [
-  "funding",
   "hiring",
+  "funding",
+  "acquisition",
   "leadership_change",
   "product_launch",
-  "acquisition",
   "expansion",
   "competitor_move",
   "press_mention",
@@ -34,13 +35,14 @@ const SIGNAL_KINDS = [
   "churn_risk",
 ] as const;
 
+const PAGE_SIZE = 20;
+
 interface OutreachFilters {
   q: string;
   kind: string | null;
   readiness: "email" | "linkedin" | null;
-  freshness: 1 | 7 | 30;
   size: string | null;
-  industry: string | null;
+  page: number;
 }
 
 type OutreachSearchParams = Promise<
@@ -79,8 +81,7 @@ async function loadMatchedLeads(
   workspaceId: string,
   filters: OutreachFilters,
   includeDrafts: boolean,
-  limit = 60,
-): Promise<MatchedLeadRow[]> {
+): Promise<{ leads: MatchedLeadRow[]; total: number }> {
   const pool = getPool();
   const search = filters.q ? `%${filters.q}%` : null;
   const { rows } = await pool.query<{
@@ -110,8 +111,9 @@ async function loadMatchedLeads(
     draft_body: string | null;
     draft_channel: string | null;
     draft_eval_score: string | null;
+    total_count: string;
   }>(
-    `with recent_signals as materialized (
+    `with qualified_signals as materialized (
        select s.id, s.title, s.kind, s.ingested_at, s.freshness_at, s.url,
               s.source_id, s.related_company_id, s.related_person_id,
               s.workspace_id, s.match_score, s.match_reason,
@@ -125,21 +127,19 @@ async function loadMatchedLeads(
         where s.workspace_id = $1
           and s.status in ('matched','in_play')
           and (${SIGNAL_OUTREACH_ELIGIBILITY_SQL})
-          and coalesce(s.ingested_at, s.freshness_at) >= now() - make_interval(days => $5)
-          and ($3::text is null or s.kind::text = $3)
-          and ($7::text is null or co.size_bucket = $7)
-          and ($8::text is null or co.industry ilike $8)
-          and (
-            $6::text is null
-            or co.name ilike $6
-            or co.domain::text ilike $6
-            or s.title ilike $6
-            or s.match_reason ilike $6
-          )
+          and ($2::text is null or s.kind::text = $2)
+          and ($5::text is null or co.size_bucket = $5)
           and (
             $4::text is null
+            or co.name ilike $4
+            or co.domain::text ilike $4
+            or s.title ilike $4
+            or s.match_reason ilike $4
+          )
+          and (
+            $3::text is null
             or (
-              $4 = 'email'
+              $3 = 'email'
               and exists (
                 select 1
                   from graph_persons rp
@@ -158,7 +158,7 @@ async function loadMatchedLeads(
               )
             )
             or (
-              $4 = 'linkedin'
+              $3 = 'linkedin'
               and exists (
                 select 1
                   from graph_persons mp
@@ -171,10 +171,9 @@ async function loadMatchedLeads(
               )
             )
           )
-        order by coalesce(s.ingested_at, s.freshness_at) desc
-        limit $2
      )
      select
+        count(*) over()::text                    as total_count,
         s.id                                      as signal_id,
         s.title                                   as signal_title,
         coalesce(s.kind::text, 'other')           as signal_kind,
@@ -231,7 +230,7 @@ async function loadMatchedLeads(
              limit 2
           ) c
         )::text as contacts_json
-       from recent_signals s
+       from qualified_signals s
        left join graph_sources gs
          on gs.workspace_id = s.workspace_id
         and gs.id = s.source_id
@@ -268,7 +267,7 @@ async function loadMatchedLeads(
               order by e.occurred_at desc
               limit 1
            ) judged on true
-          where $9::boolean
+          where $6::boolean
             and cs.workspace_id = s.workspace_id
             and cs.signal_id = s.id
             and m.direction = 'outbound'
@@ -284,21 +283,24 @@ async function loadMatchedLeads(
           order by m.created_at desc
           limit 1
        ) draft on true
-      order by coalesce(s.ingested_at, s.freshness_at) desc`,
+      order by coalesce(s.ingested_at, s.freshness_at) desc
+      limit $7
+      offset $8`,
     [
       workspaceId,
-      limit,
       filters.kind,
       filters.readiness,
-      filters.freshness,
       search,
       filters.size,
-      filters.industry ? `%${filters.industry}%` : null,
       includeDrafts,
+      PAGE_SIZE,
+      (filters.page - 1) * PAGE_SIZE,
     ],
   );
 
-  return rows.map((row) => ({
+  return {
+    total: Number(rows[0]?.total_count ?? 0),
+    leads: rows.map((row) => ({
     signal_id: row.signal_id,
     signal_title: signalDisplayTitle(row.signal_title),
     signal_kind: row.signal_kind,
@@ -334,7 +336,8 @@ async function loadMatchedLeads(
         }
       : null,
     contacts: parseContacts(row.contacts_json),
-  }));
+    })),
+  };
 }
 
 export default function OutreachPage({
@@ -372,125 +375,32 @@ async function OutreachLeads({
   const session = await getActiveWorkspaceSessionForDashboard("outreach");
   if (!session) return <OutreachEmpty />;
   const reviewMode = session.workspace.autonomy_mode === "review_only";
-  const leads = await loadMatchedLeads(session.workspace.id, filters, reviewMode).catch((err) => {
+  const result = await loadMatchedLeads(session.workspace.id, filters, reviewMode).catch((err) => {
     console.error("[outreach] load failed", err);
-    return [] as MatchedLeadRow[];
+    return { leads: [] as MatchedLeadRow[], total: 0 };
   });
 
   return (
     <section className="space-y-3">
-      <OutreachFilters filters={filters} resultCount={leads.length} />
-      {leads.length === 0 ? (
+      <LeadsFilters
+        key={filters.q}
+        filters={filters}
+        resultCount={result.total}
+        signalKinds={SIGNAL_KINDS.map((kind) => ({ value: kind, label: signalCategoryLabel(kind) }))}
+      />
+      {result.leads.length === 0 ? (
         hasFilters(filters) ? (
           <FilteredEmpty noun="leads" />
         ) : (
           <OutreachEmpty />
         )
       ) : (
-        <LeadsTable leads={leads} reviewMode={reviewMode} />
+        <>
+          <LeadsTable leads={result.leads} reviewMode={reviewMode} />
+          <LeadsPagination filters={filters} total={result.total} />
+        </>
       )}
     </section>
-  );
-}
-
-function OutreachFilters({
-  filters,
-  resultCount,
-}: {
-  filters: OutreachFilters;
-  resultCount: number;
-}) {
-  return (
-    <form
-      action="/dashboard/outreach"
-      className="flex flex-col gap-2 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-3 sm:flex-row sm:flex-wrap sm:items-center"
-    >
-      <label className="relative min-w-0 flex-1 sm:min-w-[260px]">
-        <span className="sr-only">Search leads</span>
-        <Icon name="search" size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-4)]" />
-        <input
-          name="q"
-          defaultValue={filters.q}
-          placeholder="Search account, domain, signal…"
-          className="h-9 w-full rounded-[6px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] pl-9 pr-3 text-[13px] text-[var(--color-text-1)] outline-none focus:border-[var(--color-line-3)]"
-        />
-      </label>
-      <FilterSelect name="kind" label="All signals" value={filters.kind}>
-        {SIGNAL_KINDS.map((kind) => (
-          <option key={kind} value={kind}>{signalCategoryLabel(kind)}</option>
-        ))}
-      </FilterSelect>
-      <FilterSelect name="readiness" label="Any verified contact" value={filters.readiness}>
-        <option value="email">Verified email</option>
-        <option value="linkedin">LinkedIn profile</option>
-      </FilterSelect>
-      <FilterSelect name="freshness" label="Last 30 days" value={String(filters.freshness)}>
-        <option value="1">Last 24 hours</option>
-        <option value="7">Last 7 days</option>
-        <option value="30">Last 30 days</option>
-      </FilterSelect>
-      <details className="relative" open={Boolean(filters.size || filters.industry)}>
-        <summary className="btn-quiet-sm h-9 cursor-pointer list-none justify-center">
-          More filters
-          {(filters.size ? 1 : 0) + (filters.industry ? 1 : 0) > 0 ? (
-            <span className="text-[10px] text-[var(--color-accent)]">
-              {(filters.size ? 1 : 0) + (filters.industry ? 1 : 0)}
-            </span>
-          ) : null}
-        </summary>
-        <div className="mt-2 grid min-w-[220px] gap-2 rounded-[7px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] p-3 shadow-lg sm:absolute sm:right-0 sm:top-full sm:z-20">
-          <FilterSelect name="size" label="Any company size" value={filters.size}>
-            {["1-10", "11-50", "51-200", "201-500", "501-1000", "1001-5000", "5001+"].map((size) => (
-              <option key={size} value={size}>{size} employees</option>
-            ))}
-          </FilterSelect>
-          <label>
-            <span className="sr-only">Industry</span>
-            <input
-              name="industry"
-              defaultValue={filters.industry ?? ""}
-              placeholder="Industry"
-              className="h-9 w-full rounded-[6px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] px-3 text-[12px] text-[var(--color-text-2)] outline-none focus:border-[var(--color-line-3)]"
-            />
-          </label>
-        </div>
-      </details>
-      <button type="submit" className="btn-quiet-sm h-9 justify-center">Apply</button>
-      {hasFilters(filters) ? (
-        <Link href="/dashboard/outreach" className="px-1 text-[12px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)]">
-          Clear
-        </Link>
-      ) : null}
-      <span className="whitespace-nowrap text-[11px] tabular-nums text-[var(--color-text-4)]">
-        {resultCount} results
-      </span>
-    </form>
-  );
-}
-
-function FilterSelect({
-  name,
-  label,
-  value,
-  children,
-}: {
-  name: string;
-  label: string;
-  value: string | null;
-  children: ReactNode;
-}) {
-  return (
-    <label>
-      <span className="sr-only">{label}</span>
-      <select
-        name={name}
-        defaultValue={value ?? ""}
-        className="h-9 rounded-[6px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] px-2.5 text-[12px] text-[var(--color-text-2)] outline-none focus:border-[var(--color-line-3)]"
-      >
-        <option value="">{label}</option>
-        {children}
-      </select>
-    </label>
   );
 }
 
@@ -655,15 +565,14 @@ function ContactCell({ lead }: { lead: MatchedLeadRow }) {
 }
 
 function parseFilters(params: Record<string, string | string[] | undefined>): OutreachFilters {
-  const freshness = Number(single(params.freshness));
   const readiness = single(params.readiness);
+  const rawPage = Number(single(params.page));
   return {
     q: single(params.q).trim(),
     kind: single(params.kind) || null,
     readiness: readiness === "email" || readiness === "linkedin" ? readiness : null,
-    freshness: freshness === 1 || freshness === 7 ? freshness : 30,
     size: single(params.size) || null,
-    industry: single(params.industry).trim() || null,
+    page: Number.isSafeInteger(rawPage) && rawPage > 0 ? rawPage : 1,
   };
 }
 
@@ -672,7 +581,82 @@ function single(value: string | string[] | undefined): string {
 }
 
 function hasFilters(filters: OutreachFilters): boolean {
-  return Boolean(filters.q || filters.kind || filters.readiness || filters.size || filters.industry || filters.freshness !== 30);
+  return Boolean(filters.q || filters.kind || filters.readiness || filters.size);
+}
+
+function LeadsPagination({ filters, total }: { filters: OutreachFilters; total: number }) {
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const currentPage = Math.min(filters.page, totalPages);
+  const start = total === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+  const end = Math.min(currentPage * PAGE_SIZE, total);
+  const visiblePages = pageRange(currentPage, totalPages);
+
+  return (
+    <nav className="flex flex-col gap-3 px-1 pt-1 sm:flex-row sm:items-center sm:justify-between" aria-label="Leads pagination">
+      <p className="text-[12px] tabular-nums text-[var(--color-text-3)]">
+        Showing {start}–{end} of {total} qualified leads
+      </p>
+      {totalPages > 1 ? (
+        <div className="flex items-center gap-1" aria-label={`Page ${currentPage} of ${totalPages}`}>
+          <PaginationLink filters={filters} page={currentPage - 1} disabled={currentPage === 1}>Previous</PaginationLink>
+          {visiblePages.map((page) => (
+            <PaginationLink key={page} filters={filters} page={page} current={page === currentPage}>{page}</PaginationLink>
+          ))}
+          <PaginationLink filters={filters} page={currentPage + 1} disabled={currentPage === totalPages}>Next</PaginationLink>
+        </div>
+      ) : null}
+    </nav>
+  );
+}
+
+function PaginationLink({
+  filters,
+  page,
+  current = false,
+  disabled = false,
+  children,
+}: {
+  filters: OutreachFilters;
+  page: number;
+  current?: boolean;
+  disabled?: boolean;
+  children: ReactNode;
+}) {
+  if (disabled) {
+    return <span className="inline-flex h-8 items-center rounded-[6px] px-2.5 text-[11px] text-[var(--color-text-4)]">{children}</span>;
+  }
+
+  return (
+    <Link
+      href={leadsHref(filters, page)}
+      aria-current={current ? "page" : undefined}
+      className={
+        "inline-flex h-8 min-w-8 items-center justify-center rounded-[6px] px-2.5 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] " +
+        (current
+          ? "bg-[var(--color-cta-bg)] text-[var(--color-cta-text)]"
+          : "text-[var(--color-text-2)] hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]")
+      }
+    >
+      {children}
+    </Link>
+  );
+}
+
+function pageRange(currentPage: number, totalPages: number): number[] {
+  const first = Math.max(1, Math.min(currentPage - 2, totalPages - 4));
+  const last = Math.min(totalPages, first + 4);
+  return Array.from({ length: last - first + 1 }, (_, index) => first + index);
+}
+
+function leadsHref(filters: OutreachFilters, page: number): string {
+  const params = new URLSearchParams();
+  if (filters.q) params.set("q", filters.q);
+  if (filters.kind) params.set("kind", filters.kind);
+  if (filters.readiness) params.set("readiness", filters.readiness);
+  if (filters.size) params.set("size", filters.size);
+  if (page > 1) params.set("page", String(page));
+  const query = params.toString();
+  return query ? `/dashboard/outreach?${query}` : "/dashboard/outreach";
 }
 
 function parseContacts(raw: string | null): MatchedLeadRow["contacts"] {
