@@ -847,8 +847,8 @@ export function createPostgresVerticalSliceStore(pool: Pool): VerticalSliceStore
             and (
               id = $1
               or (
-                counterparty_person_id = $4
-                and counterparty_company_id is not distinct from $6::uuid
+                counterparty_person_id = $3
+                and counterparty_company_id is not distinct from $4::uuid
               )
             )
           order by case when id = $1 then 0 else 1 end
@@ -856,9 +856,7 @@ export function createPostgresVerticalSliceStore(pool: Pool): VerticalSliceStore
         [
           event.payload.conversation_id,
           event.workspace_id,
-          event.payload.rep_id,
           event.payload.counterparty_person_id,
-          event.payload.origin_signal_id,
           event.payload.counterparty_company_id ?? null,
         ],
       );
