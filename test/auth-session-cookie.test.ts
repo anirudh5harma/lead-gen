@@ -102,6 +102,14 @@ test("public entry sends login directly to Google OAuth", () => {
   assert.match(authStart, /onboardingPathForWebsite\(searchParams\.get\("url"\)\)/);
 });
 
+test("public entry sends an active session to the product dashboard", () => {
+  const body = readFileSync("app/page.tsx", "utf8");
+
+  assert.match(body, /getRequestAuthIdentity/);
+  assert.match(body, /if \(identity\) redirect\(PRODUCT_HOME_PATH\)/);
+  assert.match(body, /export const dynamic = 'force-dynamic'/);
+});
+
 test("auth failures stay on the direct Google auth surface", () => {
   const googleRoute = readFileSync("app/auth/google/route.ts", "utf8");
   const callbackRoute = readFileSync("app/auth/callback/route.ts", "utf8");

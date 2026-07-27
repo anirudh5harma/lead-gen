@@ -1,11 +1,13 @@
-'use client'
-
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import Icon from '@/components/Icon'
 import { PendingFormSubmit } from '@/components/marketing/PendingCta'
 import ScrollReveal from '@/components/ui/ScrollReveal'
 import { MarketingNav, MarketingFooter, FOUNDER_CALL_URL } from '@/components/marketing/MarketingChrome'
-import { googleAuthPath } from '@/lib/auth/next'
+import { getRequestAuthIdentity } from '@/lib/auth'
+import { googleAuthPath, PRODUCT_HOME_PATH } from '@/lib/auth/next'
+
+export const dynamic = 'force-dynamic'
 
 // Real integrations Bombsell actually connects to — honest "works with",
 // not borrowed-credibility "trusted by". Outlook/LinkedIn/Slack ship as inline
@@ -106,7 +108,10 @@ const TONE_SWEEP: Record<string, string> = {
   blue: 'bg-[var(--color-brand-blue)]',
 }
 
-export default function Home() {
+export default async function Home() {
+  const identity = await getRequestAuthIdentity()
+  if (identity) redirect(PRODUCT_HOME_PATH)
+
   return (
     <main className="relative isolate min-h-[100dvh] overflow-hidden bg-[var(--color-ink-1)] text-[var(--color-text-1)]">
       <HeroBackdrop />
