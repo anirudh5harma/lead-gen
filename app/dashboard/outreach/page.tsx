@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 import Icon from "@/components/Icon";
 import { EmptyState } from "@/components/dashboard/Shell";
+import { DraftPreviewButton, type ReviewDraftPreview } from "@/components/dashboard/DraftPreviewButton";
 import { resolveQualifiedSignalContactsAction } from "@/app/dashboard/actions";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { SIGNAL_OUTREACH_ELIGIBILITY_SQL } from "@/core/product/signal-outreach-eligibility";
@@ -15,7 +16,7 @@ import {
 } from "@/core/signals/presentation";
 import { getActiveWorkspaceSessionForDashboard } from "@/lib/workspace";
 
-export const metadata: Metadata = { title: "Outreach | Bombsell" };
+export const metadata: Metadata = { title: "Leads | Bombsell" };
 export const dynamic = "force-dynamic";
 
 const SIGNAL_KINDS = [
@@ -54,8 +55,6 @@ interface MatchedLeadRow {
   signal_url: string | null;
   source_name: string | null;
   source_kind: string | null;
-  match_score: number | null;
-  match_reason: string | null;
   company_id: string | null;
   company_name: string | null;
   company_domain: string | null;
@@ -66,6 +65,7 @@ interface MatchedLeadRow {
   location: string | null;
   resolution_status: string | null;
   defer_reason: string | null;
+  draft: ReviewDraftPreview | null;
   contacts: Array<{
     person_id: string;
     full_name: string;
@@ -78,6 +78,7 @@ interface MatchedLeadRow {
 async function loadMatchedLeads(
   workspaceId: string,
   filters: OutreachFilters,
+  includeDrafts: boolean,
   limit = 60,
 ): Promise<MatchedLeadRow[]> {
   const pool = getPool();
@@ -90,8 +91,6 @@ async function loadMatchedLeads(
     signal_url: string | null;
     source_name: string | null;
     source_kind: string | null;
-    match_score: string | null;
-    match_reason: string | null;
     company_id: string | null;
     company_name: string | null;
     company_domain: string | null;
@@ -105,6 +104,12 @@ async function loadMatchedLeads(
     resolution_status: string | null;
     defer_reason: string | null;
     contacts_json: string | null;
+    draft_message_id: string | null;
+    draft_conversation_id: string | null;
+    draft_subject: string | null;
+    draft_body: string | null;
+    draft_channel: string | null;
+    draft_eval_score: string | null;
   }>(
     `with recent_signals as materialized (
        select s.id, s.title, s.kind, s.ingested_at, s.freshness_at, s.url,
@@ -177,8 +182,6 @@ async function loadMatchedLeads(
         s.url                                     as signal_url,
         gs.name                                   as source_name,
         gs.kind::text                             as source_kind,
-        s.match_score::text                       as match_score,
-        s.match_reason                            as match_reason,
         s.related_company_id                      as company_id,
         s.company_name,
         s.company_domain,
@@ -191,6 +194,12 @@ async function loadMatchedLeads(
         s.properties -> 'location' ->> 'country'  as country,
         cr.event_type                             as resolution_status,
         cr.defer_reason,
+        draft.message_id                          as draft_message_id,
+        draft.conversation_id                     as draft_conversation_id,
+        draft.subject                             as draft_subject,
+        draft.body                                as draft_body,
+        draft.channel                             as draft_channel,
+        draft.eval_score::text                    as draft_eval_score,
         (
           select json_agg(row_to_json(c))
           from (
@@ -236,6 +245,45 @@ async function loadMatchedLeads(
           order by e.occurred_at desc
           limit 1
        ) cr on true
+       left join lateral (
+         select m.id as message_id,
+                c.id as conversation_id,
+                m.subject,
+                m.body,
+                m.channel::text as channel,
+                coalesce(m.eval_score, (judged.payload->>'eval_score')::numeric) as eval_score
+           from conversation_signals cs
+           join conversations c
+             on c.workspace_id = cs.workspace_id
+            and c.id = cs.conversation_id
+           join messages m
+             on m.workspace_id = c.workspace_id
+            and m.conversation_id = c.id
+           left join lateral (
+             select e.payload
+               from events e
+              where e.workspace_id = m.workspace_id
+                and e.event_type = 'draft.judged'
+                and e.payload->>'message_id' = m.id::text
+              order by e.occurred_at desc
+              limit 1
+           ) judged on true
+          where $9::boolean
+            and cs.workspace_id = s.workspace_id
+            and cs.signal_id = s.id
+            and m.direction = 'outbound'
+            and m.status = 'draft'
+            and coalesce(
+              case
+                when judged.payload ? 'passed' then (judged.payload->>'passed')::boolean
+                else null
+              end,
+              m.eval_passed,
+              false
+            )
+          order by m.created_at desc
+          limit 1
+       ) draft on true
       order by coalesce(s.ingested_at, s.freshness_at) desc`,
     [
       workspaceId,
@@ -246,6 +294,7 @@ async function loadMatchedLeads(
       search,
       filters.size,
       filters.industry ? `%${filters.industry}%` : null,
+      includeDrafts,
     ],
   );
 
@@ -257,8 +306,6 @@ async function loadMatchedLeads(
     signal_url: row.signal_url,
     source_name: row.source_name,
     source_kind: row.source_kind,
-    match_score: numericValue(row.match_score),
-    match_reason: row.match_reason,
     company_id: row.company_id,
     company_name: row.company_name,
     company_domain: row.company_domain,
@@ -269,6 +316,23 @@ async function loadMatchedLeads(
     location: [row.city, row.state, row.country].filter(Boolean).join(", ") || null,
     resolution_status: row.resolution_status,
     defer_reason: row.defer_reason,
+    draft: row.draft_message_id && row.draft_conversation_id && row.draft_body
+      ? {
+          messageId: row.draft_message_id,
+          conversationId: row.draft_conversation_id,
+          companyName: row.company_name ?? row.company_domain ?? "Company",
+          contactName: null,
+          signalHeading: normalizedSignalHeading({
+            kind: row.signal_kind,
+            companyName: row.company_name,
+            evidenceTitle: signalDisplayTitle(row.signal_title),
+          }),
+          subject: row.draft_subject,
+          body: row.draft_body,
+          channel: row.draft_channel ?? "email",
+          evalScore: numericValue(row.draft_eval_score),
+        }
+      : null,
     contacts: parseContacts(row.contacts_json),
   }));
 }
@@ -282,10 +346,10 @@ export default function OutreachPage({
     <div className="space-y-6">
       <header>
         <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent)]">
-          Outreach
+          Leads
         </p>
         <h1 className="mt-3 text-[32px] font-bold leading-tight tracking-[-0.02em] text-[var(--color-text-1)]">
-          Matched leads
+          Qualified leads
         </h1>
         <p className="mt-2 max-w-[68ch] text-[14px] leading-6 text-[var(--color-text-3)]">
           Prioritized accounts and contacts, organized by the Signal that makes now the right time.
@@ -307,7 +371,8 @@ async function OutreachLeads({
   const filters = parseFilters(await searchParams);
   const session = await getActiveWorkspaceSessionForDashboard("outreach");
   if (!session) return <OutreachEmpty />;
-  const leads = await loadMatchedLeads(session.workspace.id, filters).catch((err) => {
+  const reviewMode = session.workspace.autonomy_mode === "review_only";
+  const leads = await loadMatchedLeads(session.workspace.id, filters, reviewMode).catch((err) => {
     console.error("[outreach] load failed", err);
     return [] as MatchedLeadRow[];
   });
@@ -322,7 +387,7 @@ async function OutreachLeads({
           <OutreachEmpty />
         )
       ) : (
-        <LeadsTable leads={leads} />
+        <LeadsTable leads={leads} reviewMode={reviewMode} />
       )}
     </section>
   );
@@ -435,9 +500,9 @@ function OutreachResultsSkeleton() {
       <p className="sr-only">Loading matched leads</p>
       <div className="dashboard-loader-skeleton h-16 rounded-[8px]" />
       <div className="overflow-hidden rounded-[8px] border border-[var(--color-line-1)]">
-        <TableHeader />
+        <TableHeader reviewMode />
         {[0, 1, 2, 3, 4].map((row) => (
-          <div key={row} className="grid gap-5 border-t border-[var(--color-line-1)] px-4 py-4 lg:grid-cols-[minmax(170px,1fr)_minmax(250px,1.5fr)_minmax(110px,.65fr)_minmax(190px,1.1fr)_80px]">
+          <div key={row} className="grid gap-5 border-t border-[var(--color-line-1)] px-4 py-4 lg:grid-cols-[minmax(170px,1fr)_minmax(250px,1.5fr)_minmax(190px,1.1fr)_minmax(116px,.7fr)_80px]">
             {[0, 1, 2, 3, 4].map((cell) => (
               <div key={cell} className="dashboard-loader-skeleton h-10" />
             ))}
@@ -448,30 +513,35 @@ function OutreachResultsSkeleton() {
   );
 }
 
-function TableHeader() {
+function TableHeader({ reviewMode }: { reviewMode: boolean }) {
   return (
-    <div className="hidden gap-5 bg-[var(--color-ink-1)] px-4 py-3 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-4)] lg:grid lg:grid-cols-[minmax(170px,1fr)_minmax(250px,1.5fr)_minmax(110px,.65fr)_minmax(190px,1.1fr)_80px]">
+    <div className={
+      "hidden gap-5 bg-[var(--color-ink-1)] px-4 py-3 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-4)] lg:grid " +
+      (reviewMode
+        ? "lg:grid-cols-[minmax(170px,1fr)_minmax(250px,1.5fr)_minmax(190px,1.1fr)_minmax(116px,.7fr)_80px]"
+        : "lg:grid-cols-[minmax(170px,1fr)_minmax(250px,1.5fr)_minmax(190px,1.1fr)_80px]")
+    }>
       <span>Account</span>
       <span>Signal</span>
-      <span>Fit</span>
       <span>Contact</span>
+      {reviewMode ? <span>Draft</span> : null}
       <span>Detected</span>
     </div>
   );
 }
 
-function LeadsTable({ leads }: { leads: MatchedLeadRow[] }) {
+function LeadsTable({ leads, reviewMode }: { leads: MatchedLeadRow[]; reviewMode: boolean }) {
   return (
     <div className="overflow-hidden rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)]">
-      <TableHeader />
+      <TableHeader reviewMode={reviewMode} />
       <ul className="divide-y divide-[var(--color-line-1)]">
-        {leads.map((lead) => <LeadRow key={lead.signal_id} lead={lead} />)}
+        {leads.map((lead) => <LeadRow key={lead.signal_id} lead={lead} reviewMode={reviewMode} />)}
       </ul>
     </div>
   );
 }
 
-function LeadRow({ lead }: { lead: MatchedLeadRow }) {
+function LeadRow({ lead, reviewMode }: { lead: MatchedLeadRow; reviewMode: boolean }) {
   const company = lead.company_name ?? lead.company_domain ?? "Unknown company";
   const sourceLabel = signalSourceLabel({
     sourceName: lead.source_name,
@@ -485,7 +555,12 @@ function LeadRow({ lead }: { lead: MatchedLeadRow }) {
   });
 
   return (
-    <li className="grid gap-4 px-4 py-4 lg:grid-cols-[minmax(170px,1fr)_minmax(250px,1.5fr)_minmax(110px,.65fr)_minmax(190px,1.1fr)_80px] lg:items-start lg:gap-5">
+    <li className={
+      "grid gap-4 px-4 py-4 lg:items-start lg:gap-5 " +
+      (reviewMode
+        ? "lg:grid-cols-[minmax(170px,1fr)_minmax(250px,1.5fr)_minmax(190px,1.1fr)_minmax(116px,.7fr)_80px]"
+        : "lg:grid-cols-[minmax(170px,1fr)_minmax(250px,1.5fr)_minmax(190px,1.1fr)_80px]")
+    }>
       <div className="min-w-0">
         <p className="truncate text-[13.5px] font-semibold text-[var(--color-text-1)]">{company}</p>
         {lead.company_domain ? <p className="mt-0.5 truncate text-[11.5px] text-[var(--color-text-3)]">{lead.company_domain}</p> : null}
@@ -509,19 +584,31 @@ function LeadRow({ lead }: { lead: MatchedLeadRow }) {
           ) : sourceLabel}
         </p>
       </div>
-      <div className="min-w-0">
-        <p className="text-[13px] font-semibold tabular-nums text-[var(--color-text-1)]">
-          {formatFitScore(lead.match_score)}
-        </p>
-        <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-[var(--color-text-3)]">
-          {lead.match_reason ?? "Matched to your active ICP"}
-        </p>
-      </div>
       <ContactCell lead={lead} />
+      {reviewMode ? <DraftCell lead={lead} /> : null}
       <span className="text-[11.5px] tabular-nums text-[var(--color-text-3)]">
         {relativeWhen(lead.signal_at)}
       </span>
     </li>
+  );
+}
+
+function DraftCell({ lead }: { lead: MatchedLeadRow }) {
+  if (!lead.draft) {
+    return <p className="text-[11.5px] leading-4 text-[var(--color-text-4)]">Draft pending</p>;
+  }
+
+  const contact = lead.contacts[0];
+  return (
+    <div className="min-w-0">
+      <p className="mb-1 truncate text-[10.5px] font-medium text-[var(--color-pos)]">Ready to review</p>
+      <DraftPreviewButton
+        draft={{
+          ...lead.draft,
+          contactName: contact?.full_name ?? null,
+        }}
+      />
+    </div>
   );
 }
 
@@ -616,12 +703,6 @@ function companyFacts(lead: MatchedLeadRow): string[] {
     ? `${lead.employee_count.toLocaleString()} employees`
     : lead.company_size;
   return [headcount, lead.industry, lead.location].filter((fact): fact is string => Boolean(fact));
-}
-
-function formatFitScore(score: number | null): string {
-  if (score == null) return "Matched";
-  const percent = score <= 1 ? Math.round(score * 100) : Math.round(score);
-  return `${Math.max(0, Math.min(100, percent))}% fit`;
 }
 
 function resolutionLabel(lead: MatchedLeadRow): string {

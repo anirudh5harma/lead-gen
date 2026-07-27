@@ -35,7 +35,7 @@ export type WorkspaceAutonomyMode = "autonomous" | "review_only";
 const NAV: NavItem[] = [
   {
     href: "/dashboard/outreach",
-    label: "Outreach",
+    label: "Leads",
     icon: "send",
     matches: ["/dashboard/outreach", "/dashboard"],
   },

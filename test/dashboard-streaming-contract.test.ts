@@ -31,9 +31,13 @@ test("outreach renders its heading before the leads query resolves", () => {
   assert.match(outreach, /e\.payload \? 'signal_id'/);
   assert.match(outreach, />Account</);
   assert.match(outreach, />Signal</);
-  assert.match(outreach, />Fit</);
   assert.match(outreach, />Contact</);
+  assert.match(outreach, />Draft</);
   assert.match(outreach, />Detected</);
+  assert.match(outreach, /session\.workspace\.autonomy_mode === "review_only"/);
+  assert.match(outreach, /conversation_signals cs/);
+  assert.match(outreach, /DraftPreviewButton/);
+  assert.doesNotMatch(outreach, />Fit</);
   assert.match(outreach, /name="kind"/);
   assert.match(outreach, /name="readiness"/);
   assert.match(outreach, /name="freshness"/);

@@ -19,7 +19,7 @@ test("dashboard navigation uses active product surface routes", () => {
 
   // Left-nav surfaces (2026-07 launch): Outreach is the default landing,
   // followed by Conversations, Reddit marketing, Integrations, Settings.
-  assert.match(primaryNav, /href: "\/dashboard\/outreach",\s+label: "Outreach"/);
+  assert.match(primaryNav, /href: "\/dashboard\/outreach",\s+label: "Leads"/);
   assert.match(
     primaryNav,
     /matches: \["\/dashboard\/outreach", "\/dashboard"\]/,
@@ -82,7 +82,7 @@ test("dashboard shell keeps route chrome simple and avoids extra flow queries", 
   assert.match(shell, /DashboardShell/);
   assert.match(shell, /md:w-\[calc\(100%-240px\)\]/);
   assert.match(shell, /const NAV/);
-  assert.match(shell, /label: "Outreach"/);
+  assert.match(shell, /label: "Leads"/);
   assert.match(shell, /label: "Conversations"/);
   assert.match(shell, /label: "Reddit marketing"/);
   assert.match(shell, /label: "Integrations"/);
