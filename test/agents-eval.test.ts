@@ -3,10 +3,12 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { createInMemoryEventBus } from "../core/substrate/events/adapters/in-memory.ts";
 import {
+  createDeepSeekJudge,
   createHeuristicJudge,
   createNoopJudge,
   evalGate,
 } from "../core/agents/eval/index.ts";
+import type { LLMClient } from "../core/agents/llm/types.ts";
 
 function fakeRep() {
   return {
@@ -58,6 +60,39 @@ test("eval gate: failing draft emits draft.judged AND draft.rejected", async () 
 
   const types = bus.published.map((e) => e.event_type);
   assert.deepEqual(types, ["draft.judged", "draft.rejected"]);
+});
+
+test("deepseek judge: accepts fenced JSON response", async () => {
+  const llm: LLMClient = {
+    async complete() {
+      return {
+        content: [
+          "```json",
+          JSON.stringify({
+            score: 0.91,
+            axes: { voice: 0.9, relevance: 0.92, specificity: 0.88, length: 0.95 },
+            critique: "Specific and ready.",
+            suggestions: [],
+          }),
+          "```",
+        ].join("\n"),
+        model: "test",
+        finish_reason: "stop",
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+      };
+    },
+  };
+  const judge = createDeepSeekJudge({ llm, threshold: 0.6 });
+
+  const verdict = await judge.evaluate({
+    workspace_id: randomUUID(),
+    rep: fakeRep(),
+    artifact: { kind: "draft", channel: "email", body: "Hi Anne, saw your launch." },
+    message_id: randomUUID(),
+  });
+
+  assert.equal(verdict.passed, true);
+  assert.equal(verdict.score, 0.91);
 });
 
 test("heuristic judge: catches banned phrases", async () => {

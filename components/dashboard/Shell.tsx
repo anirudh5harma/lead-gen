@@ -266,7 +266,7 @@ export function DashboardShell({
       </nav>
 
       <main
-        className="relative z-20 mx-auto w-full min-w-0 max-w-[1200px] px-4 pb-16 pt-[124px] md:ml-[240px] md:w-[calc(100%-240px)] md:max-w-none md:px-8 md:pt-8 lg:px-12"
+        className="relative z-20 mx-auto w-full min-w-0 max-w-[1200px] px-4 pb-16 pt-[124px] md:ml-[240px] md:mr-auto md:w-[calc(100%-240px)] md:max-w-[1240px] md:px-8 md:pt-8 lg:px-10 xl:px-12"
         aria-busy={routePending}
       >
         {banners}

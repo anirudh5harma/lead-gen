@@ -61,6 +61,58 @@ export class MalformedJudgeResponseError extends Error {
   }
 }
 
+function parseRawVerdict(content: string): RawVerdict | null {
+  try {
+    return JSON.parse(content) as RawVerdict;
+  } catch {
+    const fenced = content.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fenced?.[1]) {
+      try {
+        return JSON.parse(fenced[1].trim()) as RawVerdict;
+      } catch {
+        /* fall through */
+      }
+    }
+    const extracted = extractFirstJsonObject(content);
+    if (!extracted) return null;
+    try {
+      return JSON.parse(extracted) as RawVerdict;
+    } catch {
+      return null;
+    }
+  }
+}
+
+function extractFirstJsonObject(content: string): string | null {
+  const start = content.indexOf("{");
+  if (start < 0) return null;
+  let depth = 0;
+  let quoted = false;
+  let escaped = false;
+  for (let index = start; index < content.length; index += 1) {
+    const char = content[index]!;
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      quoted = !quoted;
+      continue;
+    }
+    if (quoted) continue;
+    if (char === "{") depth += 1;
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) return content.slice(start, index + 1);
+    }
+  }
+  return null;
+}
+
 export function isMalformedJudgeResponseError(
   error: unknown,
 ): error is MalformedJudgeResponseError {
@@ -152,10 +204,8 @@ export function createDeepSeekJudge(opts: DeepSeekJudgeOptions): Judge {
         ],
       });
 
-      let parsed: RawVerdict;
-      try {
-        parsed = JSON.parse(response.content) as RawVerdict;
-      } catch {
+      const parsed = parseRawVerdict(response.content);
+      if (!parsed) {
         if (opts.throwOnMalformed) {
           throw new MalformedJudgeResponseError(response.content);
         }

@@ -9,6 +9,7 @@ function source(path: string): string {
 test("dashboard chrome streams non-critical banners after the shell", () => {
   const layout = source("app/dashboard/layout.tsx");
   const shell = source("components/dashboard/Shell.tsx");
+  const css = source("app/globals.css");
 
   assert.match(layout, /<Suspense fallback=\{null\}>/);
   assert.match(layout, /<DashboardBanners workspaceId=\{chrome\.workspaceId\} \/>/);
@@ -17,6 +18,10 @@ test("dashboard chrome streams non-critical banners after the shell", () => {
   assert.doesNotMatch(layout, /activation:\s*WorkspaceActivationState/);
   assert.match(shell, /banners\?: ReactNode/);
   assert.match(shell, /\{banners\}/);
+  assert.match(shell, /md:max-w-\[1240px\]/);
+  assert.match(shell, /md:mr-auto/);
+  assert.match(css, /\.dashboard-loader-panel/);
+  assert.match(css, /linear-gradient\(110deg, var\(--color-ink-1\), var\(--color-ink-2\), var\(--color-ink-1\)\)/);
   assert.doesNotMatch(shell, /billing\?: WorkspaceBillingState/);
   assert.doesNotMatch(shell, /activation\?: WorkspaceActivationState/);
 });

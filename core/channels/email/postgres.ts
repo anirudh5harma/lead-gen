@@ -11,6 +11,7 @@ import type {
   EmailTransport,
 } from "./types.ts";
 import type { OutlookSender } from "./adapters/outlook.ts";
+import { OutlookAuthError, OutlookSendError } from "./adapters/outlook.ts";
 import { repairUserConnectedChannelAccountOwners } from "../account-ownership.ts";
 
 type DomainWarmupState =
@@ -65,8 +66,17 @@ interface StoredMessageSendState {
 const TRANSPORT_IDEMPOTENCY_RETRY_WINDOW_MS = 23 * 60 * 60 * 1000;
 const PLAUSIBLE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function isPlausibleRecipientEmail(value: string | null | undefined): boolean {
-  return Boolean(value && PLAUSIBLE_EMAIL.test(value.trim()));
+function normalizeRecipientEmail(value: string | null | undefined): string | null {
+  const raw = value?.trim();
+  if (!raw) return null;
+  const candidates = raw.startsWith("{") && raw.endsWith("}")
+    ? raw.slice(1, -1).split(",")
+    : [raw];
+  for (const candidate of candidates) {
+    const email = candidate.trim().replace(/^"|"$/g, "");
+    if (PLAUSIBLE_EMAIL.test(email)) return email;
+  }
+  return null;
 }
 
 export interface PostgresOwnedDomainEmailChannelOptions {
@@ -277,6 +287,29 @@ async function publishDeferred(
   };
 }
 
+async function releaseReservation(pool: Pool, account_id: string): Promise<void> {
+  await pool.query(
+    `update channel_accounts
+        set daily_used = greatest(daily_used - 1, 0)
+      where id = $1
+        and daily_window_start is not null
+        and daily_window_start >= now() - interval '24 hours'
+        and daily_used > 0`,
+    [account_id],
+  );
+}
+
+function providerDeferReason(err: unknown): string {
+  if (err instanceof OutlookAuthError) return "outlook_auth_required";
+  if (err instanceof OutlookSendError) {
+    if (err.graphCode === "ErrorInvalidRecipients") return "invalid_recipient_email";
+    return err.status >= 500 || err.status === 408 || err.status === 429
+      ? "outlook_provider_transient"
+      : "outlook_provider_permanent";
+  }
+  return "provider_error";
+}
+
 async function reserveAccount(
   client: PoolClient,
   workspace_id: string,
@@ -407,10 +440,11 @@ export function createPostgresOwnedDomainEmailChannel(
       if (!draft.eval_passed) {
         return publishDeferred(opts.pool, draft, ctx, "eval_not_passed", null);
       }
+      const recipientEmail = normalizeRecipientEmail(conversation.counterparty_email);
       if (!conversation.counterparty_email) {
         return publishDeferred(opts.pool, draft, ctx, "missing_recipient_email", null);
       }
-      if (!isPlausibleRecipientEmail(conversation.counterparty_email)) {
+      if (!recipientEmail) {
         return publishDeferred(opts.pool, draft, ctx, "invalid_recipient_email", null);
       }
 
@@ -449,7 +483,7 @@ export function createPostgresOwnedDomainEmailChannel(
         } else {
           const recipientFrequency = await evaluateRecipientFrequency(
             client,
-            conversation,
+            { ...conversation, counterparty_email: recipientEmail },
             draft,
             nowDate,
             recipientCooldownMs,
@@ -531,14 +565,14 @@ export function createPostgresOwnedDomainEmailChannel(
             ? await opts.outlook!.send({
                 channel_account_id: reservation.account.account_id,
                 draft: {
-                  to: { email: conversation.counterparty_email },
+                  to: { email: recipientEmail },
                   subject: draft.subject ?? "",
                   body_text: draft.body,
                 },
               })
             : await opts.transport!.send({
                 from: reservation.account.from,
-                to: conversation.counterparty_email,
+                to: recipientEmail,
                 subject: draft.subject ?? "",
                 body: draft.body,
                 account_id: reservation.account.account_id,
@@ -587,7 +621,14 @@ export function createPostgresOwnedDomainEmailChannel(
             error: message,
           },
         });
-        throw err;
+        await releaseReservation(opts.pool, reservation.account.account_id);
+        return publishDeferred(
+          opts.pool,
+          draft,
+          ctx,
+          providerDeferReason(err),
+          null,
+        );
       }
     },
   };

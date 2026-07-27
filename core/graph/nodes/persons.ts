@@ -1,6 +1,7 @@
 import type { Pool } from "pg";
 import type { GraphPerson, PersonUpsert } from "../types.ts";
 import { formatVector } from "../_vector.ts";
+import { textArrayFromPg } from "../pg-array.ts";
 
 /**
  * Person node operations. Key precedence on upsert:
@@ -21,8 +22,8 @@ interface PersonRow {
   family_name: string | null;
   title: string | null;
   company_id: string | null;
-  emails: string[];
-  phones: string[];
+  emails: string[] | string | null;
+  phones: string[] | string | null;
   linkedin_url: string | null;
   x_handle: string | null;
   properties: Record<string, unknown>;
@@ -41,8 +42,8 @@ function rowToPerson(row: PersonRow): GraphPerson {
     family_name: row.family_name,
     title: row.title,
     company_id: row.company_id,
-    emails: row.emails ?? [],
-    phones: row.phones ?? [],
+    emails: textArrayFromPg(row.emails),
+    phones: textArrayFromPg(row.phones),
     linkedin_url: row.linkedin_url,
     x_handle: row.x_handle,
     properties: row.properties ?? {},

@@ -1,5 +1,6 @@
 import type { Pool } from "pg";
 import type { GraphCompany, GraphPerson } from "../graph/types.ts";
+import { textArrayFromPg } from "../graph/pg-array.ts";
 import { projectMessageLifecycleEvent as projectPostgresMessageLifecycleEvent } from "../channels/message-lifecycle.ts";
 import { projectConversationLifecycleEvent as projectPostgresConversationLifecycleEvent } from "../primitives/conversation-lifecycle.ts";
 import type {
@@ -400,8 +401,8 @@ interface PersonRow {
   family_name: string | null;
   title: string | null;
   company_id: string | null;
-  emails: string[];
-  phones: string[];
+  emails: string[] | string | null;
+  phones: string[] | string | null;
   linkedin_url: string | null;
   x_handle: string | null;
   properties: Record<string, unknown>;
@@ -519,8 +520,8 @@ function companyFromRow(row: CompanyRow): GraphCompany {
 function personFromRow(row: PersonRow): GraphPerson {
   return {
     ...row,
-    emails: row.emails ?? [],
-    phones: row.phones ?? [],
+    emails: textArrayFromPg(row.emails),
+    phones: textArrayFromPg(row.phones),
     embedded_at: iso(row.embedded_at),
     created_at: row.created_at.toISOString(),
     updated_at: row.updated_at.toISOString(),
@@ -597,7 +598,7 @@ export function createPostgresVerticalSliceStore(pool: Pool): VerticalSliceStore
     async getPerson(id) {
       const { rows } = await pool.query<PersonRow>(
         `select id, workspace_id, full_name, given_name, family_name, title,
-                company_id, emails, phones, linkedin_url, x_handle, properties,
+                company_id, emails::text[] as emails, phones, linkedin_url, x_handle, properties,
                 provenance, embedded_at, created_at, updated_at
            from graph_persons where id = $1`,
         [id],
