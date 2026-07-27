@@ -10402,16 +10402,28 @@ async function groundDraftWithExaForWorkflow(
   if (!process.env.EXA_API_KEY?.trim()) return null;
   const user_id = await getWorkflowUserId(engine.pool, input.workspace_id);
   if (!user_id) return null;
-  return researchWorkspaceWithExa(
-    {
-      query: input.query,
-      intent: "draft_grounding",
-      num_results: 3,
-      include_text: true,
-      idempotency_nonce: `play:${input.play_run_id}:${input.signal.id}:${input.channel}`,
-    },
-    { workspace_id: input.workspace_id, user_id },
-  );
+  try {
+    return await researchWorkspaceWithExa(
+      {
+        query: input.query,
+        intent: "draft_grounding",
+        num_results: 3,
+        include_text: true,
+        idempotency_nonce: `play:${input.play_run_id}:${input.signal.id}:${input.channel}`,
+      },
+      { workspace_id: input.workspace_id, user_id },
+    );
+  } catch (error) {
+    // Grounding improves a draft but must never make a qualified, already
+    // evidenced signal unsendable when a third-party research provider is down
+    // or out of credits. The Play's judge remains the hard send gate.
+    console.warn(
+      `[signal-email-play] optional Exa grounding unavailable for ${input.signal.id}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    return null;
+  }
 }
 
 function registerSignalIngestionWorkflows(engine: ProductEngine): void {
