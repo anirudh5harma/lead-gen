@@ -1717,6 +1717,9 @@ test("onboarding website setup starts activation then durable Signal ingestion",
   assert.doesNotMatch(onboardingPage, /sources,\s+plays, and the first Agent queue/);
   assert.doesNotMatch(onboardingPage, /label="Integrations"/);
   assert.match(onboardingForm, /Start with the website/);
+  assert.match(onboardingForm, /validateWebsite/);
+  assert.match(onboardingForm, /required/);
+  assert.match(onboardingForm, /formNoValidate/);
   assert.match(onboardingForm, /learn the company, audience, signal sources/);
   assert.match(onboardingForm, /<details className=/);
   assert.match(onboardingForm, /Optional launch context/);

@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, type ComponentPropsWithoutRef } from "react";
 import Icon from "@/components/Icon";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
+import WebsiteUrlInput from "@/components/WebsiteUrlInput";
 import {
   createActivationSetupFormAction,
   type OnboardingActionState,
@@ -43,9 +44,10 @@ export default function OnboardingForm({
         <Field
           name="website_url"
           label="Website"
-          type="url"
           icon="language"
           placeholder="https://yourcompany.com"
+          required
+          validateWebsite
           defaultValue={initialWebsiteUrl}
           autoFocus={!initialWebsiteUrl}
         />
@@ -264,18 +266,15 @@ function Field({
   label,
   type = "text",
   icon,
-  placeholder,
-  defaultValue,
-  autoFocus,
-}: {
+  validateWebsite = false,
+  ...inputProps
+}: Omit<ComponentPropsWithoutRef<"input">, "name"> & {
   name: string;
   label: string;
-  type?: string;
   icon?: string;
-  placeholder?: string;
-  defaultValue?: string;
-  autoFocus?: boolean;
+  validateWebsite?: boolean;
 }) {
+  const Input = validateWebsite ? WebsiteUrlInput : "input";
   return (
     <label className="onboard-field">
       <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-3)]">
@@ -283,12 +282,10 @@ function Field({
       </span>
       <span className="onboard-field-control">
         {icon ? <Icon name={icon} size={18} className="onboard-field-icon" /> : null}
-        <input
+        <Input
+          {...inputProps}
           name={name}
           type={type}
-          placeholder={placeholder}
-          defaultValue={defaultValue}
-          autoFocus={autoFocus}
         />
       </span>
     </label>
