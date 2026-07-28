@@ -1,4 +1,7 @@
-import { isIP } from "node:net";
+import { BlockList, isIP } from "node:net";
+import { hasValidDnsHostname } from "./hostname.ts";
+
+const NON_PUBLIC_IPS = createNonPublicIpBlockList();
 
 export function normalizePublicHttpUrl(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
@@ -29,6 +32,7 @@ export function normalizePublicHostname(raw: unknown): string | null {
     );
     const hostname = parsed.hostname.replace(/^www\./, "").replace(/\.$/, "");
     if (!hostname || !hostname.includes(".")) return null;
+    if (!hasValidHostnameSyntax(hostname)) return null;
     if (isForbiddenHostname(hostname)) return null;
     return hostname;
   } catch {
@@ -49,6 +53,17 @@ export function publicHostMatches(candidate: string, allowed: string): boolean {
   return candidate === allowed || candidate.endsWith(`.${allowed}`);
 }
 
+export function isPublicIpAddress(address: string): boolean {
+  const family = isIP(address);
+  if (!family) return false;
+  return !NON_PUBLIC_IPS.check(address, family === 4 ? "ipv4" : "ipv6");
+}
+
+function hasValidHostnameSyntax(hostname: string): boolean {
+  if (isIP(hostname)) return true;
+  return hasValidDnsHostname(hostname);
+}
+
 function isForbiddenHostname(hostname: string): boolean {
   if (
     hostname === "localhost" ||
@@ -61,39 +76,43 @@ function isForbiddenHostname(hostname: string): boolean {
   }
 
   const family = isIP(hostname);
-  if (family === 4) return isForbiddenIpv4(hostname);
-  if (family === 6) return isForbiddenIpv6(hostname);
+  if (family) return !isPublicIpAddress(hostname);
   return false;
 }
 
-function isForbiddenIpv4(hostname: string): boolean {
-  const parts = hostname.split(".").map((part) => Number(part));
-  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part))) {
-    return true;
+function createNonPublicIpBlockList(): BlockList {
+  const blockList = new BlockList();
+  for (const [network, prefix] of [
+    ["0.0.0.0", 8],
+    ["10.0.0.0", 8],
+    ["100.64.0.0", 10],
+    ["127.0.0.0", 8],
+    ["169.254.0.0", 16],
+    ["172.16.0.0", 12],
+    ["192.0.0.0", 24],
+    ["192.0.2.0", 24],
+    ["192.88.99.0", 24],
+    ["192.168.0.0", 16],
+    ["198.18.0.0", 15],
+    ["198.51.100.0", 24],
+    ["203.0.113.0", 24],
+    ["224.0.0.0", 4],
+    ["240.0.0.0", 4],
+  ] as const) {
+    blockList.addSubnet(network, prefix, "ipv4");
   }
-  const [a, b] = parts;
-  return (
-    a === 0 ||
-    a === 10 ||
-    a === 127 ||
-    (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    (a === 100 && b >= 64 && b <= 127) ||
-    (a === 198 && (b === 18 || b === 19))
-  );
-}
-
-function isForbiddenIpv6(hostname: string): boolean {
-  const normalized = hostname.toLowerCase();
-  return (
-    normalized === "::1" ||
-    normalized === "::" ||
-    normalized.startsWith("fe8") ||
-    normalized.startsWith("fe9") ||
-    normalized.startsWith("fea") ||
-    normalized.startsWith("feb") ||
-    normalized.startsWith("fc") ||
-    normalized.startsWith("fd")
-  );
+  for (const [network, prefix] of [
+    ["::", 128],
+    ["::1", 128],
+    ["64:ff9b::", 96],
+    ["64:ff9b:1::", 48],
+    ["100::", 64],
+    ["2001:db8::", 32],
+    ["fc00::", 7],
+    ["fe80::", 10],
+    ["ff00::", 8],
+  ] as const) {
+    blockList.addSubnet(network, prefix, "ipv6");
+  }
+  return blockList;
 }
