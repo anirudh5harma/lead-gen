@@ -1,2 +1,0 @@
-ALTER TABLE user_profiles
-  ADD COLUMN IF NOT EXISTS auto_send_enabled BOOLEAN NOT NULL DEFAULT TRUE;
