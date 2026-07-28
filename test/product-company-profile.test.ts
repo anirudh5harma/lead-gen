@@ -79,7 +79,7 @@ test("extracts profile from Firecrawl markdown and the product LLM", async () =>
 test("falls back to direct homepage content when Firecrawl is unavailable", async () => {
   const previousKey = process.env.FIRECRAWL_API_KEY;
   delete process.env.FIRECRAWL_API_KEY;
-  const fetchImpl = async () =>
+  const directFetchImpl = async () =>
     new Response(
       `<!doctype html>
       <html>
@@ -98,7 +98,7 @@ test("falls back to direct homepage content when Firecrawl is unavailable", asyn
   try {
     const profile = await analyzeCompanyWebsite({
       websiteUrl: "https://acmegtm.example",
-      fetchImpl: fetchImpl as typeof fetch,
+      directFetchImpl,
       llm: mockLLM("not json"),
     });
 
@@ -114,13 +114,13 @@ test("falls back to direct homepage content when Firecrawl is unavailable", asyn
 test("still returns a starter profile when no website content can be read", async () => {
   const previousKey = process.env.FIRECRAWL_API_KEY;
   delete process.env.FIRECRAWL_API_KEY;
-  const fetchImpl = async () => new Response("blocked", { status: 403 });
+  const directFetchImpl = async () => new Response("blocked", { status: 403 });
 
   try {
     const profile = await analyzeCompanyWebsite({
       websiteUrl: "https://blocked.example",
       companyHint: "Blocked Co",
-      fetchImpl: fetchImpl as typeof fetch,
+      directFetchImpl,
     });
 
     assert.equal(profile?.company_name, "Blocked Co");

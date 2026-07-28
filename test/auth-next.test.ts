@@ -99,12 +99,19 @@ test("authCallbackOrigin ignores forwarded host spoofing in production", () => {
 test("onboardingPathForWebsite normalizes company URLs for auth handoff", () => {
   assert.equal(
     onboardingPathForWebsite("acme.com"),
-    "/onboarding?url=https%3A%2F%2Facme.com%2F",
+    "/onboarding?url=https%3A%2F%2Facme.com",
   );
   assert.equal(
-    onboardingPathForWebsite("https://acme.com/pricing?utm=launch"),
+    onboardingPathForWebsite("HTTPS://ACME.COM/pricing?utm=launch#top"),
     "/onboarding?url=https%3A%2F%2Facme.com%2Fpricing%3Futm%3Dlaunch",
   );
+  assert.equal(onboardingPathForWebsite("foo..com"), "/onboarding");
+  assert.equal(onboardingPathForWebsite("foo_.com"), "/onboarding");
+  assert.equal(onboardingPathForWebsite("foo-.com"), "/onboarding");
+  assert.equal(onboardingPathForWebsite("foo.local"), "/onboarding");
+  assert.equal(onboardingPathForWebsite("https://foo.internal/path"), "/onboarding");
+  assert.equal(onboardingPathForWebsite("foo.localhost"), "/onboarding");
+  assert.equal(onboardingPathForWebsite("example.com:65536"), "/onboarding");
   assert.equal(onboardingPathForWebsite(""), "/onboarding");
   assert.equal(onboardingPathForWebsite("https://"), "/onboarding");
 });

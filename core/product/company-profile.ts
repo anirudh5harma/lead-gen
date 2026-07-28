@@ -1,6 +1,9 @@
 import type { LLMClient } from "../agents/llm/index.ts";
 import { createDeepSeekClientFromEnv } from "../agents/llm/index.ts";
 import { normalizePublicHttpUrl } from "../../lib/network/public-url.ts";
+import {
+  fetchPublicHttpUrl,
+} from "../../lib/network/safe-public-fetch.ts";
 
 const WEBSITE_SCRAPE_TIMEOUT_MS = 15_000;
 const DIRECT_FETCH_TIMEOUT_MS = 10_000;
@@ -23,6 +26,7 @@ export interface AnalyzeCompanyWebsiteOptions {
   websiteUrl: unknown;
   companyHint?: string;
   allowedIndustries?: string[];
+  directFetchImpl?: typeof fetchPublicHttpUrl;
   fetchImpl?: typeof fetch;
   llm?: LLMClient;
 }
@@ -38,7 +42,11 @@ export async function analyzeCompanyWebsite(
   if (!websiteUrl) return null;
   const allowed = (opts.allowedIndustries ?? []).filter(Boolean);
   const fallbackName = opts.companyHint?.trim() || companyNameFromHost(websiteUrl);
-  const websiteContent = await scrapeWebsiteContent(websiteUrl, opts.fetchImpl);
+  const websiteContent = await scrapeWebsiteContent(
+    websiteUrl,
+    opts.fetchImpl,
+    opts.directFetchImpl,
+  );
 
   if (!websiteContent) {
     const description = fallbackProfileDescription(fallbackName, websiteUrl);
@@ -124,10 +132,11 @@ export async function analyzeCompanyWebsite(
 async function scrapeWebsiteContent(
   websiteUrl: string,
   fetchImpl: typeof fetch = globalThis.fetch,
+  directFetchImpl: typeof fetchPublicHttpUrl = fetchPublicHttpUrl,
 ): Promise<WebsiteContent | null> {
   const firecrawl = await scrapeWithFirecrawl(websiteUrl, fetchImpl);
   if (firecrawl) return { markdown: firecrawl, source: "firecrawl" };
-  return scrapeDirectHomepage(websiteUrl, fetchImpl);
+  return scrapeDirectHomepage(websiteUrl, directFetchImpl);
 }
 
 async function scrapeWithFirecrawl(
@@ -165,17 +174,17 @@ async function scrapeWithFirecrawl(
 
 async function scrapeDirectHomepage(
   websiteUrl: string,
-  fetchImpl: typeof fetch,
+  safeFetch: typeof fetchPublicHttpUrl,
 ): Promise<WebsiteContent | null> {
   try {
-    const response = await fetchImpl(websiteUrl, {
+    const response = await safeFetch(websiteUrl, {
       headers: {
         Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8",
         "User-Agent": "BombsellProfileBot/1.0 (+https://www.bombsell.com)",
       },
       signal: AbortSignal.timeout(DIRECT_FETCH_TIMEOUT_MS),
     });
-    if (!response.ok) return null;
+    if (!response?.ok) return null;
     const text = await response.text();
     const contentType = response.headers.get("content-type") ?? "";
     if (contentType && !/text\/html|text\/plain|application\/xhtml\+xml/i.test(contentType)) {
