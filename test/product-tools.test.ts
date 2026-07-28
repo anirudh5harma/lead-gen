@@ -688,9 +688,6 @@ test("Claude Code plugin package exposes Bombsell's focused GTM workbench", () =
   };
   const verifier = readProjectFile("scripts/verify-claude-code-plugin.ts");
   const readme = readProjectFile(`${root}/README.md`);
-  const plan = readProjectFile(
-    "docs/plans/2026-06-19-001-bombsell-claude-code-plugin-plan.md",
-  );
   const marketplace = JSON.parse(
     readProjectFile(
       "integrations/bombsell-claude-code-marketplace/.claude-plugin/marketplace.json",
@@ -748,10 +745,6 @@ test("Claude Code plugin package exposes Bombsell's focused GTM workbench", () =
   assert.match(verifier, /git-subdir/);
   assert.match(verifier, /cat-file/);
   assert.match(readme, /claude mcp add --transport http bombsell https:\/\/www\.bombsell\.com\/api\/mcp/);
-  assert.match(plan, /Direct MCP dogfood/);
-  assert.match(plan, /claude mcp add --transport http bombsell https:\/\/www\.bombsell\.com\/api\/mcp/);
-  assert.match(plan, /bombsell_profile_propose_from_context/);
-  assert.doesNotMatch(plan, /Future ergonomic alias/);
 
   for (const skill of skills) {
     const skillPath = `${root}/skills/${skill}/SKILL.md`;
@@ -786,10 +779,6 @@ test("Claude Code plugin package exposes Bombsell's focused GTM workbench", () =
   assert.match(readme, /"source": "git-subdir"/);
   assert.match(readme, /"path": "integrations\/bombsell-claude-code"/);
   assert.match(readme, /"sha": "<release-commit-sha>"/);
-  assert.match(plan, /"source": "git-subdir"/);
-  assert.match(plan, /"path": "integrations\/bombsell-claude-code"/);
-  assert.match(plan, /npm run verify:claude-code-plugin/);
-  assert.match(plan, /pinned commit SHA/);
   assert.doesNotMatch(readme, /Sampark|plays tab|outcomes tab/i);
   assert.ok(!projectFileExists(`${root}/hooks/hooks.json`));
   assert.ok(!projectFileExists(`${root}/agents/gtm-operator.md`));

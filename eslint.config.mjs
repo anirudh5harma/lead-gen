@@ -16,8 +16,6 @@ const eslintConfig = defineConfig([
     ".agents/**",
     ".claude/**",
     ".codex/**",
-    // pivot-v2: legacy code is archived for reference, not built.
-    "legacy/**",
   ]),
   {
     rules: {

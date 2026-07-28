@@ -130,7 +130,7 @@ export function checkWorkerReleaseContract(
     });
   }
 
-  for (const doc of ["docs/production-workers.md", "docs/product-audit-2026-06-01.md"]) {
+  for (const doc of ["docs/production-workers.md"]) {
     const source = readFile(doc);
     for (const service of REQUIRED_RESTATE_SERVICES) {
       checks.push({

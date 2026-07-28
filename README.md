@@ -4,7 +4,7 @@ AI-native GTM infrastructure for founders and lean teams. Bombsell turns quality
 signals into verified email or LinkedIn outreach, then learns from replies and
 meetings.
 
-This branch is a clean-slate rebuild against a state-of-the-art architecture. The old codebase is preserved under [`legacy/`](./legacy) for reference.
+This branch is a clean-slate rebuild against a state-of-the-art architecture.
 
 ## Read first
 
@@ -26,7 +26,6 @@ core/            # The new foundation — see core/README.md
   primitives/    #   Zod schemas for the five primitives
   mcp/           #   Layer 5: MCP server (external agents)
 db/              # Postgres schema and migrations — see db/README.md
-legacy/          # Archived previous implementation; import quarantine is tested.
 ```
 
 ## Foundation status
