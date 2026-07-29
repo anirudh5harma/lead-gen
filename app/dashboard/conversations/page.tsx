@@ -55,9 +55,11 @@ async function loadConversations(
         where c.workspace_id = $1
           and exists (
             select 1
-              from messages present
-             where present.workspace_id = c.workspace_id
-               and present.conversation_id = c.id
+              from messages successful_outreach
+             where successful_outreach.workspace_id = c.workspace_id
+               and successful_outreach.conversation_id = c.id
+               and successful_outreach.direction = 'outbound'
+               and successful_outreach.status in ('sent','delivered','replied')
           )
           and ($3::text is null or c.status::text = $3)
           and (
@@ -67,6 +69,8 @@ async function loadConversations(
                 from messages filtered_channel
                where filtered_channel.workspace_id = c.workspace_id
                  and filtered_channel.conversation_id = c.id
+                 and filtered_channel.direction = 'outbound'
+                 and filtered_channel.status in ('sent','delivered','replied')
                  and filtered_channel.channel::text = $4
             )
           )
@@ -112,6 +116,7 @@ async function loadConversations(
            from messages m
           where m.workspace_id = c.workspace_id
             and m.conversation_id = c.id
+            and m.status in ('sent','delivered','replied')
        ) ma on true
       order by c.last_activity_at desc`,
     [workspaceId, limit, filters.status, filters.channel, search],

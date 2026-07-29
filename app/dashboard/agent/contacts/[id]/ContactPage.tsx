@@ -173,11 +173,20 @@ async function loadContactProfile(
              from messages m
             where m.workspace_id = c.workspace_id
               and m.conversation_id = c.id
+              and m.status in ('sent','delivered','replied')
             order by m.created_at desc
             limit 1
          ) lm on true
         where c.workspace_id = $1
           and c.counterparty_person_id = $2
+          and exists (
+            select 1
+              from messages successful_outreach
+             where successful_outreach.workspace_id = c.workspace_id
+               and successful_outreach.conversation_id = c.id
+               and successful_outreach.direction = 'outbound'
+               and successful_outreach.status in ('sent','delivered','replied')
+          )
         order by c.last_activity_at desc
         limit 10`,
       [workspaceId, contact.id],

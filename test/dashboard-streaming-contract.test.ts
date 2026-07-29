@@ -59,12 +59,18 @@ test("outreach renders its heading before the leads query resolves", () => {
 
 test("Conversations is the canonical filtered thread surface", () => {
   const conversations = source("app/dashboard/conversations/page.tsx");
+  const contact = source("app/dashboard/agent/contacts/[id]/ContactPage.tsx");
   const detail = source("app/dashboard/conversations/[id]/page.tsx");
   const config = source("next.config.ts");
 
   assert.match(conversations, /name="status"/);
   assert.match(conversations, /name="channel"/);
-  assert.match(conversations, /exists \(\s*select 1\s*from messages/);
+  for (const surface of [conversations, contact]) {
+    assert.match(
+      surface,
+      /exists \(\s*select 1\s*from messages successful_outreach[\s\S]*successful_outreach\.direction = 'outbound'[\s\S]*successful_outreach\.status in \('sent','delivered','replied'\)/,
+    );
+  }
   assert.match(conversations, />Contact</);
   assert.match(conversations, />Conversation</);
   assert.match(conversations, />Status</);
