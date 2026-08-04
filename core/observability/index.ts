@@ -7,6 +7,14 @@ export {
   recordAgentTraceSpan,
   sanitizeTraceAttributes,
 } from "./agent-traces.ts";
+export {
+  createNeatlogsTraceExporter,
+  createNeatlogsTraceExporterFromEnv,
+} from "./neatlogs.ts";
+export type {
+  NeatlogsTraceExporter,
+  NeatlogsTraceExporterOptions,
+} from "./neatlogs.ts";
 export type {
   AgentTraceRedaction,
   AgentTraceExportDestination,

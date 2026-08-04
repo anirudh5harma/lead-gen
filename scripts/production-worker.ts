@@ -73,6 +73,7 @@ import {
 } from "../core/plays/index.ts";
 import { getWorkspaceAgentContext } from "../core/product/context.ts";
 import { resolveProductEmailTransportMode } from "../core/product/env.ts";
+import { createNeatlogsTraceExporterFromEnv } from "../core/observability/index.ts";
 import {
   createSendingDomainProvisioningWorkflow,
   createSendingDomainWarmupWorkflow,
@@ -152,6 +153,10 @@ const bus = await createJournaledNatsEventBus({
   ...optionalPositiveNumber(process.env.NATS_STREAM_MAX_AGE_MS, "streamMaxAgeMs"),
 });
 console.log("[production-worker] event bus ready");
+const neatlogsExporter = await createNeatlogsTraceExporterFromEnv(bus);
+if (neatlogsExporter) {
+  console.log("[production-worker] Neatlogs trace export enabled");
+}
 
 const llm = createDeepSeekClientFromEnv();
 const judge = createDeepSeekJudge({ llm });
@@ -479,6 +484,7 @@ async function shutdown(): Promise<void> {
     ...approvalSubscriptions.map((subscription) => subscription.unsubscribe()),
     ...playDispatchSubscriptions.map((subscription) => subscription.unsubscribe()),
   ]);
+  await neatlogsExporter?.close();
   await bus.close();
   await pool.end();
 }

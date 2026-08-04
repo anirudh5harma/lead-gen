@@ -234,6 +234,21 @@ Use `npm run verify:shared-x-readiness` to confirm the live platform source
 exists, the provider key is present, and the projected monthly spend stays
 inside the configured cap before depending on pooled X ingestion.
 
+### Optional Neatlogs debugging
+
+The preferred `worker:production` path can export the existing redacted agent
+trace events to Neatlogs' free ingest tier when `NEATLOGS_WRITE_KEY` is set.
+The integration uses the dependency-free HTTP endpoint, batches a trace by
+`trace_id`, sends metadata and attribute names only (never prompt or message
+content), and fails open if Neatlogs is unavailable. Bombsell's typed event bus
+and dashboard remain the source of truth. Leave the key unset to disable the
+exporter; no paid Neatlogs plan is required.
+
+See the [Neatlogs HTTP trace format](https://docs.neatlogs.com/sdk/http-injection)
+for the ingest contract. Configure `NEATLOGS_PROJECT` only when the dashboard
+project is not named `bombsell`; endpoint, batching, and timeout overrides are
+optional.
+
 ## Render Blueprint
 
 `render.yaml` defines a same-contract `bombsell-production-worker` web service
