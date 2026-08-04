@@ -185,6 +185,48 @@ test("agent observability: flushes spans that arrive during an in-flight export"
   await exporter.close();
 });
 
+test("agent observability: bounds Neatlogs export concurrency and buffering", async () => {
+  const bus = createInMemoryEventBus();
+  const requests: string[] = [];
+  let activeRequests = 0;
+  let maxActiveRequests = 0;
+  let releaseFirst: (() => void) | null = null;
+  const firstRequest = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+  const exporter = await createNeatlogsTraceExporter(bus, {
+    writeKey: "nlw_test",
+    maxInFlightTraces: 1,
+    maxBufferedTraces: 2,
+    fetchImpl: async (_input, init) => {
+      activeRequests += 1;
+      maxActiveRequests = Math.max(maxActiveRequests, activeRequests);
+      requests.push(String(init?.body));
+      if (requests.length === 1) await firstRequest;
+      activeRequests -= 1;
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    },
+  });
+
+  for (const name of ["first", "second", "dropped"]) {
+    await recordAgentTraceSpan(bus, {
+      workspace_id: randomUUID(),
+      trace_id: randomUUID(),
+      kind: "tool.call",
+      name,
+    });
+  }
+
+  const flush = exporter.flush();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(requests.length, 1);
+  assert.equal(maxActiveRequests, 1);
+  releaseFirst?.();
+  await flush;
+  assert.equal(requests.length, 2);
+  await exporter.close();
+});
+
 test("agent observability: redacts sensitive attributes by default", async () => {
   const bus = createInMemoryEventBus();
   const span = await recordAgentTraceSpan(bus, {
