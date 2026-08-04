@@ -12201,6 +12201,37 @@ export async function dispatchSignalMatchingWorkflowFromIngestedEvent(
   if (typeof signal_id !== "string" || !signal_id.trim()) return 0;
   const correlation_id = event.correlation_id ?? event.id;
 
+  // JetStream delivery is at-least-once and can replay a backlog after a
+  // worker restart. Do not enqueue another matching workflow when this
+  // signal already reached a terminal classifier state for this ingestion.
+  // This check is deliberately event-backed so it works with the production
+  // NATS/Restate substrate (where workflow_runs is not a local source of
+  // truth) and remains tenant-scoped.
+  if (deps.pool) {
+    const { rows } = await deps.pool.query<{ handled: boolean }>(
+      `select exists (
+         select 1
+           from events lifecycle
+          where lifecycle.workspace_id = $1
+            and lifecycle.event_type = any($2::text[])
+            and lifecycle.payload->>'signal_id' = $3
+            and lifecycle.occurred_at >= $4::timestamptz
+       ) as handled`,
+      [
+        event.workspace_id,
+        [
+          "signal.classification.completed",
+          "signal.matching.deferred",
+          "signal.matched",
+          "signal.dismissed",
+        ],
+        signal_id,
+        event.occurred_at,
+      ],
+    );
+    if (rows[0]?.handled) return 0;
+  }
+
   if (deps.pool && deps.workflows) {
     const user_id = await getWorkflowUserId(deps.pool, event.workspace_id);
     if (!user_id) return 0;

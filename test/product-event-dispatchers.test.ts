@@ -172,6 +172,20 @@ test("signal matching dispatcher starts the durable matching workflow with causa
   const starts: unknown[] = [];
   const pool = {
     async query(sql: string, params: unknown[]) {
+      if (/from events lifecycle/.test(sql)) {
+        assert.deepEqual(params, [
+          "11111111-1111-4111-8111-111111111111",
+          [
+            "signal.classification.completed",
+            "signal.matching.deferred",
+            "signal.matched",
+            "signal.dismissed",
+          ],
+          "22222222-2222-4222-8222-222222222222",
+          new Date(0).toISOString(),
+        ]);
+        return { rows: [{ handled: false }] };
+      }
       assert.match(sql, /from workspace_members/);
       assert.deepEqual(params, ["11111111-1111-4111-8111-111111111111"]);
       return { rows: [{ user_id: "33333333-3333-4333-8333-333333333333" }] };
@@ -211,6 +225,34 @@ test("signal matching dispatcher starts the durable matching workflow with causa
       causation_event_id: eventId,
     },
   }]);
+});
+
+test("signal matching dispatcher skips replayed events after classification", async () => {
+  let started = false;
+  const pool = {
+    async query(sql: string) {
+      if (/from events lifecycle/.test(sql)) return { rows: [{ handled: true }] };
+      return { rows: [{ user_id: "33333333-3333-4333-8333-333333333333" }] };
+    },
+  } as unknown as Pool;
+
+  const result = await dispatchSignalMatchingWorkflowFromIngestedEvent(
+    event("signal.ingested", {
+      signal_id: "22222222-2222-4222-8222-222222222222",
+    }),
+    {
+      pool,
+      workflows: {
+        async start() {
+          started = true;
+          return {};
+        },
+      },
+    },
+  );
+
+  assert.equal(result, 0);
+  assert.equal(started, false);
 });
 
 test("signal matching dispatcher ignores malformed Signal ingress payloads", async () => {
