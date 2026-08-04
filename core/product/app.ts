@@ -9890,7 +9890,24 @@ function createSignalClassifierLLM(
   workspace_id: string,
 ): LLMClient {
   const llm = createGovernedLLM(engine, workspace_id, "classifier.signal");
-  if (llm) return llm;
+  if (llm) {
+    // Classification must keep making progress when the optional LLM budget
+    // is exhausted. The hybrid shortlist has already applied the deterministic
+    // ICP must-have gate, so the local scorer is a safe degraded mode: it uses
+    // those ranked scores, emits the normal typed classification event, and
+    // never sends outreach by itself. Other provider errors still fail closed.
+    const fallback = createLocalSignalClassifierLLM();
+    return {
+      async complete(request) {
+        try {
+          return await llm.complete(request);
+        } catch (error) {
+          if (!isLLMBudgetExceededError(error)) throw error;
+          return fallback.complete(request);
+        }
+      },
+    };
+  }
   if (isProductionProductRuntime()) {
     throw new ProductEnvironmentError("signal classification", [
       "DEEPSEEK_API_KEY",
@@ -9907,16 +9924,39 @@ function createLocalSignalClassifierLLM(): LLMClient {
         prompt.match(/kind:\s+([a-z_]+)/)?.[1] ??
         prompt.match(/classified_kind:\s+([a-z_]+)/)?.[1] ??
         "press_mention";
-      const icpIds = [...prompt.matchAll(/icp_id:\s+([0-9a-f-]{36})/gi)].map(
-        (match) => match[1],
-      );
+      const icpCandidates = [...prompt.matchAll(
+        /icp_id:\s+([0-9a-f-]{36})[\s\S]*?threshold:\s+([0-9.]+)[\s\S]*?hybrid_scores:\s+(\{[^\n]+\})/gi,
+      )].map((match) => {
+        let scores: Record<string, unknown> = {};
+        try {
+          scores = JSON.parse(match[3]) as Record<string, unknown>;
+        } catch {
+          // Keep the conservative default below when a prompt is malformed.
+        }
+        const hybridScore = Number(scores.hybrid_score);
+        const threshold = Number(match[2]);
+        return {
+          icp_id: match[1],
+          score: Number.isFinite(hybridScore)
+            ? Math.max(0, Math.min(1, hybridScore))
+            : Number.isFinite(threshold)
+              ? Math.max(0, Math.min(1, threshold))
+              : 0.72,
+        };
+      });
+      const icpIds = icpCandidates.length > 0
+        ? icpCandidates
+        : [...prompt.matchAll(/icp_id:\s+([0-9a-f-]{36})/gi)].map((match) => ({
+            icp_id: match[1],
+            score: 0.72,
+          }));
       const payload = {
         kind,
-        per_icp: icpIds.map((icp_id) => ({
+        per_icp: icpIds.map(({ icp_id, score }) => ({
           icp_id,
-          score: 0.72,
+          score,
           reason:
-            "Local deterministic classifier matched the configured signal kind.",
+            "Deterministic hybrid score used after the workspace LLM budget was exhausted.",
         })),
       };
       return {
@@ -11292,10 +11332,40 @@ export async function dispatchSignalPlaysOnce(
             ) as company_has_linkedin_identity,
             resolved.payload->>'selected_person_id' as resolved_person_id,
             fit_person.properties #>> '{contact_fit,decision}' as resolved_person_fit_decision,
-            resolver.id::text as resolver_run_id,
-            resolver.idempotency_key as resolver_idempotency_key,
-            resolver.status as resolver_status,
-            resolver.output as resolver_output,
+            coalesce(resolver.id::text, resolver_event.id::text) as resolver_run_id,
+            coalesce(
+              resolver.idempotency_key,
+              case
+                when resolver_event.id is not null then concat(
+                  'contact:', e.payload->>'signal_id',
+                  ':play:', p.id::text,
+                  ':channel:',
+                  case
+                    when coalesce(p.compiled->>'channel', 'email') = 'email' then 'email'
+                    else 'linkedin'
+                  end
+                )
+                else null
+              end
+            ) as resolver_idempotency_key,
+            coalesce(
+              resolver.status,
+              case
+                when resolver_event.event_type = 'contact.resolution.deferred' then 'completed'
+                when resolver_event.event_type = 'contact.resolution.dead_lettered' then 'failed'
+                else null
+              end
+            ) as resolver_status,
+            coalesce(
+              resolver.output,
+              case
+                when resolver_event.event_type = 'contact.resolution.deferred'
+                  then resolver_event.payload || jsonb_build_object('decision', 'deferred')
+                when resolver_event.event_type = 'contact.resolution.dead_lettered'
+                  then resolver_event.payload || jsonb_build_object('decision', 'dead_lettered')
+                else resolver_event.payload
+              end
+            ) as resolver_output,
             coalesce(repair_wr.status::text, wr.status::text) as existing_run_status,
             coalesce(repair_wr.output, wr.output) as existing_run_output,
             existing_draft.message_id::text as existing_draft_message_id,
@@ -11388,6 +11458,28 @@ export async function dispatchSignalPlaysOnce(
           order by cr.occurred_at desc
           limit 1
        ) resolved on true
+       left join lateral (
+         select resolver_event.id,
+                resolver_event.event_type,
+                resolver_event.payload,
+                resolver_event.occurred_at
+           from events resolver_event
+          where resolver_event.workspace_id = e.workspace_id
+            and resolver_event.event_type in (
+              'contact.resolved',
+              'contact.resolution.deferred',
+              'contact.resolution.dead_lettered'
+            )
+            and resolver_event.payload->>'signal_id' = e.payload->>'signal_id'
+            and resolver_event.payload->>'play_id' = p.id::text
+            and resolver_event.payload->>'channel' =
+              case
+                when coalesce(p.compiled->>'channel', 'email') = 'email' then 'email'
+                else 'linkedin'
+              end
+          order by resolver_event.occurred_at desc
+          limit 1
+       ) resolver_event on true
        left join graph_persons fit_person
          on fit_person.workspace_id = e.workspace_id
         and fit_person.id = (resolved.payload->>'selected_person_id')::uuid
@@ -11522,7 +11614,7 @@ export async function dispatchSignalPlaysOnce(
           then 0
           else 1
         end,
-        e.occurred_at asc
+        e.occurred_at desc
       limit $3`,
     [
       SIGNAL_TO_EMAIL_PLAY_WORKFLOW,
