@@ -14,7 +14,8 @@ export type AgentTraceExportDestination =
   | "langfuse"
   | "langsmith"
   | "helicone"
-  | "braintrust";
+  | "braintrust"
+  | "neatlogs";
 export type AgentTraceSpanKind = SpanPayload["kind"];
 export type AgentTraceSpanStatus = SpanPayload["status"];
 export type AgentTraceRedaction = SpanPayload["redaction"];

@@ -39,6 +39,12 @@ services:
         sync: false
       - key: DEEPSEEK_API_KEY
         sync: false
+      - key: NEATLOGS_WRITE_KEY
+        sync: false
+      - key: NEATLOGS_PROJECT
+        value: bombsell
+      - key: NEATLOGS_ENDPOINT
+        value: https://ingest.neatlogs.com
       - key: OPENAI_API_KEY
         sync: false
       - key: EXA_API_KEY

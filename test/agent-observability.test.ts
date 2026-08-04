@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import test from "node:test";
 import {
   AgentTraceRedactionError,
+  createNeatlogsTraceExporter,
   normalizeAgentTraceExport,
   promoteTraceToEvalCase,
   recordAgentTraceEvalFailed,
@@ -54,6 +55,134 @@ test("agent observability: records typed spans through the event bus", async () 
   assert.equal(bus.published[0].correlation_id, trace_id);
   assert.equal(bus.published[0].payload.primitive_refs.signal_id, signal_id);
   assert.equal(bus.published[0].payload.model, "deepseek-v4-flash");
+});
+
+test("agent observability: exports nested redacted traces to Neatlogs", async () => {
+  const bus = createInMemoryEventBus();
+  const workspace_id = randomUUID();
+  const trace_id = randomUUID();
+  const requests: Array<{ url: string; init: RequestInit }> = [];
+  const exporter = await createNeatlogsTraceExporter(bus, {
+    writeKey: "nlw_test",
+    project: "bombsell",
+    fetchImpl: async (input, init) => {
+      requests.push({ url: String(input), init: init ?? {} });
+      return new Response(JSON.stringify({ success: true, trace_id: "neat-trace", spans: 2 }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+
+  const root = await recordAgentTraceSpan(bus, {
+    workspace_id,
+    trace_id,
+    kind: "agent.run",
+    name: "message.personalization_graph.v1",
+    graph_name: "message.personalization_graph.v1",
+    started_at: "2026-06-15T10:00:00.000Z",
+    ended_at: "2026-06-15T10:00:03.000Z",
+    attributes: { safe_label: "writer" },
+  });
+  await recordAgentTraceSpan(bus, {
+    workspace_id,
+    trace_id,
+    parent_span_id: root.span_id,
+    kind: "llm.call",
+    name: "writer",
+    model: "deepseek-v4-flash",
+    prompt_tokens: 20,
+    completion_tokens: 8,
+    status: "error",
+    error: { message: "private@example.com failed to personalize" },
+    started_at: "2026-06-15T10:00:01.000Z",
+    ended_at: "2026-06-15T10:00:02.000Z",
+    attributes: { prompt_content: "private draft" },
+  });
+
+  await exporter.flush();
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0]?.url, "https://ingest.neatlogs.com/v1/trace");
+  assert.equal(requests[0]?.init.headers && (requests[0].init.headers as Record<string, string>)["x-api-key"], "nlw_test");
+  const payload = JSON.parse(String(requests[0]?.init.body));
+  assert.equal(payload.project, "bombsell");
+  assert.equal(payload.name, "message.personalization_graph.v1");
+  assert.equal(payload.metadata["bombsell.workspace_id"], workspace_id);
+  assert.equal(payload.children[0].kind, "LLM");
+  assert.equal(payload.children[0].model, "deepseek-v4-flash");
+  assert.deepEqual(payload.children[0].tokens, { prompt: 20, completion: 8, total: 28 });
+  assert.equal(payload.children[0].input, undefined);
+  assert.equal(payload.children[0].error, "trace_span_error");
+  assert.equal(JSON.stringify(payload).includes("private@example.com"), false);
+  assert.equal(payload.children[0].metadata["bombsell.redaction"], "redacted");
+  assert.deepEqual(payload.children[0].metadata["bombsell.attribute_keys"], ["prompt_content"]);
+  assert.equal(bus.published.at(-1)?.event_type, "agent.trace.exported");
+
+  await exporter.close();
+});
+
+test("agent observability: keeps Neatlogs failures out of the workflow", async () => {
+  const bus = createInMemoryEventBus();
+  const exporter = await createNeatlogsTraceExporter(bus, {
+    writeKey: "nlw_test",
+    project: "bombsell",
+    fetchImpl: async () => {
+      throw new Error("Neatlogs unavailable");
+    },
+  });
+
+  await recordAgentTraceSpan(bus, {
+    workspace_id: randomUUID(),
+    kind: "tool.call",
+    name: "company.lookup",
+  });
+
+  await assert.doesNotReject(exporter.flush());
+  assert.equal(bus.published.some((event) => event.event_type === "agent.trace.exported"), false);
+  await exporter.close();
+});
+
+test("agent observability: flushes spans that arrive during an in-flight export", async () => {
+  const bus = createInMemoryEventBus();
+  const workspace_id = randomUUID();
+  const trace_id = randomUUID();
+  const requests: Array<{ body: string }> = [];
+  let releaseFirst: (() => void) | null = null;
+  const firstRequest = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+  const exporter = await createNeatlogsTraceExporter(bus, {
+    writeKey: "nlw_test",
+    project: "bombsell",
+    fetchImpl: async (_input, init) => {
+      requests.push({ body: String(init?.body) });
+      if (requests.length === 1) await firstRequest;
+      return new Response(JSON.stringify({ success: true, trace_id: "neat-trace", spans: 1 }), {
+        status: 200,
+      });
+    },
+  });
+
+  await recordAgentTraceSpan(bus, {
+    workspace_id,
+    trace_id,
+    kind: "agent.run",
+    name: "run",
+  });
+  const firstFlush = exporter.flush();
+  await recordAgentTraceSpan(bus, {
+    workspace_id,
+    trace_id,
+    kind: "tool.call",
+    name: "lookup",
+  });
+  releaseFirst?.();
+  await firstFlush;
+  await exporter.flush();
+
+  assert.equal(requests.length, 2);
+  await exporter.close();
 });
 
 test("agent observability: redacts sensitive attributes by default", async () => {
