@@ -12,6 +12,8 @@ const DEFAULT_PROJECT = "bombsell";
 const DEFAULT_FLUSH_DELAY_MS = 1_000;
 const DEFAULT_TIMEOUT_MS = 5_000;
 const DEFAULT_MAX_SPANS_PER_TRACE = 200;
+const DEFAULT_MAX_IN_FLIGHT_TRACES = 2;
+const DEFAULT_MAX_BUFFERED_TRACES = 128;
 
 export interface NeatlogsTraceExporterOptions {
   writeKey: string;
@@ -20,6 +22,8 @@ export interface NeatlogsTraceExporterOptions {
   flushDelayMs?: number;
   timeoutMs?: number;
   maxSpansPerTrace?: number;
+  maxInFlightTraces?: number;
+  maxBufferedTraces?: number;
   fetchImpl?: NeatlogsFetch;
   logger?: Pick<Console, "warn">;
 }
@@ -82,10 +86,35 @@ export async function createNeatlogsTraceExporter(
     options.maxSpansPerTrace,
     DEFAULT_MAX_SPANS_PER_TRACE,
   );
+  const maxInFlightTraces = positiveInteger(
+    options.maxInFlightTraces,
+    DEFAULT_MAX_IN_FLIGHT_TRACES,
+  );
+  const maxBufferedTraces = positiveInteger(
+    options.maxBufferedTraces,
+    DEFAULT_MAX_BUFFERED_TRACES,
+  );
   const fetchImpl = options.fetchImpl ?? fetch;
   const buffers = new Map<string, BufferedTrace>();
   const inFlight = new Map<string, Promise<void>>();
+  const flushWaiters: Array<() => void> = [];
+  let activeFlushes = 0;
+  let warnedAboutBufferLimit = false;
   let closed = false;
+
+  async function acquireFlushSlot(): Promise<void> {
+    if (activeFlushes < maxInFlightTraces) {
+      activeFlushes += 1;
+      return;
+    }
+    await new Promise<void>((resolve) => flushWaiters.push(resolve));
+    activeFlushes += 1;
+  }
+
+  function releaseFlushSlot(): void {
+    activeFlushes = Math.max(0, activeFlushes - 1);
+    flushWaiters.shift()?.();
+  }
 
   const flushTrace = async (key: string): Promise<void> => {
     const existing = inFlight.get(key);
@@ -97,7 +126,14 @@ export async function createNeatlogsTraceExporter(
     if (buffered.timer) clearTimeout(buffered.timer);
     buffered.timer = null;
 
-    const task = sendTrace(buffered).finally(() => {
+    const task = (async () => {
+      await acquireFlushSlot();
+      try {
+        await sendTrace(buffered);
+      } finally {
+        releaseFlushSlot();
+      }
+    })().finally(() => {
       inFlight.delete(key);
       if (buffers.has(key)) void flushTrace(key);
     });
@@ -111,6 +147,15 @@ export async function createNeatlogsTraceExporter(
       if (closed) return;
       const payload = event.payload;
       const key = `${event.workspace_id}:${payload.trace_id}`;
+      if (!buffers.has(key) && !inFlight.has(key) && buffers.size + inFlight.size >= maxBufferedTraces) {
+        if (!warnedAboutBufferLimit) {
+          warnedAboutBufferLimit = true;
+          options.logger?.warn(
+            `[neatlogs] trace buffer limit reached (${maxBufferedTraces}); dropping new traces`,
+          );
+        }
+        return;
+      }
       const buffered = buffers.get(key) ?? {
         workspace_id: event.workspace_id,
         trace_id: payload.trace_id,
@@ -173,7 +218,7 @@ export async function createNeatlogsTraceExporter(
         ...[...buffers.keys()].map((key) => flushTrace(key)),
         ...inFlight.values(),
       ]);
-    } while (buffers.size > 0 || inFlight.size > 0);
+    } while (buffers.size > 0 || inFlight.size > 0 || activeFlushes > 0);
   }
 
   return {

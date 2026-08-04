@@ -243,6 +243,8 @@ The integration uses the dependency-free HTTP endpoint, batches a trace by
 content), and fails open if Neatlogs is unavailable. Bombsell's typed event bus
 and dashboard remain the source of truth. Leave the key unset to disable the
 exporter; no paid Neatlogs plan is required.
+The exporter also caps concurrent uploads and buffered traces so a replay burst
+cannot starve the worker or turn the free ingest tier into a hot-path dependency.
 
 See the [Neatlogs HTTP trace format](https://docs.neatlogs.com/sdk/http-injection)
 for the ingest contract. Configure `NEATLOGS_PROJECT` only when the dashboard
