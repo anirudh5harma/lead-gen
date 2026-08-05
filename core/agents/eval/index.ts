@@ -16,5 +16,8 @@ export { createFallbackJudge } from "./fallback.ts";
 export type { FallbackJudgeOptions } from "./fallback.ts";
 export { applyBrandVoiceGuardrail, evaluateBrandVoice } from "./voice.ts";
 export type { BrandVoiceGuardrailOptions } from "./voice.ts";
-export { createDeepSeekJudge } from "./adapters/deepseek-judge.ts";
+export {
+  createDeepSeekJudge,
+  isMalformedJudgeResponseError,
+} from "./adapters/deepseek-judge.ts";
 export type { DeepSeekJudgeOptions } from "./adapters/deepseek-judge.ts";

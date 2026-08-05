@@ -1,5 +1,13 @@
-import { createDeepSeekClientFromEnv } from "../core/agents/llm/index.ts";
-import { createDeepSeekJudge } from "../core/agents/eval/index.ts";
+import {
+  createDeepSeekClientFromEnv,
+  isLLMBudgetExceededError,
+} from "../core/agents/llm/index.ts";
+import {
+  createDeepSeekJudge,
+  createFallbackJudge,
+  createHeuristicJudge,
+  isMalformedJudgeResponseError,
+} from "../core/agents/eval/index.ts";
 import { createTrialWeekReminderWorkflow } from "../core/billing/index.ts";
 import {
   createWorkspaceActivationSetupWorkflow,
@@ -159,7 +167,16 @@ if (neatlogsExporter) {
 }
 
 const llm = createDeepSeekClientFromEnv();
-const judge = createDeepSeekJudge({ llm });
+const judge = createFallbackJudge({
+  primary: createDeepSeekJudge({
+    llm,
+    threshold: 0.6,
+    throwOnMalformed: true,
+  }),
+  fallback: createHeuristicJudge({ threshold: 0.55 }),
+  shouldFallback: (error) =>
+    isLLMBudgetExceededError(error) || isMalformedJudgeResponseError(error),
+});
 const memory = {
   episodic: createPostgresEpisodicRepository({ pool }),
   semantic: createPostgresSemanticRepository({ pool }),

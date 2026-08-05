@@ -10,6 +10,10 @@ import {
   createDeepSeekJudge,
   isMalformedJudgeResponseError,
 } from "../core/agents/eval/adapters/deepseek-judge.ts";
+import {
+  createFallbackJudge,
+  createHeuristicJudge,
+} from "../core/agents/eval/index.ts";
 import type { JudgeInput } from "../core/agents/eval/types.ts";
 
 function mockLLM(
@@ -108,6 +112,22 @@ test("deepseek judge: can throw malformed output for caller fallback", async () 
     () => judge.evaluate(inputFor("body")),
     (error) => isMalformedJudgeResponseError(error),
   );
+});
+
+test("fallback judge: malformed provider output still lets a valid draft reach the gate", async () => {
+  const llm = mockLLM(() => "");
+  const judge = createFallbackJudge({
+    primary: createDeepSeekJudge({ llm, threshold: 0.6, throwOnMalformed: true }),
+    fallback: createHeuristicJudge({ threshold: 0.55 }),
+    shouldFallback: isMalformedJudgeResponseError,
+  });
+
+  const verdict = await judge.evaluate(
+    inputFor("Hi Anne, I saw your Series A announcement and thought the timing might make a useful comparison."),
+  );
+
+  assert.equal(verdict.passed, true);
+  assert.equal(verdict.notes.axes.degraded_mode, 1);
 });
 
 test("deepseek judge: includes Rep persona + procedural exemplars in the prompt", async () => {
