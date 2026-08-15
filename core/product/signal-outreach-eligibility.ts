@@ -62,6 +62,39 @@ export const SIGNAL_RESEARCH_ELIGIBILITY_SQL = String.raw`
 
 export const SIGNAL_OUTREACH_ELIGIBILITY_SQL = String.raw`
   ${SIGNAL_RESEARCH_ELIGIBILITY_SQL}
+  and not exists (
+    select 1
+      from events attainability_gate
+     where attainability_gate.workspace_id = s.workspace_id
+       and attainability_gate.event_type = 'signal.outreach.gated'
+       and attainability_gate.payload->>'signal_id' = s.id::text
+       and attainability_gate.payload->>'gate' = 'account_attainability'
+       and attainability_gate.payload->>'policy_version' = 'v1'
+       and (attainability_gate.payload->>'retry_after')::timestamptz > now()
+  )
+  and not exists (
+    select 1
+      from conversations prior_company_conversation
+      join messages prior_company_message
+        on prior_company_message.workspace_id = prior_company_conversation.workspace_id
+       and prior_company_message.conversation_id = prior_company_conversation.id
+     where prior_company_conversation.workspace_id = s.workspace_id
+       and prior_company_conversation.counterparty_company_id = s.related_company_id
+       and prior_company_message.direction = 'outbound'
+       and prior_company_message.status in ('sent','delivered','replied')
+       and prior_company_message.sent_at >= now() - interval '30 days'
+       and not exists (
+         select 1
+           from conversations reply_conversation
+           join messages company_reply
+             on company_reply.workspace_id = reply_conversation.workspace_id
+            and company_reply.conversation_id = reply_conversation.id
+          where reply_conversation.workspace_id = prior_company_conversation.workspace_id
+            and reply_conversation.counterparty_company_id = prior_company_conversation.counterparty_company_id
+            and company_reply.direction = 'inbound'
+            and company_reply.created_at >= now() - interval '90 days'
+       )
+  )
   and exists (
     select 1
       from graph_persons eligible_person

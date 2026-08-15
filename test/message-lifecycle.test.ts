@@ -45,11 +45,31 @@ test("message lifecycle projection declares the outbound message event set", () 
     "draft.judged",
     "draft.rejected",
     "message.queued",
+    "message.accepted",
     "message.sent",
     "message.deferred",
     "message.delivered",
     "message.bounced",
   ]);
+});
+
+test("message.accepted remains queued and records provider acceptance evidence", async () => {
+  const { pool, calls } = fakePool();
+  const message_id = randomUUID();
+  const channel_account_id = randomUUID();
+  await projectMessageLifecycleEvent(pool, event("message.accepted", {
+    message_id,
+    channel: "email",
+    provider_request_id: "graph-request-1",
+    channel_account_id,
+  }));
+  assert.match(calls[0]!.sql, /else 'queued'::message_status/);
+  assert.equal(calls[0]!.values?.[0], message_id);
+  assert.equal(calls[0]!.values?.[2], channel_account_id);
+  assert.equal(
+    JSON.parse(String(calls[0]!.values?.[3])).provider_request_id,
+    "graph-request-1",
+  );
 });
 
 test("message lifecycle projection materializes draft and channel lifecycle events", async () => {

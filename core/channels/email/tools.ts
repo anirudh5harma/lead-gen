@@ -49,6 +49,12 @@ const SendResultSchema = z.discriminatedUnion("status", [
     sub_channel: z.enum(["owned_domain", "oauth_outlook"]),
   }),
   z.object({
+    status: z.literal("queued"),
+    message_id: z.string().uuid(),
+    external_id: z.null(),
+    sub_channel: z.literal("oauth_outlook"),
+  }),
+  z.object({
     status: z.literal("deferred"),
     message_id: z.string().uuid(),
     reason: z.string(),
@@ -77,8 +83,8 @@ export function registerEmailTools(deps: EmailToolDeps): void {
       "Send an email through the workspace's email channel. Picks optional " +
       "managed owned-domain transport or connected Outlook based on `sub_channel`. Refuses to send " +
       "unless evalGate has emitted a passing draft.judged for the message_id. " +
-      "Returns either a sent confirmation with the provider's external id, or a " +
-      "deferred result naming the reason (cap, frequency, warmup, account).",
+      "Returns sent after provider confirmation, queued while Outlook awaits mailbox " +
+      "confirmation, or deferred with the reason (cap, frequency, warmup, account).",
     kind: "external",
     input: SendInputSchema,
     output: SendResultSchema,

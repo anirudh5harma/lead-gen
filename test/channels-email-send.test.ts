@@ -134,9 +134,11 @@ function spyOutlook(): OutlookSender & { calls: number } {
     get calls() {
       return calls;
     },
+    async getAccessToken() { return "token"; },
+    async confirmSent() { return `<outlook-${calls}@example.com>`; },
     async send() {
       calls += 1;
-      return { external_id: `outlook-${calls}` };
+      return { status: "accepted", request_id: `outlook-${calls}` };
     },
   };
 }
@@ -429,8 +431,8 @@ test("email channel: outlook happy path sends via Microsoft Graph", async (t) =>
         body_text: "Hey.",
       },
     });
-    assert.equal(result.status, "sent");
-    if (result.status === "sent") assert.equal(result.sub_channel, "oauth_outlook");
+    assert.equal(result.status, "queued");
+    if (result.status === "queued") assert.equal(result.sub_channel, "oauth_outlook");
     assert.equal(outlook.calls, 1);
     assert.equal(ses.calls, 0);
   } finally {

@@ -514,7 +514,7 @@ const SignalOutreachGated = z.object({
   play_id: z.string().uuid(),
   person_id: z.string().uuid().nullable(),
   channel: z.string().min(1),
-  gate: z.enum(["contact_fit", "research_quality"]),
+  gate: z.enum(["contact_fit", "research_quality", "account_attainability"]),
   decision: z.enum(["not_fit", "incomplete"]),
   reasons: z.array(z.enum([
     "missing_company_name",
@@ -523,6 +523,8 @@ const SignalOutreachGated = z.object({
   ])).optional(),
   reason: z.string().min(1),
   gated_at: z.string().datetime(),
+  retry_after: z.string().datetime().nullable().optional(),
+  policy_version: z.string().min(1).optional(),
 });
 
 const SignalClassificationCompleted = z.object({
@@ -878,6 +880,13 @@ const MessageQueued = z.object({
   scheduled_at: z.string().datetime().nullable(),
   channel_account_id: z.string().uuid().nullable().optional(),
   reserved_at: z.string().datetime().nullable().optional(),
+});
+
+const MessageAccepted = z.object({
+  message_id: z.string().uuid(),
+  channel: z.string(),
+  provider_request_id: z.string().min(1),
+  channel_account_id: z.string().uuid().nullable().optional(),
 });
 
 const MessageSent = z.object({
@@ -1887,6 +1896,7 @@ export const eventRegistry = {
   "email.outlook.subscription.updated": OutlookSubscriptionUpdated,
 
   "message.queued": MessageQueued,
+  "message.accepted": MessageAccepted,
   "message.sent": MessageSent,
   "message.deferred": MessageDeferred,
   "message.delivered": MessageDelivered,

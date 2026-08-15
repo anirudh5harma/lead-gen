@@ -9,6 +9,7 @@ import {
   createContactResolutionProviders,
   createContactResolutionWorkflow,
   createHunterContactDiscoveryProvider,
+  createPublicWebsiteContactDiscoveryProvider,
   createZeroBounceEmailVerifier,
   rankContactRows,
   type ContactResolutionInput,
@@ -19,6 +20,76 @@ import { createInProcessWorkflowRuntime } from "../core/substrate/workflows/inde
 import type { Pool } from "pg";
 
 type ContactRows = Parameters<typeof rankContactRows>[0];
+
+test("public website discovery trusts only company-domain email with named LinkedIn evidence", async () => {
+  const workspaceId = randomUUID();
+  const companyId = randomUUID();
+  const provider = createPublicWebsiteContactDiscoveryProvider({
+    pool: {
+      async query() {
+        return {
+          rows: [{
+            name: "Acme",
+            domain: "acme.example",
+            industry: null,
+            description: null,
+          }],
+        };
+      },
+    } as unknown as Pool,
+    fetchPublicImpl: async () => new Response(`
+      <html><head><script type="application/ld+json">
+      {
+        "@type":"Person",
+        "name":"Ava Founder",
+        "jobTitle":"Founder and CEO",
+        "email":"mailto:ava@acme.example",
+        "sameAs":["https://www.linkedin.com/in/ava-founder"]
+      }
+      </script></head></html>
+    `, { status: 200, headers: { "content-type": "text/html" } }),
+  });
+
+  const people = await provider.discover({
+    workspace_id: workspaceId,
+    signal_id: randomUUID(),
+    company_id: companyId,
+    play_id: randomUUID(),
+    rep_id: randomUUID(),
+    channel: "email",
+  });
+
+  assert.equal(people.length, 1);
+  assert.equal(people[0]?.emails?.[0], "ava@acme.example");
+  assert.equal(people[0]?.linkedin_url, "https://www.linkedin.com/in/ava-founder");
+  assert.deepEqual(people[0]?.email_evidence, [{
+    email: "ava@acme.example",
+    kind: "company_public_listing",
+    source_url: "https://acme.example",
+    company_domain: "acme.example",
+  }]);
+});
+
+test("public website discovery rejects third-party email domains", async () => {
+  const provider = createPublicWebsiteContactDiscoveryProvider({
+    pool: {
+      async query() {
+        return { rows: [{ name: "Acme", domain: "acme.example", industry: null, description: null }] };
+      },
+    } as unknown as Pool,
+    fetchPublicImpl: async () => new Response(`
+      <script type="application/ld+json">
+      {"@type":"Person","name":"Ava Founder","email":"ava@gmail.com","sameAs":"https://linkedin.com/in/ava-founder"}
+      </script>
+    `, { status: 200, headers: { "content-type": "text/html" } }),
+  });
+
+  const people = await provider.discover({
+    workspace_id: randomUUID(), signal_id: randomUUID(), company_id: randomUUID(),
+    play_id: randomUUID(), rep_id: randomUUID(), channel: "email",
+  });
+  assert.deepEqual(people, []);
+});
 
 test("contact resolution ranks top three channel-ready graph contacts", () => {
   const companyId = randomUUID();
@@ -689,6 +760,7 @@ test("contact provider factory wires architecture waterfall", () => {
   });
 
   assert.deepEqual(deps.discoveryProviders?.map((provider) => provider.name), [
+    "website.public_contacts",
     "exa.people_search",
     "hunter.contact_discovery",
   ]);

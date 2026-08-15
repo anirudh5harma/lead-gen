@@ -44,10 +44,18 @@ export interface ContactResolutionOutput {
   defer_reason?: string;
 }
 
+export interface CompanyPublicEmailEvidence {
+  email: string;
+  kind: "company_public_listing";
+  source_url: string;
+  company_domain: string;
+}
+
 export interface ContactResolutionProviderPerson {
   full_name: string;
   title?: string | null;
   emails?: string[];
+  email_evidence?: CompanyPublicEmailEvidence[];
   linkedin_url?: string | null;
   confidence?: number;
   source: "exa" | "hunter" | "zerobounce" | "manual" | string;
@@ -545,6 +553,8 @@ async function upsertProviderPeople(
         fullName,
       ],
     );
+    const trustedPublicEmails = (person.email_evidence ?? [])
+      .filter((evidence) => isTrustedPublicEmailEvidence(evidence, person.emails ?? []));
     const properties = {
       contact_fit: {
         score: person.confidence ?? null,
@@ -552,6 +562,23 @@ async function upsertProviderPeople(
         evidence: person.evidence ?? {},
         discovered_at: new Date().toISOString(),
       },
+      ...(trustedPublicEmails.length
+        ? {
+            email_verification: Object.fromEntries(
+              trustedPublicEmails.map((evidence) => [
+                evidence.email.toLowerCase(),
+                {
+                  provider: person.source,
+                  status: "public_source",
+                  verified: true,
+                  confidence: person.confidence ?? 0.9,
+                  raw: evidence,
+                  checked_at: new Date().toISOString(),
+                },
+              ]),
+            ),
+          }
+        : {}),
     };
     const provenance = {
       source: providerName,
@@ -569,7 +596,13 @@ async function upsertProviderPeople(
                from unnest(graph_persons.emails || $5::citext[]) as e
            ),
            linkedin_url = coalesce($6, linkedin_url),
-           properties = properties || $7::jsonb,
+           properties = jsonb_set(
+             properties || ($7::jsonb - 'email_verification'),
+             '{email_verification}',
+             coalesce(properties->'email_verification', '{}'::jsonb)
+               || coalesce($7::jsonb->'email_verification', '{}'::jsonb),
+             true
+           ),
            provenance = provenance || $8::jsonb,
            updated_at = now()
          where workspace_id = $1
@@ -607,6 +640,22 @@ async function upsertProviderPeople(
         JSON.stringify(provenance),
       ],
     );
+  }
+}
+
+function isTrustedPublicEmailEvidence(
+  evidence: CompanyPublicEmailEvidence,
+  discoveredEmails: string[],
+): boolean {
+  const email = evidence.email.trim().toLowerCase();
+  const companyDomain = evidence.company_domain.trim().toLowerCase().replace(/^www\./, "");
+  if (!discoveredEmails.some((candidate) => candidate.toLowerCase() === email)) return false;
+  if (email.split("@")[1]?.replace(/^www\./, "") !== companyDomain) return false;
+  try {
+    const sourceHost = new URL(evidence.source_url).hostname.toLowerCase().replace(/^www\./, "");
+    return sourceHost === companyDomain || sourceHost.endsWith(`.${companyDomain}`);
+  } catch {
+    return false;
   }
 }
 

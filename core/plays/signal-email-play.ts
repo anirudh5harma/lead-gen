@@ -35,6 +35,7 @@ import {
 } from "../agents/skills/outreach.ts";
 import type { SignalEmailWriterDraft } from "../agents/reps/index.ts";
 import { deterministicConversationId } from "../primitives/conversation-identity.ts";
+import { confirmQueuedEmailSend } from "./email-send-confirmation.ts";
 
 export const SIGNAL_TO_EMAIL_PLAY_WORKFLOW = "play.signal_to_email.v1";
 
@@ -636,7 +637,12 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
         }
       }
 
-      const send = await ctx.step("sender.email", async () => {
+      const channelContext = {
+        workspace_id: input.workspace_id,
+        bus: deps.bus,
+        correlation_id: ctx.correlation_id,
+      };
+      const acceptedSend = await ctx.step("sender.email", async () => {
         const result = await sender.invoke(
           {
             conversation: {
@@ -679,6 +685,13 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
         });
         return result;
       });
+      const send = await confirmQueuedEmailSend({
+        email: deps.email,
+        initial: acceptedSend,
+        message_id: message.id,
+        channelContext,
+        ctx,
+      });
 
       let outcome_id: string | undefined;
       if (send.status === "sent" && input.simulate_outcome_kind) {
@@ -712,7 +725,7 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
       }
 
       const output: SignalToEmailPlayOutput = {
-        decision: send.status === "deferred" ? "deferred" : "sent",
+        decision: send.status,
         conversation_id: conversation.id,
         message_id: message.id,
         outcome_id,

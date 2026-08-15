@@ -264,7 +264,8 @@ async function loadHybridEvidence(
         limit $4
      ),
      historical_matches as (
-       select hist.kind,
+       select hist.id as signal_id,
+              hist.kind,
               hist.related_company_id,
               hist.embedding,
               coalesce(match_entry->>'icp_id', match_entry->>'icp_segment') as icp_id
@@ -273,6 +274,19 @@ async function loadHybridEvidence(
            coalesce(hist.audience_hint->'matched_icps', '[]'::jsonb)
          ) as match_entry
         where coalesce(match_entry->>'icp_id', match_entry->>'icp_segment') is not null
+     ),
+     successful_historical_matches as (
+       select hist.*
+         from historical_matches hist
+        where exists (
+          select 1
+            from outcomes positive_outcome
+           where positive_outcome.workspace_id = $2
+             and positive_outcome.attributed_signal_id = hist.signal_id
+             and positive_outcome.kind in (
+               'positive_reply','meeting_booked','opportunity_created','deal_won'
+             )
+        )
      )
      select candidate.icp_id::text as icp_id,
             (
@@ -284,14 +298,14 @@ async function loadHybridEvidence(
             ) as vec_sim,
             coalesce((
               select count(*)::int
-                from historical_matches hist
+                from successful_historical_matches hist
                where cur.related_company_id is not null
                  and hist.related_company_id = cur.related_company_id
                  and hist.icp_id = candidate.icp_id::text
             ), 0) as same_company_match_count,
             coalesce((
               select count(*)::int
-                from historical_matches hist
+                from successful_historical_matches hist
                where cur.related_company_id is not null
                  and cur.kind is not null
                  and hist.related_company_id = cur.related_company_id

@@ -26,11 +26,9 @@ export interface ChannelSendContext {
   producer_ref?: string | null;
 }
 
-export interface ChannelSendSuccess {
-  status: "sent" | "queued";
-  message_id: string;
-  external_id: string | null;
-}
+export type ChannelSendSuccess =
+  | { status: "sent"; message_id: string; external_id: string | null }
+  | { status: "queued"; message_id: string; external_id: null };
 
 export interface ChannelSendDeferred {
   status: "deferred";

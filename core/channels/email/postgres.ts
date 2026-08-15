@@ -10,7 +10,10 @@ import type {
   EmailSendEnvelope,
   EmailTransport,
 } from "./types.ts";
-import type { OutlookSender } from "./adapters/outlook.ts";
+import {
+  BOMBSELL_MESSAGE_ID_HEADER,
+  type OutlookSender,
+} from "./adapters/outlook.ts";
 import { OutlookAuthError, OutlookSendError } from "./adapters/outlook.ts";
 import { repairUserConnectedChannelAccountOwners } from "../account-ownership.ts";
 
@@ -61,6 +64,7 @@ interface StoredMessageSendState {
   account_kind: string | null;
   from_address: string | null;
   send_reserved_at: Date | null;
+  accepted_event_id: string | null;
 }
 
 const TRANSPORT_IDEMPOTENCY_RETRY_WINDOW_MS = 23 * 60 * 60 * 1000;
@@ -189,6 +193,7 @@ async function loadMessageSendState(
               when m.properties->>'send_reserved_at' is null then null
               else (m.properties->>'send_reserved_at')::timestamptz
             end as send_reserved_at
+            , nullif(m.properties->>'accepted_event_id', '') as accepted_event_id
        from messages m
        left join channel_accounts ca on ca.id = m.channel_account_id
       where m.id = $1
@@ -436,6 +441,47 @@ export function createPostgresOwnedDomainEmailChannel(
   return {
     name: "email",
 
+    async confirmQueued(message_id, ctx) {
+      if (!opts.outlook) {
+        return publishDeferred(opts.pool, { message_id, channel: "email", body: "", eval_passed: true }, ctx, "outlook_transport_unconfigured", null);
+      }
+      const { rows } = await opts.pool.query<{ channel_account_id: string | null; status: string; external_id: string | null }>(
+        `select channel_account_id::text, status::text, external_id
+           from messages
+          where workspace_id = $1 and id = $2`,
+        [ctx.workspace_id, message_id],
+      );
+      const row = rows[0];
+      if (!row?.channel_account_id) {
+        return { status: "queued", message_id, external_id: null };
+      }
+      if (["sent", "delivered", "replied", "bounced"].includes(row.status)) {
+        return { status: "sent", message_id, external_id: row.external_id };
+      }
+      const externalId = await opts.outlook.confirmSent({
+        channel_account_id: row.channel_account_id,
+        marker: message_id,
+        attempts: 1,
+      });
+      if (!externalId) return { status: "queued", message_id, external_id: null };
+      const sentEvent = await ctx.bus.publish({
+        workspace_id: ctx.workspace_id,
+        event_type: "message.sent",
+        source: "system",
+        producer_ref: ctx.producer_ref ?? "channel:email",
+        correlation_id: ctx.correlation_id ?? null,
+        idempotency_key: `channel:email:sent:${message_id}`,
+        payload: {
+          message_id,
+          channel: "email",
+          external_id: externalId,
+          channel_account_id: row.channel_account_id,
+        },
+      });
+      await projectMessageLifecycleEvent(opts.pool, sentEvent);
+      return { status: "sent", message_id, external_id: externalId };
+    },
+
     async send(conversation, draft, ctx) {
       if (!draft.eval_passed) {
         return publishDeferred(opts.pool, draft, ctx, "eval_not_passed", null);
@@ -451,6 +497,7 @@ export function createPostgresOwnedDomainEmailChannel(
       const client = await opts.pool.connect();
       let reservation: ReservationDecision;
       let alreadySentExternalId: string | null = null;
+      let alreadyAccepted = false;
       let reservedAtForQueuedEvent: string | null = null;
       try {
         await client.query("begin");
@@ -462,6 +509,13 @@ export function createPostgresOwnedDomainEmailChannel(
         );
         if (existing && isAlreadySent(existing)) {
           alreadySentExternalId = existing.external_id;
+          reservation = {};
+        } else if (
+          existing?.status === "queued" &&
+          existing.account_kind === "oauth_outlook" &&
+          existing.accepted_event_id
+        ) {
+          alreadyAccepted = true;
           reservation = {};
         } else if (
           existing?.status === "queued" &&
@@ -525,6 +579,9 @@ export function createPostgresOwnedDomainEmailChannel(
           external_id: alreadySentExternalId,
         };
       }
+      if (alreadyAccepted) {
+        return { status: "queued", message_id: draft.message_id, external_id: null };
+      }
 
       if (!reservation.account) {
         return publishDeferred(
@@ -560,17 +617,34 @@ export function createPostgresOwnedDomainEmailChannel(
       await projectMessageLifecycleEvent(opts.pool, queuedEvent);
 
       try {
-        const result =
-          reservation.account.kind === "oauth_outlook"
-            ? await opts.outlook!.send({
+        if (reservation.account.kind === "oauth_outlook") {
+          const result = await opts.outlook!.send({
                 channel_account_id: reservation.account.account_id,
                 draft: {
                   to: { email: recipientEmail },
                   subject: draft.subject ?? "",
                   body_text: draft.body,
+                  headers: { [BOMBSELL_MESSAGE_ID_HEADER]: draft.message_id },
                 },
-              })
-            : await opts.transport!.send({
+              });
+          const acceptedEvent = await ctx.bus.publish({
+            workspace_id: ctx.workspace_id,
+            event_type: "message.accepted",
+            source: "system",
+            producer_ref: ctx.producer_ref ?? "channel:email",
+            correlation_id: ctx.correlation_id ?? null,
+            idempotency_key: `channel:email:accepted:${draft.message_id}`,
+            payload: {
+              message_id: draft.message_id,
+              channel: "email",
+              provider_request_id: result.request_id,
+              channel_account_id: reservation.account.account_id,
+            },
+          });
+          await projectMessageLifecycleEvent(opts.pool, acceptedEvent);
+          return { status: "queued", message_id: draft.message_id, external_id: null };
+        }
+        const result = await opts.transport!.send({
                 from: reservation.account.from,
                 to: recipientEmail,
                 subject: draft.subject ?? "",

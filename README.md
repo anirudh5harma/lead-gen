@@ -5,6 +5,14 @@ AI-native outbound for founders and lean GTM teams.
 Bombsell finds timely buying signals, identifies the right people, drafts
 personalized outreach, and learns from replies and meetings.
 
+Dashboard UI (Brief, Agent, Profile):
+
+- `/dashboard/brief` — last-day and last-week qualified signals
+- `/dashboard/agent` — live work, qualified signals, and conversations
+- `/dashboard/profile` — company Profile, buyer fit, Outlook/LinkedIn, and settings
+- `/dashboard/health` — owner-only runtime readiness
+- `/dashboard/conversations/<conversation-id>` — one outreach thread
+
 [Try Bombsell](https://www.bombsell.com)
 
 ## What it does

@@ -66,9 +66,13 @@ test("postgres email channel scopes Outlook reservation to the resolved owner", 
   const channel = createPostgresOwnedDomainEmailChannel({
     pool: pool as never,
     outlook: {
+      async getAccessToken() { return "token"; },
+      async confirmSent() { return null; },
       async send() {
-        return { external_id: "outlook-1" };
+        return { status: "accepted" as const, request_id: "outlook-1" };
       },
+      async getAccessToken() { return "token"; },
+      async confirmSent() { return "<confirmed@example.com>"; },
     },
     resolveConnectedAccountUserId: async () => USER_ID,
   });
@@ -94,7 +98,7 @@ test("postgres email channel scopes Outlook reservation to the resolved owner", 
     },
   );
 
-  assert.equal(result.status, "sent");
+  assert.equal(result.status, "queued");
   const selectCall = calls.find(
     (call) =>
       call.sql.includes("from channel_accounts ca") &&

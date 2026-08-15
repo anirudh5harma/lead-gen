@@ -22,6 +22,7 @@ import type { EmailChannel, ReplyIntent } from "../channels/email/index.ts";
 import type { EventBus } from "../substrate/events/index.ts";
 import { defineWorkflow, type RunContext } from "../substrate/workflows/index.ts";
 import type { VerticalSliceStore } from "./vertical-store.ts";
+import { confirmQueuedEmailSend } from "./email-send-confirmation.ts";
 
 export const REPLY_TO_EMAIL_PLAY_WORKFLOW = "play.reply_to_email.v1";
 
@@ -448,7 +449,12 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
         SignalEmailSenderRequest,
         Awaited<ReturnType<EmailChannel["send"]>>
       >;
-      const send = await ctx.step("sender.email", async () => {
+      const channelContext = {
+        workspace_id: input.workspace_id,
+        bus: deps.bus,
+        correlation_id: ctx.correlation_id,
+      };
+      const acceptedSend = await ctx.step("sender.email", async () => {
         const result = await senderRole.invoke(
           {
             conversation: {
@@ -491,9 +497,16 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
         });
         return result;
       });
+      const send = await confirmQueuedEmailSend({
+        email: deps.email,
+        initial: acceptedSend,
+        message_id: message.id,
+        channelContext,
+        ctx,
+      });
 
       const output: ReplyToEmailPlayOutput = {
-        decision: send.status === "deferred" ? "deferred" : "sent",
+        decision: send.status,
         conversation_id: conversation.id,
         inbound_message_id: inbound.id,
         message_id: message.id,

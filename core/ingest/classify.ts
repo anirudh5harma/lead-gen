@@ -80,6 +80,10 @@ Rules:
   - Only score the shortlist candidates provided.
   - Do not invent, add, or rename ICP ids.
   - Treat the hybrid scores as priors to confirm or down-rank, not as text to copy.
+  - Score practical reply attainability as well as topical relevance.
+  - For an early seller without customer proof, down-rank prominent/global enterprises unless
+    the signal shows active buying intent or the ICP explicitly targets enterprise accounts.
+  - Prefer peer-stage companies where a cold message can realistically earn a response.
 
 Respond with a single JSON object and nothing else:
 
@@ -102,6 +106,11 @@ interface SignalRow {
   structured: Record<string, unknown> | null;
   freshness_at: Date;
   related_company_id: string | null;
+  company_name: string | null;
+  company_domain: string | null;
+  company_size_bucket: string | null;
+  seller_age_days: number;
+  seller_has_proof: boolean;
 }
 
 export interface ClassifyDeps {
@@ -150,6 +159,15 @@ function buildUserPrompt(row: SignalRow, shortlist: HybridIcpCandidate[]): strin
     row.url ? `  url: ${row.url}` : "",
     row.content ? `  content: ${row.content.slice(0, 1500)}` : "",
     `  freshness_at: ${row.freshness_at.toISOString()}`,
+    `  target_company: ${JSON.stringify({
+      name: row.company_name,
+      domain: row.company_domain,
+      size_bucket: row.company_size_bucket,
+    })}`,
+    `  seller_context: ${JSON.stringify({
+      age_days: row.seller_age_days,
+      has_customer_proof: row.seller_has_proof,
+    })}`,
     row.structured ? `  structured: ${JSON.stringify(row.structured).slice(0, 600)}` : "",
     quality ? `  quality: ${JSON.stringify(quality).slice(0, 900)}` : "",
     "",
@@ -249,10 +267,27 @@ export async function classifySignal(
   input: ClassifyInput,
 ): Promise<ClassifyOutcome> {
   const { rows } = await deps.pool.query<SignalRow>(
-    `select id, workspace_id, kind::text as kind, title, content, url,
-            properties, properties->'structured' as structured, freshness_at,
-            related_company_id::text as related_company_id
-       from signals where id = $1`,
+    `select s.id, s.workspace_id, s.kind::text as kind, s.title, s.content, s.url,
+            s.properties, s.properties->'structured' as structured, s.freshness_at,
+            s.related_company_id::text as related_company_id,
+            target.name as company_name,
+            target.domain::text as company_domain,
+            target.size_bucket as company_size_bucket,
+            floor(extract(epoch from (now() - w.created_at)) / 86400)::int
+              as seller_age_days,
+            exists (
+              select 1
+                from graph_companies seller
+               where seller.workspace_id = s.workspace_id
+                 and seller.properties->>'profile_role' = 'workspace_company'
+                 and nullif(btrim(seller.properties->>'social_proof'), '') is not null
+            ) as seller_has_proof
+       from signals s
+       join workspaces w on w.id = s.workspace_id
+       left join graph_companies target
+         on target.workspace_id = s.workspace_id
+        and target.id = s.related_company_id
+      where s.id = $1`,
     [input.signal_id],
   );
   const signal = rows[0];

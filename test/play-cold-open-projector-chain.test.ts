@@ -193,6 +193,8 @@ function mockSes(): SesSender & { sent: number } {
 }
 
 const stubOutlook: OutlookSender = {
+  async getAccessToken() { return "token"; },
+  async confirmSent() { return null; },
   async send() {
     throw new Error("Outlook sender should not be called in this Play");
   },

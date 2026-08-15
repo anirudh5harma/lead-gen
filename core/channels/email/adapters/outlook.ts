@@ -24,6 +24,9 @@ import type { EmailDraft } from "../types.ts";
 const TOKEN_ENDPOINT =
   "https://login.microsoftonline.com/common/oauth2/v2.0/token";
 const SEND_MAIL_ENDPOINT = "https://graph.microsoft.com/v1.0/me/sendMail";
+const SENT_ITEMS_ENDPOINT =
+  "https://graph.microsoft.com/v1.0/me/mailFolders/sentitems/messages";
+export const BOMBSELL_MESSAGE_ID_HEADER = "x-bombsell-message-id";
 const DEFAULT_REFRESH_SCOPE =
   "offline_access https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/Calendars.ReadBasic https://graph.microsoft.com/User.Read";
 
@@ -59,7 +62,15 @@ export interface OutlookAccessTokenProvider {
 }
 
 export interface OutlookSender extends OutlookAccessTokenProvider {
-  send(input: OutlookSendInput): Promise<{ external_id: string }>;
+  send(input: OutlookSendInput): Promise<{
+    status: "accepted";
+    request_id: string;
+  }>;
+  confirmSent(input: {
+    channel_account_id: string;
+    marker: string;
+    attempts?: number;
+  }): Promise<string | null>;
 }
 
 interface ChannelAccountRow {
@@ -95,6 +106,64 @@ interface TokenResponse {
 
 interface SendMailErrorBody {
   error?: { code?: string; message?: string };
+}
+
+interface GraphSentMessage {
+  id?: string;
+  internetMessageId?: string;
+  internetMessageHeaders?: Array<{ name?: string; value?: string }>;
+}
+
+export async function confirmOutlookSentMessage(input: {
+  accessToken: string;
+  marker: string;
+  fetchImpl?: typeof fetch;
+  attempts?: number;
+}): Promise<string | null> {
+  const fetchImpl = input.fetchImpl ?? globalThis.fetch;
+  const attempts = Math.max(1, Math.min(8, Math.trunc(input.attempts ?? 4)));
+  const query = new URLSearchParams({
+    "$top": "25",
+    "$select": "id,internetMessageId,internetMessageHeaders,sentDateTime",
+    "$orderby": "sentDateTime desc",
+  });
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (attempt > 0) {
+      await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+    }
+    try {
+      const response = await fetchImpl(`${SENT_ITEMS_ENDPOINT}?${query}`, {
+        headers: { Authorization: `Bearer ${input.accessToken}` },
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (!response.ok) {
+        const detail = (await response.text()).slice(0, 300);
+        if (response.status === 401 || response.status === 403) {
+          throw new OutlookAuthError(
+            `Outlook Sent Items authorization failed (${response.status}): ${detail}`,
+          );
+        }
+        throw new OutlookSendError(
+          `Outlook Sent Items lookup failed (${response.status}): ${detail}`,
+          response.status,
+        );
+      }
+      const body = await response.json() as { value?: GraphSentMessage[] };
+      const message = body.value?.find((candidate) =>
+        candidate.internetMessageHeaders?.some((header) =>
+          header.name?.toLowerCase() === BOMBSELL_MESSAGE_ID_HEADER &&
+          header.value === input.marker
+        )
+      );
+      if (message) return message.internetMessageId ?? message.id ?? null;
+    } catch (error) {
+      if (error instanceof OutlookAuthError || error instanceof OutlookSendError) {
+        throw error;
+      }
+      if (attempt === attempts - 1) throw error;
+    }
+  }
+  return null;
 }
 
 function addressBlock(addr: { email: string; name?: string }) {
@@ -307,7 +376,16 @@ export function createOutlookSender(opts: OutlookSenderOptions): OutlookSender {
   return {
     getAccessToken,
 
-    async send({ channel_account_id, draft }): Promise<{ external_id: string }> {
+    async confirmSent({ channel_account_id, marker, attempts }) {
+      return confirmOutlookSentMessage({
+        accessToken: await getAccessToken(channel_account_id),
+        marker,
+        attempts,
+        fetchImpl,
+      });
+    },
+
+    async send({ channel_account_id, draft }) {
       const accessToken = await getAccessToken(channel_account_id);
 
       const message = {
@@ -341,12 +419,10 @@ export function createOutlookSender(opts: OutlookSenderOptions): OutlookSender {
       });
 
       if (response.status === 202) {
-        // Graph's sendMail returns 202 Accepted with no body. The Graph
-        // API does not surface the resulting message id synchronously; we
-        // synthesise one from the request id header so the message has a
-        // stable external_id for the conversation thread.
+        // 202 is provider acceptance, not evidence that the message reached
+        // Sent Items. The durable calling workflow performs confirmation.
         const requestId = response.headers.get("request-id") ?? `outlook-${Date.now()}`;
-        return { external_id: requestId };
+        return { status: "accepted", request_id: requestId };
       }
 
       const text = await response.text();

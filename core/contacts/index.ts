@@ -8,6 +8,7 @@ export {
   createContactResolutionProviders,
   createExaPeopleSearchProvider,
   createHunterContactDiscoveryProvider,
+  createPublicWebsiteContactDiscoveryProvider,
   createHunterEmailVerifier,
   createZeroBounceEmailVerifier,
   contactDiscoveryDomain,

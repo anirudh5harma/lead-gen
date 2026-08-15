@@ -22,7 +22,7 @@
  * reputation, different code path.
  */
 
-import type { Channel } from "../types.ts";
+import type { Channel, ChannelSendContext, ChannelSendResult } from "../types.ts";
 
 export type EmailSubChannel = "owned_domain" | "oauth_outlook";
 
@@ -76,6 +76,12 @@ export type SendResult =
       sub_channel: EmailSubChannel;
     }
   | {
+      status: "queued";
+      message_id: string;
+      external_id: null;
+      sub_channel: "oauth_outlook";
+    }
+  | {
       status: "deferred";
       message_id: string;
       reason: DeferReason;
@@ -105,7 +111,13 @@ export interface BounceEvent {
   detail?: string;
 }
 
-export type EmailChannel = Channel;
+export interface EmailChannel extends Channel {
+  /** Confirm a provider-accepted queued send without retrying the send itself. */
+  confirmQueued?(
+    message_id: string,
+    ctx: ChannelSendContext,
+  ): Promise<ChannelSendResult>;
+}
 
 export interface EmailTransportResult {
   external_id: string;

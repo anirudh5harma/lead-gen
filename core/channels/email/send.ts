@@ -24,7 +24,10 @@ import type {
   SendOptions,
   SendResult,
 } from "./types.ts";
-import type { OutlookSender } from "./adapters/outlook.ts";
+import {
+  BOMBSELL_MESSAGE_ID_HEADER,
+  type OutlookSender,
+} from "./adapters/outlook.ts";
 import type { SesSender } from "./adapters/ses.ts";
 
 /**
@@ -255,6 +258,7 @@ async function sendEmail(
   // 7. Actual provider send.
   try {
     let externalId: string;
+    let outlookAcceptedRequestId: string | null = null;
     if (opts.sub_channel === "owned_domain" && pickedDomain) {
       const result = await deps.ses.send({
         draft: opts.draft,
@@ -270,9 +274,39 @@ async function sendEmail(
     } else {
       const result = await deps.outlook.send({
         channel_account_id: account.id,
-        draft: opts.draft,
+        draft: {
+          ...opts.draft,
+          headers: {
+            ...(opts.draft.headers ?? {}),
+            [BOMBSELL_MESSAGE_ID_HEADER]: opts.message_id,
+          },
+        },
       });
-      externalId = result.external_id;
+      externalId = result.request_id;
+      outlookAcceptedRequestId = result.request_id;
+    }
+
+    if (outlookAcceptedRequestId) {
+      const acceptedEvent = await bus.publish({
+        workspace_id: opts.workspace_id,
+        event_type: "message.accepted",
+        source: "system",
+        producer_ref: `channel:email:${opts.sub_channel}`,
+        correlation_id: opts.conversation_id,
+        payload: {
+          message_id: opts.message_id,
+          channel: "email",
+          provider_request_id: outlookAcceptedRequestId,
+          channel_account_id: account.id,
+        },
+      });
+      await projectMessageLifecycleEvent(pool, acceptedEvent);
+      return {
+        status: "queued",
+        message_id: opts.message_id,
+        external_id: null,
+        sub_channel: "oauth_outlook",
+      };
     }
 
     const sentEvent = await bus.publish({

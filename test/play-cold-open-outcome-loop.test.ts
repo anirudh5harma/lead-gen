@@ -67,6 +67,8 @@ function mockSes(): SesSender & { lastExternalId: string | null } {
 }
 
 const stubOutlook: OutlookSender = {
+  async getAccessToken() { return "token"; },
+  async confirmSent() { return null; },
   async send() {
     throw new Error("Outlook should not be called in this Play");
   },

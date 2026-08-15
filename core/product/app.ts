@@ -236,6 +236,10 @@ import {
   SIGNAL_RESEARCH_ELIGIBILITY_SQL,
 } from "./signal-outreach-eligibility.ts";
 import {
+  assessAccountAttainability,
+  hasLargeCompanyScaleEvidence,
+} from "./account-attainability.ts";
+import {
   createProductSubstrate,
   type ProductSubstrateMode,
 } from "./substrate.ts";
@@ -10863,9 +10867,17 @@ interface SignalDispatchRow {
   workspace_id: string;
   signal_id: string;
   signal_title: string;
+  signal_content: string | null;
   company_id: string | null;
   company_name: string | null;
   company_domain: string | null;
+  target_size_bucket: string | null;
+  seller_age_days: number;
+  seller_has_proof: boolean;
+  recent_target_signal_count: number;
+  recent_company_sent_count: number;
+  company_has_reply: boolean;
+  company_has_positive_outcome: boolean;
   signal_url: string | null;
   company_has_linkedin_identity: boolean;
   resolved_person_id: string | null;
@@ -11111,6 +11123,49 @@ async function publishSignalOutreachGated(
   });
 }
 
+async function publishAccountAttainabilityGated(
+  engine: ProductEngine,
+  row: SignalDispatchRow,
+  reason: "unanswered_company_cooldown" | "early_seller_prominent_target",
+): Promise<void> {
+  const retryAfter = new Date(
+    Date.now() + (reason === "unanswered_company_cooldown"
+      ? 30
+      : Math.max(1, 181 - row.seller_age_days)) * 24 * 60 * 60 * 1000,
+  ).toISOString();
+  await engine.bus.publish({
+    workspace_id: row.workspace_id,
+    event_type: "signal.outreach.gated",
+    source: "system",
+    producer_ref: "product.dispatchSignalPlaysOnce",
+    correlation_id: row.event_id,
+    causation_id: row.event_id,
+    idempotency_key: [
+      "signal-outreach-gated",
+      `signal:${row.signal_id}`,
+      `play:${row.play_id}`,
+      "gate:account_attainability",
+      "policy:v1",
+      `reason:${reason}`,
+      `retry:${retryAfter.slice(0, 10)}`,
+    ].join(":"),
+    payload: {
+      signal_id: row.signal_id,
+      play_id: row.play_id,
+      person_id: null,
+      channel: contactChannelForTarget(row.target_channel),
+      gate: "account_attainability",
+      decision: "not_fit",
+      reason: reason === "unanswered_company_cooldown"
+        ? "Recent outreach to this company has not earned a reply; wait before another autonomous attempt."
+        : "This account is too prominent for the seller's current proof level; prioritize attainable peer accounts.",
+      gated_at: new Date().toISOString(),
+      retry_after: retryAfter,
+      policy_version: "v1",
+    },
+  });
+}
+
 async function publishSignalResearchGated(
   engine: ProductEngine,
   row: SignalDispatchRow,
@@ -11316,9 +11371,60 @@ export async function dispatchSignalPlaysOnce(
             e.workspace_id,
             e.payload->>'signal_id' as signal_id,
             s.title as signal_title,
+            s.content as signal_content,
             s.related_company_id::text as company_id,
             co.name as company_name,
             co.domain::text as company_domain,
+            co.size_bucket as target_size_bucket,
+            floor(extract(epoch from (now() - w.created_at)) / 86400)::int
+              as seller_age_days,
+            exists (
+              select 1
+                from graph_companies seller
+               where seller.workspace_id = e.workspace_id
+                 and seller.properties->>'profile_role' = 'workspace_company'
+                 and nullif(btrim(seller.properties->>'social_proof'), '') is not null
+            ) as seller_has_proof,
+            (
+              select count(*)::int
+                from signals target_signal
+               where target_signal.workspace_id = e.workspace_id
+                 and target_signal.related_company_id = s.related_company_id
+                 and target_signal.freshness_at >= now() - interval '30 days'
+            ) as recent_target_signal_count,
+            (
+              select count(*)::int
+                from conversations sent_conversation
+                join messages sent_message
+                  on sent_message.workspace_id = sent_conversation.workspace_id
+                 and sent_message.conversation_id = sent_conversation.id
+               where sent_conversation.workspace_id = e.workspace_id
+                 and sent_conversation.counterparty_company_id = s.related_company_id
+                 and sent_message.direction = 'outbound'
+                 and sent_message.status in ('sent','delivered','replied')
+                 and sent_message.sent_at >= now() - interval '30 days'
+            ) as recent_company_sent_count,
+            exists (
+              select 1
+                from conversations reply_conversation
+                join messages reply_message
+                  on reply_message.workspace_id = reply_conversation.workspace_id
+                 and reply_message.conversation_id = reply_conversation.id
+               where reply_conversation.workspace_id = e.workspace_id
+                 and reply_conversation.counterparty_company_id = s.related_company_id
+                 and reply_message.direction = 'inbound'
+                 and reply_message.created_at >= now() - interval '90 days'
+            ) as company_has_reply,
+            exists (
+              select 1
+                from outcomes positive_outcome
+               where positive_outcome.workspace_id = e.workspace_id
+                 and positive_outcome.subject_company_id = s.related_company_id
+                 and positive_outcome.kind in (
+                   'positive_reply','meeting_booked','opportunity_created','deal_won'
+                 )
+                 and positive_outcome.occurred_at >= now() - interval '180 days'
+            ) as company_has_positive_outcome,
             s.url as signal_url,
             exists (
               select 1
@@ -11388,6 +11494,8 @@ export async function dispatchSignalPlaysOnce(
        join signals s
          on s.id = (e.payload->>'signal_id')::uuid
         and s.workspace_id = e.workspace_id
+       join workspaces w
+         on w.id = e.workspace_id
        join graph_companies co
          on co.workspace_id = s.workspace_id
         and co.id = s.related_company_id
@@ -11433,6 +11541,19 @@ export async function dispatchSignalPlaysOnce(
           order by gated.occurred_at desc
           limit 1
        ) research_gate on true
+       left join lateral (
+         select gated.id
+           from events gated
+          where gated.workspace_id = e.workspace_id
+            and gated.event_type = 'signal.outreach.gated'
+            and gated.payload->>'signal_id' = e.payload->>'signal_id'
+            and gated.payload->>'play_id' = p.id::text
+            and gated.payload->>'gate' = 'account_attainability'
+            and gated.payload->>'policy_version' = 'v1'
+            and (gated.payload->>'retry_after')::timestamptz > now()
+          order by gated.occurred_at desc
+          limit 1
+       ) attainability_gate on true
        left join lateral (
          select suppressed.payload
            from events suppressed
@@ -11599,6 +11720,11 @@ export async function dispatchSignalPlaysOnce(
         and campaign_skip.id is null
         and research_gate.id is null
         and (
+          attainability_gate.id is null
+          or $7::uuid is not null
+          or $8::uuid is not null
+        )
+        and (
           relationship_suppression.payload is null
           or (
             relationship_suppression.payload->>'reason' = 'recipient_cooldown'
@@ -11715,6 +11841,24 @@ export async function dispatchSignalPlaysOnce(
     if (!plan.allocation.should_dispatch) continue;
     if (dispatched >= dispatchLimit) break;
     const row = plan.candidate.row;
+    if (!plan.candidate.explicit_target) {
+      const attainability = assessAccountAttainability({
+        seller_age_days: row.seller_age_days,
+        seller_has_proof: row.seller_has_proof,
+        target_size_bucket: row.target_size_bucket,
+        recent_target_signal_count: row.recent_target_signal_count,
+        target_scale_evidence: hasLargeCompanyScaleEvidence(
+          `${row.signal_title}\n${row.signal_content ?? ""}`,
+        ),
+        recent_sent_count: row.recent_company_sent_count,
+        has_reply: row.company_has_reply,
+        has_positive_outcome: row.company_has_positive_outcome,
+      });
+      if (!attainability.eligible) {
+        await publishAccountAttainabilityGated(engine, row, attainability.reason);
+        continue;
+      }
+    }
     const simulate = simulateOutcomeFromSignal(row.signal_properties);
     const contactChannel = contactChannelForTarget(row.target_channel);
     let personId = row.resolved_person_id;

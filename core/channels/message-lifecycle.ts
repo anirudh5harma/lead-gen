@@ -12,6 +12,7 @@ type MessageLifecycleEvent =
   | PublishedEvent<EventPayload<"draft.judged">>
   | PublishedEvent<EventPayload<"draft.rejected">>
   | PublishedEvent<EventPayload<"message.queued">>
+  | PublishedEvent<EventPayload<"message.accepted">>
   | PublishedEvent<EventPayload<"message.sent">>
   | PublishedEvent<EventPayload<"message.deferred">>
   | PublishedEvent<EventPayload<"message.delivered">>
@@ -25,6 +26,7 @@ export function createMessageLifecycleProjection(pool: Pool): DurableEventProjec
       "draft.judged",
       "draft.rejected",
       "message.queued",
+      "message.accepted",
       "message.sent",
       "message.deferred",
       "message.delivered",
@@ -58,6 +60,11 @@ export async function projectMessageLifecycleEvent(
       pool,
       event as PublishedEvent<EventPayload<"message.queued">>,
     );
+  } else if (event.event_type === "message.accepted") {
+    await projectMessageAccepted(
+      pool,
+      event as PublishedEvent<EventPayload<"message.accepted">>,
+    );
   } else if (event.event_type === "message.sent") {
     await projectMessageSent(
       pool,
@@ -79,6 +86,36 @@ export async function projectMessageLifecycleEvent(
       event as PublishedEvent<EventPayload<"message.bounced">>,
     );
   }
+}
+
+async function projectMessageAccepted(
+  pool: Pool,
+  event: MessageLifecycleEvent & PublishedEvent<EventPayload<"message.accepted">>,
+): Promise<void> {
+  const payload = event.payload;
+  await pool.query(
+    `update messages
+        set status = case
+              when status::text in ('sent', 'delivered', 'bounced', 'replied') then status
+              else 'queued'::message_status
+            end,
+            channel_account_id = coalesce($3::uuid, channel_account_id),
+            properties = properties || $4::jsonb
+      where id = $1
+        and workspace_id = $2
+        and direction = 'outbound'
+        and channel::text = $5`,
+    [
+      payload.message_id,
+      event.workspace_id,
+      payload.channel_account_id ?? null,
+      JSON.stringify({
+        accepted_event_id: event.id,
+        provider_request_id: payload.provider_request_id,
+      }),
+      payload.channel,
+    ],
+  );
 }
 
 async function projectDraftProposed(

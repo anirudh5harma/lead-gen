@@ -6,6 +6,7 @@ import {
   searchExaWithWorkspaceCache,
 } from "../exa/index.ts";
 import { contactDiscoveryDomain } from "../ingest/company-domain.ts";
+import { fetchPublicHttpUrl } from "../../lib/network/safe-public-fetch.ts";
 import { ContactProviderDeferredError } from "./resolution.ts";
 import type {
   ContactDiscoveryProvider,
@@ -25,6 +26,12 @@ export interface ContactResolutionProviderFactoryOptions {
   pool: Pool;
   env?: Record<string, string | undefined>;
   fetchImpl?: typeof fetch;
+  publicFetchImpl?: typeof fetchPublicHttpUrl;
+}
+
+export interface PublicWebsiteContactProviderOptions {
+  pool: Pool;
+  fetchPublicImpl?: typeof fetchPublicHttpUrl;
 }
 
 export interface ExaPeopleSearchProviderOptions {
@@ -54,7 +61,12 @@ export function createContactResolutionProviders(
   opts: ContactResolutionProviderFactoryOptions,
 ): Pick<ContactResolutionDeps, "discoveryProviders" | "emailVerifier"> {
   const env = opts.env ?? process.env;
-  const discoveryProviders: ContactDiscoveryProvider[] = [];
+  const discoveryProviders: ContactDiscoveryProvider[] = [
+    createPublicWebsiteContactDiscoveryProvider({
+      pool: opts.pool,
+      fetchPublicImpl: opts.publicFetchImpl,
+    }),
+  ];
   if (exaApiKeyFromEnv(env)) {
     discoveryProviders.push(
       createExaPeopleSearchProvider({
@@ -90,6 +102,171 @@ export function createContactResolutionProviders(
       : undefined;
 
   return { discoveryProviders, emailVerifier };
+}
+
+export function createPublicWebsiteContactDiscoveryProvider(
+  opts: PublicWebsiteContactProviderOptions,
+): ContactDiscoveryProvider {
+  const safeFetch = opts.fetchPublicImpl ?? fetchPublicHttpUrl;
+  return {
+    name: "website.public_contacts",
+    async discover(input) {
+      const context = await loadContactResolutionContext(opts.pool, input);
+      const domain = contactDiscoveryDomain(context.company?.domain);
+      if (!domain) return [];
+      const origin = `https://${domain}`;
+      const people = new Map<string, ContactResolutionProviderPerson>();
+
+      const homepage = await fetchPublicHtml(safeFetch, origin);
+      if (!homepage) return [];
+      const pages = [origin, ...companyPeoplePageLinks(homepage, origin).slice(0, 4)];
+      const htmlByPage = await Promise.allSettled(
+        pages.map((url, index) => index === 0 ? Promise.resolve(homepage) : fetchPublicHtml(safeFetch, url)),
+      );
+      for (let index = 0; index < pages.length; index += 1) {
+        const result = htmlByPage[index];
+        const html = result?.status === "fulfilled" ? result.value : null;
+        if (!html) continue;
+        const url = pages[index]!;
+        for (const person of publicPeopleFromHtml(html, domain, url)) {
+          const key = `${person.full_name.toLowerCase()}|${person.emails?.[0] ?? ""}`;
+          people.set(key, person);
+        }
+      }
+      return [...people.values()];
+    },
+  };
+}
+
+async function fetchPublicHtml(
+  safeFetch: typeof fetchPublicHttpUrl,
+  url: string,
+): Promise<string | null> {
+  try {
+    const response = await safeFetch(url, {
+      headers: {
+        Accept: "text/html,application/xhtml+xml",
+        "User-Agent": "BombsellContactBot/1.0 (+https://www.bombsell.com)",
+      },
+      maxResponseBytes: 1_000_000,
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!response?.ok) return null;
+    const contentType = response.headers.get("content-type") ?? "";
+    if (contentType && !/text\/html|application\/xhtml\+xml/i.test(contentType)) {
+      return null;
+    }
+    return await response.text();
+  } catch {
+    return null;
+  }
+}
+
+function publicPeopleFromHtml(
+  html: string,
+  companyDomain: string,
+  evidenceUrl: string,
+): ContactResolutionProviderPerson[] {
+  const blocks = [...html.matchAll(
+    /<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi,
+  )];
+  const people: ContactResolutionProviderPerson[] = [];
+  for (const block of blocks) {
+    const raw = decodeHtmlEntities(block[1] ?? "").trim();
+    if (!raw) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      continue;
+    }
+    for (const candidate of personRecords(parsed)) {
+      const fullName = cleanString(candidate.name);
+      const email = normalizePublicCompanyEmail(candidate.email, companyDomain);
+      const linkedin = linkedinFromSameAs(candidate.sameAs);
+      if (!fullName || !email || !linkedin) continue;
+      people.push({
+        full_name: fullName,
+        title: cleanString(candidate.jobTitle) ?? null,
+        emails: [email],
+        email_evidence: [{
+          email,
+          kind: "company_public_listing",
+          source_url: evidenceUrl,
+          company_domain: companyDomain,
+        }],
+        linkedin_url: linkedin,
+        confidence: 0.95,
+        source: "website_public_contact",
+        evidence: { url: evidenceUrl, type: "company_json_ld_person" },
+      });
+    }
+  }
+  return people;
+}
+
+function personRecords(value: unknown): Record<string, unknown>[] {
+  const found: Record<string, unknown>[] = [];
+  const visit = (current: unknown) => {
+    if (Array.isArray(current)) {
+      current.forEach(visit);
+      return;
+    }
+    const record = recordValue(current);
+    if (!record) return;
+    const types = Array.isArray(record["@type"])
+      ? record["@type"]
+      : [record["@type"]];
+    if (types.some((type) => String(type).toLowerCase() === "person")) {
+      found.push(record);
+    }
+    Object.values(record).forEach(visit);
+  };
+  visit(value);
+  return found;
+}
+
+function normalizePublicCompanyEmail(value: unknown, companyDomain: string): string | null {
+  const raw = cleanString(value)?.replace(/^mailto:/i, "").split("?")[0]?.toLowerCase();
+  if (!raw || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) return null;
+  const emailDomain = contactDiscoveryDomain(raw.split("@")[1]);
+  return emailDomain === companyDomain ? raw : null;
+}
+
+function linkedinFromSameAs(value: unknown): string | null {
+  const values = Array.isArray(value) ? value : [value];
+  for (const candidate of values) {
+    const url = normalizeLinkedInUrl(cleanString(candidate));
+    if (url && /linkedin\.com\/in\//i.test(url)) return url;
+  }
+  return null;
+}
+
+function companyPeoplePageLinks(html: string, origin: string): string[] {
+  const base = new URL(origin);
+  const links = new Set<string>();
+  for (const match of html.matchAll(/href=["']([^"'#]+)["']/gi)) {
+    try {
+      const url = new URL(decodeHtmlEntities(match[1] ?? ""), base);
+      if (url.origin !== base.origin) continue;
+      if (!/(?:^|\/)(?:about|team|leadership|company|contact)(?:\/|$)/i.test(url.pathname)) {
+        continue;
+      }
+      links.add(url.toString());
+    } catch {
+      // Ignore malformed links from public pages.
+    }
+  }
+  return [...links];
+}
+
+function decodeHtmlEntities(value: string): string {
+  return value
+    .replaceAll("&quot;", '"')
+    .replaceAll("&#39;", "'")
+    .replaceAll("&amp;", "&")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">");
 }
 
 export function createExaPeopleSearchProvider(
