@@ -32,6 +32,7 @@ export interface ContactCandidate {
     email_status?: string | null;
     email_verified?: boolean;
     linkedin_ready?: boolean;
+    company_public_identity_ready?: boolean;
   };
   provenance: Record<string, unknown>;
 }
@@ -344,7 +345,11 @@ function graphCacheSatisfied(
 
 function channelReady(candidate: ContactCandidate, channel: ContactChannel): boolean {
   if (channel === "linkedin") return Boolean(candidate.verification.linkedin_ready);
-  return Boolean(candidate.verification.email_verified && candidate.verification.linkedin_ready);
+  return Boolean(
+    candidate.verification.email_verified &&
+      (candidate.verification.linkedin_ready ||
+        candidate.verification.company_public_identity_ready),
+  );
 }
 
 export function rankContactRows(
@@ -379,6 +384,9 @@ function scoreContact(row: ContactRow, channel: ContactChannel): ContactCandidat
   const email = preferredEmail(row.properties, row.emails);
   const emailStatus = email ? emailVerificationStatus(row.properties, email) : null;
   const emailVerified = email ? isVerifiedEmail(row.properties, email) : false;
+  const companyPublicIdentityReady = email
+    ? isCompanyPublicIdentity(row.properties, email)
+    : false;
   const linkedinReady = Boolean(row.linkedin_url);
   if (channel === "email") {
     if (emailVerified) {
@@ -427,6 +435,7 @@ function scoreContact(row: ContactRow, channel: ContactChannel): ContactCandidat
       email_status: emailStatus,
       email_verified: emailVerified,
       linkedin_ready: linkedinReady,
+      company_public_identity_ready: companyPublicIdentityReady,
     },
     provenance: row.provenance ?? {},
   };
@@ -747,6 +756,27 @@ function isVerifiedEmail(properties: Record<string, unknown>, email: string): bo
   const state = emailVerificationState(properties, email);
   return state.verified === true ||
     (state.verified !== false && isVerifiedEmailStatus(state.status));
+}
+
+function isCompanyPublicIdentity(
+  properties: Record<string, unknown>,
+  email: string,
+): boolean {
+  const verification = recordValue(properties.email_verification);
+  const byEmail = recordValue(verification?.[email.toLowerCase()]);
+  const raw = recordValue(byEmail?.raw);
+  if (raw?.kind !== "company_public_listing") return false;
+  if (
+    typeof raw.email !== "string" ||
+    typeof raw.source_url !== "string" ||
+    typeof raw.company_domain !== "string"
+  ) return false;
+  return isTrustedPublicEmailEvidence({
+    email: raw.email,
+    kind: "company_public_listing",
+    source_url: raw.source_url,
+    company_domain: raw.company_domain,
+  }, [email]);
 }
 
 function emailVerificationStatus(

@@ -184,7 +184,7 @@ function publicPeopleFromHtml(
       const fullName = cleanString(candidate.name);
       const email = normalizePublicCompanyEmail(candidate.email, companyDomain);
       const linkedin = linkedinFromSameAs(candidate.sameAs);
-      if (!fullName || !email || !linkedin) continue;
+      if (!fullName || !email) continue;
       people.push({
         full_name: fullName,
         title: cleanString(candidate.jobTitle) ?? null,

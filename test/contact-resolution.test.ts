@@ -21,7 +21,7 @@ import type { Pool } from "pg";
 
 type ContactRows = Parameters<typeof rankContactRows>[0];
 
-test("public website discovery trusts only company-domain email with named LinkedIn evidence", async () => {
+test("public website discovery trusts named company-domain email evidence", async () => {
   const workspaceId = randomUUID();
   const companyId = randomUUID();
   const provider = createPublicWebsiteContactDiscoveryProvider({
@@ -68,6 +68,30 @@ test("public website discovery trusts only company-domain email with named Linke
     source_url: "https://acme.example",
     company_domain: "acme.example",
   }]);
+});
+
+test("public website discovery does not require a separate LinkedIn profile", async () => {
+  const provider = createPublicWebsiteContactDiscoveryProvider({
+    pool: {
+      async query() {
+        return { rows: [{ name: "Acme", domain: "acme.example", industry: null, description: null }] };
+      },
+    } as unknown as Pool,
+    fetchPublicImpl: async () => new Response(`
+      <script type="application/ld+json">
+      {"@type":"Person","name":"Ava Founder","jobTitle":"CEO","email":"ava@acme.example"}
+      </script>
+    `, { status: 200, headers: { "content-type": "text/html" } }),
+  });
+
+  const people = await provider.discover({
+    workspace_id: randomUUID(), signal_id: randomUUID(), company_id: randomUUID(),
+    play_id: randomUUID(), rep_id: randomUUID(), channel: "email",
+  });
+
+  assert.equal(people.length, 1);
+  assert.equal(people[0]?.emails?.[0], "ava@acme.example");
+  assert.equal(people[0]?.linkedin_url, null);
 });
 
 test("public website discovery rejects third-party email domains", async () => {
@@ -672,6 +696,56 @@ test("contact resolution requires verified email plus LinkedIn for email outreac
   assert.equal(completed.output?.decision, "deferred");
   assert.equal(completed.output?.defer_reason, "no_email_ready_contact");
   assert.equal(completed.output?.candidates.length, 0);
+});
+
+test("contact resolution accepts company-published identity without LinkedIn", async () => {
+  const workspaceId = randomUUID();
+  const signalId = randomUUID();
+  const companyId = randomUUID();
+  const playId = randomUUID();
+  const repId = randomUUID();
+  const row = person({
+    full_name: "Ava Founder",
+    title: "Founder and CEO",
+    company_id: companyId,
+    emails: ["ava@acme.example"],
+  });
+  row.properties.email_verification = {
+    "ava@acme.example": {
+      status: "public_source",
+      verified: true,
+      raw: {
+        email: "ava@acme.example",
+        kind: "company_public_listing",
+        source_url: "https://acme.example/team",
+        company_domain: "acme.example",
+      },
+    },
+  };
+  const runtime = createInProcessWorkflowRuntime({ bus: createInMemoryEventBus() });
+  runtime.register(createContactResolutionWorkflow({ pool: mockContactRowsPool([row]) }));
+
+  const run = await runtime.start<ContactResolutionInput, ContactResolutionOutput>({
+    workspace_id: workspaceId,
+    workflow_name: CONTACT_RESOLUTION_WORKFLOW,
+    input: {
+      workspace_id: workspaceId,
+      signal_id: signalId,
+      company_id: companyId,
+      play_id: playId,
+      rep_id: repId,
+      channel: "email",
+      limit: 1,
+    },
+  });
+  const completed = await waitForCompletedRun(runtime, run.id);
+
+  assert.equal(completed.output?.decision, "resolved");
+  assert.equal(completed.output?.selected_person_id, row.id);
+  assert.equal(
+    completed.output?.candidates[0]?.verification.company_public_identity_ready,
+    true,
+  );
 });
 
 test("contact resolution uses repair_key for idempotent resolution ids", async () => {
